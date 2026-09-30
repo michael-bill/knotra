@@ -1,0 +1,48 @@
+apiVersion: knotra/v1
+kind: Pipeline
+metadata:
+  name: artifact-mount-contract
+spec:
+  sandboxes:
+    work:
+      profile: python_box
+  nodes:
+    write_file:
+      type: code
+      sandbox: work
+      code:
+        command:
+          - python3
+          - -c
+          - >-
+            import os; from pathlib import Path;
+            Path("answer.txt").write_bytes(Path("incoming/source.txt").read_bytes());
+            Path(os.environ["KNOTRA_OUTPUT_JSON"]).write_text("{}")
+      outputs:
+        answer:
+          artifact:
+            mediaTypes:
+              - text/plain
+          collect:
+            path: answer.txt
+            mediaType: text/plain
+      inputs:
+        document:
+          artifact:
+            mediaTypes:
+              - text/plain
+          bind:
+            from: inputs.document
+          mount: incoming/source.txt
+  outputs:
+    answer:
+      artifact:
+        mediaTypes:
+          - text/plain
+      bind:
+        from: nodes.write_file.outputs.answer
+  inputs:
+    document:
+      artifact:
+        mediaTypes:
+          - text/plain

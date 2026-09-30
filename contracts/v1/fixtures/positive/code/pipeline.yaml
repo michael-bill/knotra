@@ -1,0 +1,36 @@
+apiVersion: knotra/v1
+kind: Pipeline
+metadata:
+  name: code-contract
+spec:
+  sandboxes:
+    work:
+      profile: python_box
+  nodes:
+    write_file:
+      type: code
+      sandbox: work
+      code:
+        command:
+          - python3
+          - -c
+          - >-
+            import os; from pathlib import Path;
+            Path("answer.txt").write_text("42\n");
+            Path(os.environ["KNOTRA_OUTPUT_JSON"]).write_text("{}")
+          - ''
+      outputs:
+        answer:
+          artifact:
+            mediaTypes:
+              - text/plain
+          collect:
+            path: answer.txt
+            mediaType: text/plain
+  outputs:
+    answer:
+      artifact:
+        mediaTypes:
+          - text/plain
+      bind:
+        from: nodes.write_file.outputs.answer

@@ -1,0 +1,23 @@
+apiVersion: knotra/v1
+kind: Pipeline
+metadata:
+  name: basic-human
+spec:
+  nodes:
+    ask:
+      type: human
+      human:
+        prompt:
+          text: Return the requested value.
+      outputs:
+        answer:
+          schema:
+            type: string
+      execution:
+        timeout: "1s\n"
+  outputs:
+    answer:
+      schema:
+        type: string
+      bind:
+        from: nodes.ask.outputs.answer

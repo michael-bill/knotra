@@ -1,0 +1,35 @@
+apiVersion: knotra/v1
+kind: Pipeline
+metadata:
+  name: tool-contract
+spec:
+  mcp:
+    search:
+      connection: search_remote
+  defaults:
+    tools:
+      mcp:
+        search:
+          - search
+  nodes:
+    lookup:
+      type: tool
+      tool:
+        server: search
+        name: search
+        arguments:
+          value:
+            query: Knotra
+        response: structured
+      outputs:
+        result:
+          schema:
+            type: object
+            additionalProperties: true
+  outputs:
+    result:
+      schema:
+        type: object
+        additionalProperties: true
+      bind:
+        from: nodes.lookup.outputs.result

@@ -1,0 +1,68 @@
+apiVersion: knotra/v1
+kind: EngineProfile
+metadata:
+  name: contract-fixtures
+spec:
+  secrets:
+    provider_key:
+      env: KNOTRA_FIXTURE_PROVIDER_KEY
+    service_key:
+      env: KNOTRA_FIXTURE_SERVICE_KEY
+  models:
+    model_main:
+      provider: openai
+      model: fixture-model
+      auth:
+        api_key:
+          secretRef: provider_key
+  mcp:
+    search_remote:
+      transport: streamable_http
+      url: https://mcp.example.invalid/mcp
+      headers:
+        Authorization:
+          secretRef: service_key
+      allowedTools:
+        - search
+      toolPolicies:
+        search:
+          effect: read
+    local_tools:
+      transport: stdio
+      sandbox: python_box
+      command:
+        - python3
+        - -m
+        - fixture_mcp
+        - ''
+      allowedTools:
+        - echo
+      allowRunSession: true
+      toolPolicies:
+        echo:
+          effect: read
+      env:
+        FIXTURE_MODE:
+          value: contract
+  sandboxes:
+    python_box:
+      image: python:3.13-slim
+      resources:
+        cpu: 1
+        memoryMiB: 512
+        diskMiB: 128
+        pids: 64
+      network:
+        mode: none
+      allowedTools:
+        - files.read
+        - files.write
+        - process.exec
+      allowedSecrets:
+        - service_key
+  limits:
+    timeout: 1h
+    maxConcurrentNodes: 8
+    maxNodeInstances: 1000
+    maxModelCalls: 100
+    maxToolCalls: 100

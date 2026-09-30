@@ -1,0 +1,35 @@
+apiVersion: knotra/v1
+kind: Pipeline
+metadata:
+  name: nested-writer
+spec:
+  models:
+    child_writer:
+      connection: model_main
+  inputs:
+    question:
+      schema:
+        type: string
+  nodes:
+    write:
+      type: llm
+      inputs:
+        question:
+          schema:
+            type: string
+          bind:
+            from: inputs.question
+      llm:
+        model: child_writer
+        prompt:
+          text: Answer the supplied question.
+      outputs:
+        reply:
+          schema:
+            type: string
+  outputs:
+    reply:
+      schema:
+        type: string
+      bind:
+        from: nodes.write.outputs.reply

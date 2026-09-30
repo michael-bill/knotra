@@ -1,0 +1,95 @@
+apiVersion: knotra/v1
+kind: Pipeline
+metadata:
+  name: loop-contract
+spec:
+  inputs:
+    start:
+      schema:
+        type: integer
+      default: 0
+  nodes:
+    iterate:
+      type: loop
+      inputs:
+        start:
+          schema:
+            type: integer
+          bind:
+            from: inputs.start
+      loop:
+        maxIterations: 4
+        onLimit: return_last
+        state:
+          count:
+            schema:
+              type: integer
+            initial:
+              from: args.start
+            next:
+              from: body.outputs.count
+        with:
+          count:
+            from: state.count
+          index:
+            from: iteration.index
+        body:
+          inputs:
+            count:
+              schema:
+                type: integer
+            index:
+              schema:
+                type: integer
+                minimum: 0
+          nodes:
+            advance:
+              type: human
+              inputs:
+                count:
+                  schema:
+                    type: integer
+                  bind:
+                    from: inputs.count
+                index:
+                  schema:
+                    type: integer
+                  bind:
+                    from: inputs.index
+              human:
+                prompt:
+                  text: Return count incremented by one.
+              outputs:
+                count:
+                  schema:
+                    type: integer
+          outputs:
+            count:
+              schema:
+                type: integer
+              bind:
+                from: nodes.advance.outputs.count
+            iterations:
+              schema:
+                type: integer
+              bind:
+                value: 1
+        until: body.outputs.count >= 2
+  outputs:
+    count:
+      schema:
+        type: integer
+      bind:
+        from: nodes.iterate.outputs.count
+    iterations:
+      schema:
+        type: integer
+      bind:
+        from: nodes.iterate.outputs.iterations
+    termination:
+      schema:
+        enum:
+          - condition
+          - limit
+      bind:
+        from: nodes.iterate.outputs.termination

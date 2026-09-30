@@ -1,0 +1,578 @@
+{
+  "apiVersion": "knotra-contract-fixtures/v1",
+  "schema": "../../../schemas/knotra-v1.schema.json",
+  "description": "Ожидания для слоёв разбора, структурной и семантической проверки. Исполнение движка не проверяется.",
+  "cases": [
+    {
+      "id": "engine-profile",
+      "document": "positive/engine-profile.yaml",
+      "expected": {
+        "parse": "accept",
+        "structural": "accept",
+        "semantic": "accept"
+      },
+      "covers": [
+        "EngineProfile",
+        "secret source",
+        "model connection",
+        "MCP HTTP",
+        "MCP stdio",
+        "empty trailing argv",
+        "sandbox profile"
+      ]
+    },
+    {
+      "id": "llm",
+      "document": "positive/llm/pipeline.yaml",
+      "expected": {
+        "parse": "accept",
+        "structural": "accept",
+        "semantic": "accept"
+      },
+      "covers": [
+        "llm",
+        "package files",
+        "external DataSchema",
+        "local schema $ref",
+        "schemaRef",
+        "input default"
+      ],
+      "engineProfile": "positive/engine-profile.yaml",
+      "packageRoot": "positive/llm"
+    },
+    {
+      "id": "agent",
+      "document": "positive/agent/pipeline.yaml",
+      "expected": {
+        "parse": "accept",
+        "structural": "accept",
+        "semantic": "accept"
+      },
+      "covers": [
+        "agent",
+        "model tools",
+        "node grants",
+        "inherit false",
+        "sandbox secret reference"
+      ],
+      "engineProfile": "positive/engine-profile.yaml",
+      "packageRoot": "positive/agent"
+    },
+    {
+      "id": "code-empty-argument",
+      "document": "positive/code/pipeline.yaml",
+      "expected": {
+        "parse": "accept",
+        "structural": "accept",
+        "semantic": "accept"
+      },
+      "covers": [
+        "code",
+        "empty trailing argv",
+        "single file artifact",
+        "collect",
+        "artifact export"
+      ],
+      "engineProfile": "positive/engine-profile.yaml",
+      "packageRoot": "positive/code"
+    },
+    {
+      "id": "artifact-mount",
+      "document": "positive/artifact-mount/pipeline.yaml",
+      "expected": {
+        "parse": "accept",
+        "structural": "accept",
+        "semantic": "accept"
+      },
+      "covers": [
+        "artifact input",
+        "explicit mount",
+        "artifact transfer",
+        "collect"
+      ],
+      "engineProfile": "positive/engine-profile.yaml",
+      "packageRoot": "positive/artifact-mount"
+    },
+    {
+      "id": "tool",
+      "document": "positive/tool/pipeline.yaml",
+      "expected": {
+        "parse": "accept",
+        "structural": "accept",
+        "semantic": "accept"
+      },
+      "covers": [
+        "tool",
+        "MCP grant",
+        "structured MCP result",
+        "literal object binding"
+      ],
+      "engineProfile": "positive/engine-profile.yaml",
+      "packageRoot": "positive/tool"
+    },
+    {
+      "id": "switch-join",
+      "document": "positive/switch/pipeline.yaml",
+      "expected": {
+        "parse": "accept",
+        "structural": "accept",
+        "semantic": "accept"
+      },
+      "covers": [
+        "switch",
+        "when",
+        "CEL dependency",
+        "branch join",
+        "coalesce",
+        "skip"
+      ],
+      "packageRoot": "positive/switch"
+    },
+    {
+      "id": "human",
+      "document": "positive/human/pipeline.yaml",
+      "expected": {
+        "parse": "accept",
+        "structural": "accept",
+        "semantic": "accept"
+      },
+      "covers": [
+        "human",
+        "node output binding"
+      ],
+      "packageRoot": "positive/human"
+    },
+    {
+      "id": "foreach",
+      "document": "positive/foreach/pipeline.yaml",
+      "expected": {
+        "parse": "accept",
+        "structural": "accept",
+        "semantic": "accept"
+      },
+      "covers": [
+        "foreach",
+        "ordered output array",
+        "body inputs",
+        "iteration.item",
+        "iteration.index",
+        "required body output",
+        "isolated graph scope"
+      ],
+      "packageRoot": "positive/foreach"
+    },
+    {
+      "id": "loop",
+      "document": "positive/loop/pipeline.yaml",
+      "expected": {
+        "parse": "accept",
+        "structural": "accept",
+        "semantic": "accept"
+      },
+      "covers": [
+        "loop",
+        "state initial",
+        "state next",
+        "body.outputs",
+        "bounded iteration",
+        "return_last",
+        "iterations output",
+        "termination output"
+      ],
+      "packageRoot": "positive/loop"
+    },
+    {
+      "id": "subpipeline-child",
+      "document": "positive/subpipeline/children/writer.yaml",
+      "expected": {
+        "parse": "accept",
+        "structural": "accept",
+        "semantic": "accept"
+      },
+      "covers": [
+        "child Pipeline",
+        "own resource aliases"
+      ],
+      "engineProfile": "positive/engine-profile.yaml",
+      "packageRoot": "positive/subpipeline"
+    },
+    {
+      "id": "subpipeline",
+      "document": "positive/subpipeline/pipeline.yaml",
+      "expected": {
+        "parse": "accept",
+        "structural": "accept",
+        "semantic": "accept"
+      },
+      "covers": [
+        "pipeline",
+        "package child",
+        "derived child outputs",
+        "canonical EngineProfile resource permission",
+        "implicit model credential"
+      ],
+      "engineProfile": "positive/engine-profile.yaml",
+      "packageRoot": "positive/subpipeline"
+    },
+    {
+      "id": "path-newline-traversal",
+      "document": "negative/path-newline-traversal.yaml",
+      "expected": {
+        "parse": "accept",
+        "structural": "reject",
+        "semantic": "not_applicable"
+      },
+      "covers": [
+        "Path",
+        "package confinement"
+      ],
+      "reason": "Недопустимый путь пакета."
+    },
+    {
+      "id": "path-dotdot",
+      "document": "negative/path-dotdot.yaml",
+      "expected": {
+        "parse": "accept",
+        "structural": "reject",
+        "semantic": "not_applicable"
+      },
+      "covers": [
+        "Path",
+        "package confinement"
+      ],
+      "reason": "Недопустимый путь пакета."
+    },
+    {
+      "id": "path-backslash",
+      "document": "negative/path-backslash.yaml",
+      "expected": {
+        "parse": "accept",
+        "structural": "reject",
+        "semantic": "not_applicable"
+      },
+      "covers": [
+        "Path",
+        "package confinement"
+      ],
+      "reason": "Недопустимый путь пакета."
+    },
+    {
+      "id": "path-newline-backslash",
+      "document": "negative/path-newline-backslash.yaml",
+      "expected": {
+        "parse": "accept",
+        "structural": "reject",
+        "semantic": "not_applicable"
+      },
+      "covers": [
+        "Path",
+        "package confinement"
+      ],
+      "reason": "Недопустимый путь пакета."
+    },
+    {
+      "id": "path-empty-segment",
+      "document": "negative/path-empty-segment.yaml",
+      "expected": {
+        "parse": "accept",
+        "structural": "reject",
+        "semantic": "not_applicable"
+      },
+      "covers": [
+        "Path",
+        "package confinement"
+      ],
+      "reason": "Недопустимый путь пакета."
+    },
+    {
+      "id": "path-drive-prefix",
+      "document": "negative/path-drive-prefix.yaml",
+      "expected": {
+        "parse": "accept",
+        "structural": "reject",
+        "semantic": "not_applicable"
+      },
+      "covers": [
+        "Path",
+        "package confinement"
+      ],
+      "reason": "Недопустимый путь пакета."
+    },
+    {
+      "id": "unknown-root-field",
+      "document": "negative/unknown-root-field.yaml",
+      "expected": {
+        "parse": "accept",
+        "structural": "reject",
+        "semantic": "not_applicable"
+      },
+      "covers": [
+        "unknown field"
+      ],
+      "reason": "Корневое поле debug не входит в контракт."
+    },
+    {
+      "id": "unknown-node-field",
+      "document": "negative/unknown-node-field.yaml",
+      "expected": {
+        "parse": "accept",
+        "structural": "reject",
+        "semantic": "not_applicable"
+      },
+      "covers": [
+        "unknown field"
+      ],
+      "reason": "Поле debug отсутствует у human-кубика."
+    },
+    {
+      "id": "wrong-node-shape",
+      "document": "negative/wrong-node-shape.yaml",
+      "expected": {
+        "parse": "accept",
+        "structural": "reject",
+        "semantic": "not_applicable"
+      },
+      "covers": [
+        "node discriminator"
+      ],
+      "reason": "Тип llm не допускает payload human и требует llm."
+    },
+    {
+      "id": "binding-two-selectors",
+      "document": "negative/binding-two-selectors.yaml",
+      "expected": {
+        "parse": "accept",
+        "structural": "reject",
+        "semantic": "not_applicable"
+      },
+      "covers": [
+        "Binding oneOf"
+      ],
+      "reason": "Binding должен содержать ровно один вид источника."
+    },
+    {
+      "id": "empty-argv0",
+      "document": "negative/empty-argv0.yaml",
+      "expected": {
+        "parse": "accept",
+        "structural": "reject",
+        "semantic": "not_applicable"
+      },
+      "covers": [
+        "Argv"
+      ],
+      "reason": "Имя исполняемой программы не может быть пустым."
+    },
+    {
+      "id": "json-input-mount",
+      "document": "negative/json-input-mount.yaml",
+      "expected": {
+        "parse": "accept",
+        "structural": "reject",
+        "semantic": "not_applicable"
+      },
+      "covers": [
+        "NodeInput mount"
+      ],
+      "reason": "mount допустим только для artifact-входа."
+    },
+    {
+      "id": "identifier-newline",
+      "document": "negative/identifier-newline.yaml",
+      "expected": {
+        "parse": "accept",
+        "structural": "reject",
+        "semantic": "not_applicable"
+      },
+      "covers": [
+        "Identifier"
+      ],
+      "reason": "Идентификатор кубика содержит перевод строки."
+    },
+    {
+      "id": "duration-newline",
+      "document": "negative/duration-newline.yaml",
+      "expected": {
+        "parse": "accept",
+        "structural": "reject",
+        "semantic": "not_applicable"
+      },
+      "covers": [
+        "Duration"
+      ],
+      "reason": "Продолжительность содержит перевод строки."
+    },
+    {
+      "id": "file-output-collection",
+      "document": "negative/file-output-collection.yaml",
+      "expected": {
+        "parse": "accept",
+        "structural": "reject",
+        "semantic": "not_applicable"
+      },
+      "covers": [
+        "FileOutput"
+      ],
+      "reason": "collect публикует один файл, collection=true запрещён."
+    },
+    {
+      "id": "artifact-default",
+      "document": "negative/artifact-default.yaml",
+      "expected": {
+        "parse": "accept",
+        "structural": "reject",
+        "semantic": "not_applicable"
+      },
+      "covers": [
+        "InputPort artifact"
+      ],
+      "reason": "Артефактный вход не допускает default."
+    },
+    {
+      "id": "unsupported-schema-keyword",
+      "document": "negative/unsupported-schema-keyword.yaml",
+      "expected": {
+        "parse": "accept",
+        "structural": "reject",
+        "semantic": "not_applicable"
+      },
+      "covers": [
+        "DataSchema profile"
+      ],
+      "reason": "format не входит в профиль DataSchema v1."
+    },
+    {
+      "id": "scope-parent-node-in-body",
+      "document": "negative/scope-parent-node-in-body.yaml",
+      "expected": {
+        "parse": "accept",
+        "structural": "accept",
+        "semantic": "reject"
+      },
+      "covers": [
+        "nested graph scope"
+      ],
+      "reason": "body не видит узлы родительского графа; nodes.review_all отсутствует в его scope."
+    },
+    {
+      "id": "graph-cycle",
+      "document": "negative/graph-cycle.yaml",
+      "expected": {
+        "parse": "accept",
+        "structural": "accept",
+        "semantic": "reject"
+      },
+      "covers": [
+        "dependency DAG"
+      ],
+      "reason": "ask и other образуют цикл needs."
+    },
+    {
+      "id": "unresolved-node",
+      "document": "negative/unresolved-node.yaml",
+      "expected": {
+        "parse": "accept",
+        "structural": "accept",
+        "semantic": "reject"
+      },
+      "covers": [
+        "reference resolution"
+      ],
+      "reason": "Кубик missing не объявлен."
+    },
+    {
+      "id": "invalid-default-value",
+      "document": "negative/invalid-default-value.yaml",
+      "expected": {
+        "parse": "accept",
+        "structural": "accept",
+        "semantic": "reject"
+      },
+      "covers": [
+        "default validation"
+      ],
+      "reason": "default не соответствует схеме входного порта."
+    },
+    {
+      "id": "invalid-data-schema-regex",
+      "document": "negative/invalid-data-schema-regex.yaml",
+      "expected": {
+        "parse": "accept",
+        "structural": "accept",
+        "semantic": "reject"
+      },
+      "covers": [
+        "DataSchema compilation"
+      ],
+      "reason": "Регулярное выражение DataSchema синтаксически некорректно."
+    },
+    {
+      "id": "loop-state-outside-loop",
+      "document": "negative/loop-state-outside-loop.yaml",
+      "expected": {
+        "parse": "accept",
+        "structural": "accept",
+        "semantic": "reject"
+      },
+      "covers": [
+        "context availability"
+      ],
+      "reason": "state доступен только в предусмотренных контекстах loop."
+    },
+    {
+      "id": "foreach-over-non-array",
+      "document": "negative/foreach-over-non-array.yaml",
+      "expected": {
+        "parse": "accept",
+        "structural": "accept",
+        "semantic": "reject"
+      },
+      "covers": [
+        "foreach over type"
+      ],
+      "reason": "foreach.over указывает на вход, допускающий только строку, а требуется массив."
+    },
+    {
+      "id": "optional-foreach-export",
+      "document": "negative/optional-foreach-export.yaml",
+      "expected": {
+        "parse": "accept",
+        "structural": "accept",
+        "semantic": "reject"
+      },
+      "covers": [
+        "foreach output aggregation"
+      ],
+      "reason": "Экспорт body foreach должен быть обязательным для каждого элемента."
+    },
+    {
+      "id": "loop-reserved-export",
+      "document": "negative/loop-reserved-export.yaml",
+      "expected": {
+        "parse": "accept",
+        "structural": "accept",
+        "semantic": "reject"
+      },
+      "covers": [
+        "loop reserved outputs"
+      ],
+      "reason": "Имя iterations зарезервировано для производного выхода loop."
+    },
+    {
+      "id": "subpipeline-alias-permission",
+      "document": "negative/subpipeline-permission/pipeline.yaml",
+      "expected": {
+        "parse": "accept",
+        "structural": "accept",
+        "semantic": "reject"
+      },
+      "covers": [
+        "pipeline permissions",
+        "canonical profile ID"
+      ],
+      "reason": "permissions.models требует EngineProfile ID model_main, а child_writer является локальным alias дочернего пакета.",
+      "engineProfile": "positive/engine-profile.yaml",
+      "packageRoot": "negative/subpipeline-permission"
+    }
+  ]
+}

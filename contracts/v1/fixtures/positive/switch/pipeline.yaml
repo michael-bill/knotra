@@ -1,0 +1,52 @@
+apiVersion: knotra/v1
+kind: Pipeline
+metadata:
+  name: switch-contract
+spec:
+  inputs:
+    score:
+      schema:
+        type: integer
+      default: 12
+  nodes:
+    choose:
+      type: switch
+      inputs:
+        score:
+          schema:
+            type: integer
+          bind:
+            from: inputs.score
+      switch:
+        cases:
+          - name: high
+            when: args.score >= 10
+        default: low
+    high:
+      type: human
+      when: nodes.choose.outputs.route == "high"
+      human:
+        prompt:
+          text: Review the high score.
+      outputs:
+        answer:
+          schema:
+            type: string
+    low:
+      type: human
+      when: nodes.choose.outputs.route == "low"
+      human:
+        prompt:
+          text: Review the low score.
+      outputs:
+        answer:
+          schema:
+            type: string
+  outputs:
+    answer:
+      schema:
+        type: string
+      bind:
+        coalesce:
+          - from: nodes.high.outputs.answer
+          - from: nodes.low.outputs.answer

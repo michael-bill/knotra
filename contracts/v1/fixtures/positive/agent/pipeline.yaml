@@ -1,0 +1,64 @@
+apiVersion: knotra/v1
+kind: Pipeline
+metadata:
+  name: agent-contract
+spec:
+  models:
+    researcher:
+      connection: model_main
+      requires:
+        - toolCalling
+  mcp:
+    search:
+      connection: search_remote
+      session: node
+  sandboxes:
+    work:
+      profile: python_box
+  secrets:
+    service_token:
+      ref: service_key
+  defaults:
+    tools:
+      mcp:
+        search:
+          - search
+  nodes:
+    investigate:
+      type: agent
+      sandbox: work
+      inputs:
+        question:
+          schema:
+            type: string
+          bind:
+            value: Describe the supplied topic.
+      env:
+        SERVICE_TOKEN:
+          secret: service_token
+        MODE:
+          value: fixture
+      tools:
+        inherit: false
+        mcp:
+          search:
+            - search
+        sandbox:
+          - files.read
+          - files.write
+          - process.exec
+      agent:
+        model: researcher
+        prompt:
+          text: Research the question.
+        maxSteps: 5
+      outputs:
+        summary:
+          schema:
+            type: string
+  outputs:
+    summary:
+      schema:
+        type: string
+      bind:
+        from: nodes.investigate.outputs.summary

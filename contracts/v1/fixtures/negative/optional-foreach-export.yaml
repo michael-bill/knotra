@@ -1,0 +1,78 @@
+apiVersion: knotra/v1
+kind: Pipeline
+metadata:
+  name: foreach-contract
+spec:
+  inputs:
+    topics:
+      schema:
+        type: array
+        items:
+          type: string
+      default:
+        - notation
+        - engine
+  nodes:
+    review_all:
+      type: foreach
+      inputs:
+        items:
+          schema:
+            type: array
+            items:
+              type: string
+          bind:
+            from: inputs.topics
+      foreach:
+        over: items
+        concurrency: 2
+        with:
+          topic:
+            from: iteration.item
+          position:
+            from: iteration.index
+        body:
+          inputs:
+            topic:
+              schema:
+                type: string
+            position:
+              schema:
+                type: integer
+                minimum: 0
+          nodes:
+            review:
+              type: human
+              inputs:
+                topic:
+                  schema:
+                    type: string
+                  bind:
+                    from: inputs.topic
+                position:
+                  schema:
+                    type: integer
+                  bind:
+                    from: inputs.position
+              human:
+                prompt:
+                  text: Review this topic and return a verdict.
+              outputs:
+                verdict:
+                  schema:
+                    type: string
+          outputs:
+            verdict:
+              schema:
+                type: string
+              required: false
+              bind:
+                from: nodes.review.outputs.verdict
+  outputs:
+    verdict:
+      schema:
+        type: array
+        items:
+          type: string
+      bind:
+        from: nodes.review_all.outputs.verdict

@@ -1,0 +1,44 @@
+apiVersion: knotra/v1
+kind: Pipeline
+metadata:
+  name: llm-contract
+spec:
+  files:
+    - prompt.txt
+    - reply.schema.json
+  schemas:
+    reply:
+      file: reply.schema.json
+  models:
+    writer:
+      connection: model_main
+      requires:
+        - structuredOutput
+  inputs:
+    question:
+      schema:
+        type: string
+      default: What is Knotra?
+  nodes:
+    answer:
+      type: llm
+      inputs:
+        question:
+          schema:
+            type: string
+          bind:
+            from: inputs.question
+      llm:
+        model: writer
+        prompt:
+          file: prompt.txt
+        instructions:
+          text: Follow the declared output contract.
+      outputs:
+        reply:
+          schemaRef: reply
+  outputs:
+    reply:
+      schemaRef: reply
+      bind:
+        from: nodes.answer.outputs.reply

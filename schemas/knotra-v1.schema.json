@@ -1,0 +1,2460 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:knotra:schema:v1",
+  "title": "Knotra v1 contract — review candidate",
+  "description": "Structural contract for Pipeline and trusted EngineProfile documents. Normative semantics: docs/notation/v1.md and docs/notation/validation.md.",
+  "oneOf": [
+    {
+      "$ref": "#/$defs/Pipeline"
+    },
+    {
+      "$ref": "#/$defs/EngineProfile"
+    }
+  ],
+  "$defs": {
+    "Json": {
+      "oneOf": [
+        {
+          "type": [
+            "null",
+            "boolean",
+            "number",
+            "string"
+          ]
+        },
+        {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Json"
+          },
+          "minItems": 0
+        },
+        {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/Json"
+          }
+        }
+      ]
+    },
+    "Path": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 1024,
+      "pattern": "^(?![A-Za-z]:)(?!.*(?:^|/)\\.\\.?(?:/|$))[^/\\\\\\x00-\\x1f\\x7f]+(?:/[^/\\\\\\x00-\\x1f\\x7f]+)*$(?![\\s\\S])"
+    },
+    "Argv": {
+      "type": "array",
+      "prefixItems": [
+        {
+          "type": "string",
+          "minLength": 1
+        }
+      ],
+      "items": {
+        "type": "string"
+      },
+      "minItems": 1
+    },
+    "Duration": {
+      "type": "string",
+      "pattern": "^[1-9][0-9]*(ms|s|m|h)$(?![\\s\\S])"
+    },
+    "Identifier": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_]{0,63}$(?![\\s\\S])"
+    },
+    "Metadata": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9-]{0,62}$(?![\\s\\S])"
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1
+        },
+        "description": {
+          "type": "string",
+          "minLength": 1
+        },
+        "version": {
+          "type": "string",
+          "minLength": 1
+        },
+        "labels": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "name"
+      ]
+    },
+    "DataSchema": {
+      "oneOf": [
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "$schema": {
+              "const": "https://json-schema.org/draft/2020-12/schema"
+            },
+            "$ref": {
+              "type": "string",
+              "pattern": "^#(/.*)?$(?![\\s\\S])"
+            },
+            "$defs": {
+              "type": "object",
+              "additionalProperties": {
+                "$ref": "#/$defs/DataSchema"
+              }
+            },
+            "$comment": {
+              "type": "string"
+            },
+            "title": {
+              "type": "string"
+            },
+            "description": {
+              "type": "string"
+            },
+            "type": {
+              "oneOf": [
+                {
+                  "enum": [
+                    "null",
+                    "boolean",
+                    "object",
+                    "array",
+                    "number",
+                    "integer",
+                    "string"
+                  ]
+                },
+                {
+                  "type": "array",
+                  "items": {
+                    "enum": [
+                      "null",
+                      "boolean",
+                      "object",
+                      "array",
+                      "number",
+                      "integer",
+                      "string"
+                    ]
+                  },
+                  "minItems": 1,
+                  "uniqueItems": true
+                }
+              ]
+            },
+            "const": {
+              "$ref": "#/$defs/Json"
+            },
+            "enum": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/Json"
+              },
+              "minItems": 1,
+              "uniqueItems": true
+            },
+            "default": {
+              "$ref": "#/$defs/Json"
+            },
+            "examples": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/Json"
+              },
+              "minItems": 0
+            },
+            "properties": {
+              "type": "object",
+              "additionalProperties": {
+                "$ref": "#/$defs/DataSchema"
+              }
+            },
+            "patternProperties": {
+              "type": "object",
+              "additionalProperties": {
+                "$ref": "#/$defs/DataSchema"
+              }
+            },
+            "additionalProperties": {
+              "$ref": "#/$defs/DataSchema"
+            },
+            "propertyNames": {
+              "$ref": "#/$defs/DataSchema"
+            },
+            "required": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "minItems": 0,
+              "uniqueItems": true
+            },
+            "minProperties": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "maxProperties": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "dependentRequired": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "minItems": 0,
+                "uniqueItems": true
+              }
+            },
+            "dependentSchemas": {
+              "type": "object",
+              "additionalProperties": {
+                "$ref": "#/$defs/DataSchema"
+              }
+            },
+            "items": {
+              "$ref": "#/$defs/DataSchema"
+            },
+            "prefixItems": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/DataSchema"
+              },
+              "minItems": 1
+            },
+            "contains": {
+              "$ref": "#/$defs/DataSchema"
+            },
+            "minContains": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "maxContains": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "minItems": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "maxItems": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "uniqueItems": {
+              "type": "boolean"
+            },
+            "minLength": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "maxLength": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "pattern": {
+              "type": "string"
+            },
+            "minimum": {
+              "type": "number"
+            },
+            "maximum": {
+              "type": "number"
+            },
+            "exclusiveMinimum": {
+              "type": "number"
+            },
+            "exclusiveMaximum": {
+              "type": "number"
+            },
+            "multipleOf": {
+              "type": "number",
+              "exclusiveMinimum": 0
+            },
+            "allOf": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/DataSchema"
+              },
+              "minItems": 1
+            },
+            "anyOf": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/DataSchema"
+              },
+              "minItems": 1
+            },
+            "oneOf": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/DataSchema"
+              },
+              "minItems": 1
+            },
+            "not": {
+              "$ref": "#/$defs/DataSchema"
+            },
+            "if": {
+              "$ref": "#/$defs/DataSchema"
+            },
+            "then": {
+              "$ref": "#/$defs/DataSchema"
+            },
+            "else": {
+              "$ref": "#/$defs/DataSchema"
+            }
+          },
+          "additionalProperties": false
+        }
+      ]
+    },
+    "SchemaSource": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/DataSchema"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "file": {
+              "$ref": "#/$defs/Path"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "file"
+          ]
+        }
+      ]
+    },
+    "Binding": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "value": {
+              "$ref": "#/$defs/Json"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "value"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "from": {
+              "type": "string",
+              "pattern": "^(inputs\\.[a-z][a-z0-9_]*|nodes\\.[a-z][a-z0-9_]*\\.outputs\\.[a-z][a-z0-9_]*|args\\.[a-z][a-z0-9_]*|state\\.[a-z][a-z0-9_]*|iteration\\.(item|index)|body\\.outputs\\.[a-z][a-z0-9_]*)$(?![\\s\\S])"
+            },
+            "path": {
+              "type": "string",
+              "pattern": "^(/([^~]|~[01])*)*$(?![\\s\\S])"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "from"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "expr": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "expr"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "coalesce": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/Binding"
+              },
+              "minItems": 2
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "coalesce"
+          ]
+        }
+      ]
+    },
+    "Artifact": {
+      "type": "object",
+      "properties": {
+        "mediaTypes": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z0-9!#$&^_.+-]+/[a-zA-Z0-9!#$&^_.+-]+$(?![\\s\\S])"
+          },
+          "minItems": 1,
+          "uniqueItems": true
+        },
+        "collection": {
+          "type": "boolean",
+          "default": false
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "mediaTypes"
+      ]
+    },
+    "InputPort": {
+      "type": "object",
+      "properties": {
+        "schema": {
+          "$ref": "#/$defs/DataSchema"
+        },
+        "schemaRef": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_]{0,63}$(?![\\s\\S])"
+        },
+        "artifact": {
+          "$ref": "#/$defs/Artifact"
+        },
+        "description": {
+          "type": "string",
+          "minLength": 1
+        },
+        "required": {
+          "type": "boolean",
+          "default": true
+        },
+        "default": {
+          "$ref": "#/$defs/Json"
+        }
+      },
+      "additionalProperties": false,
+      "oneOf": [
+        {
+          "required": [
+            "schema"
+          ]
+        },
+        {
+          "required": [
+            "schemaRef"
+          ]
+        },
+        {
+          "required": [
+            "artifact"
+          ]
+        }
+      ],
+      "not": {
+        "required": [
+          "artifact",
+          "default"
+        ]
+      }
+    },
+    "NodeInput": {
+      "type": "object",
+      "properties": {
+        "schema": {
+          "$ref": "#/$defs/DataSchema"
+        },
+        "schemaRef": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_]{0,63}$(?![\\s\\S])"
+        },
+        "artifact": {
+          "$ref": "#/$defs/Artifact"
+        },
+        "description": {
+          "type": "string",
+          "minLength": 1
+        },
+        "required": {
+          "type": "boolean",
+          "default": true
+        },
+        "bind": {
+          "$ref": "#/$defs/Binding"
+        },
+        "mount": {
+          "$ref": "#/$defs/Path"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "bind"
+      ],
+      "oneOf": [
+        {
+          "required": [
+            "schema"
+          ]
+        },
+        {
+          "required": [
+            "schemaRef"
+          ]
+        },
+        {
+          "required": [
+            "artifact"
+          ]
+        }
+      ],
+      "dependentRequired": {
+        "mount": [
+          "artifact"
+        ]
+      }
+    },
+    "JsonOutput": {
+      "type": "object",
+      "properties": {
+        "schema": {
+          "$ref": "#/$defs/DataSchema"
+        },
+        "schemaRef": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_]{0,63}$(?![\\s\\S])"
+        },
+        "description": {
+          "type": "string",
+          "minLength": 1
+        },
+        "required": {
+          "type": "boolean",
+          "default": true
+        }
+      },
+      "additionalProperties": false,
+      "oneOf": [
+        {
+          "required": [
+            "schema"
+          ]
+        },
+        {
+          "required": [
+            "schemaRef"
+          ]
+        }
+      ]
+    },
+    "FileOutput": {
+      "type": "object",
+      "properties": {
+        "artifact": {
+          "allOf": [
+            {
+              "$ref": "#/$defs/Artifact"
+            },
+            {
+              "properties": {
+                "collection": {
+                  "const": false
+                }
+              }
+            }
+          ]
+        },
+        "description": {
+          "type": "string",
+          "minLength": 1
+        },
+        "collect": {
+          "type": "object",
+          "properties": {
+            "path": {
+              "$ref": "#/$defs/Path"
+            },
+            "mediaType": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "path",
+            "mediaType"
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "artifact",
+        "collect"
+      ]
+    },
+    "NodeOutput": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/JsonOutput"
+        },
+        {
+          "$ref": "#/$defs/FileOutput"
+        }
+      ]
+    },
+    "Export": {
+      "type": "object",
+      "properties": {
+        "schema": {
+          "$ref": "#/$defs/DataSchema"
+        },
+        "schemaRef": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_]{0,63}$(?![\\s\\S])"
+        },
+        "artifact": {
+          "$ref": "#/$defs/Artifact"
+        },
+        "description": {
+          "type": "string",
+          "minLength": 1
+        },
+        "required": {
+          "type": "boolean",
+          "default": true
+        },
+        "bind": {
+          "$ref": "#/$defs/Binding"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "bind"
+      ],
+      "oneOf": [
+        {
+          "required": [
+            "schema"
+          ]
+        },
+        {
+          "required": [
+            "schemaRef"
+          ]
+        },
+        {
+          "required": [
+            "artifact"
+          ]
+        }
+      ]
+    },
+    "TextSource": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "text": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "text"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "file": {
+              "$ref": "#/$defs/Path"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "file"
+          ]
+        }
+      ]
+    },
+    "Retry": {
+      "type": "object",
+      "properties": {
+        "maxAttempts": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100,
+          "default": 1
+        },
+        "backoff": {
+          "type": "string",
+          "pattern": "^[1-9][0-9]*(ms|s|m|h)$(?![\\s\\S])"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "maxAttempts"
+      ]
+    },
+    "Execution": {
+      "type": "object",
+      "properties": {
+        "timeout": {
+          "type": "string",
+          "pattern": "^[1-9][0-9]*(ms|s|m|h)$(?![\\s\\S])"
+        },
+        "retry": {
+          "$ref": "#/$defs/Retry"
+        },
+        "onUnknownOutcome": {
+          "enum": [
+            "pause",
+            "fail"
+          ],
+          "default": "pause"
+        }
+      },
+      "additionalProperties": false
+    },
+    "Limits": {
+      "type": "object",
+      "properties": {
+        "timeout": {
+          "type": "string",
+          "pattern": "^[1-9][0-9]*(ms|s|m|h)$(?![\\s\\S])"
+        },
+        "maxConcurrentNodes": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 2147483647
+        },
+        "maxNodeInstances": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 2147483647
+        },
+        "maxModelCalls": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 2147483647
+        },
+        "maxToolCalls": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 2147483647
+        }
+      },
+      "additionalProperties": false
+    },
+    "ToolGrants": {
+      "type": "object",
+      "properties": {
+        "mcp": {
+          "type": "object",
+          "propertyNames": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_]{0,63}$(?![\\s\\S])"
+          },
+          "additionalProperties": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9_.-]{1,128}$(?![\\s\\S])"
+            },
+            "minItems": 1,
+            "uniqueItems": true
+          },
+          "minProperties": 0
+        },
+        "sandbox": {
+          "type": "array",
+          "items": {
+            "enum": [
+              "files.read",
+              "files.write",
+              "process.exec"
+            ]
+          },
+          "minItems": 0,
+          "uniqueItems": true
+        }
+      },
+      "additionalProperties": false
+    },
+    "NodeToolGrants": {
+      "type": "object",
+      "properties": {
+        "inherit": {
+          "type": "boolean",
+          "default": true
+        },
+        "mcp": {
+          "type": "object",
+          "propertyNames": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_]{0,63}$(?![\\s\\S])"
+          },
+          "additionalProperties": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9_.-]{1,128}$(?![\\s\\S])"
+            },
+            "minItems": 1,
+            "uniqueItems": true
+          },
+          "minProperties": 0
+        },
+        "sandbox": {
+          "type": "array",
+          "items": {
+            "enum": [
+              "files.read",
+              "files.write",
+              "process.exec"
+            ]
+          },
+          "minItems": 0,
+          "uniqueItems": true
+        }
+      },
+      "additionalProperties": false
+    },
+    "Environment": {
+      "type": "object",
+      "propertyNames": {
+        "type": "string",
+        "pattern": "^[A-Za-z_][A-Za-z0-9_]*$(?![\\s\\S])"
+      },
+      "additionalProperties": {
+        "oneOf": [
+          {
+            "type": "object",
+            "properties": {
+              "value": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "value"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "secret": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9_]{0,63}$(?![\\s\\S])"
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "secret"
+            ]
+          }
+        ]
+      }
+    },
+    "Model": {
+      "type": "object",
+      "properties": {
+        "connection": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_]{0,63}$(?![\\s\\S])"
+        },
+        "model": {
+          "type": "string",
+          "minLength": 1
+        },
+        "parameters": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/Json"
+          }
+        },
+        "requires": {
+          "type": "array",
+          "items": {
+            "enum": [
+              "toolCalling",
+              "structuredOutput",
+              "imageInput"
+            ]
+          },
+          "minItems": 0,
+          "uniqueItems": true
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "connection"
+      ]
+    },
+    "McpResource": {
+      "type": "object",
+      "properties": {
+        "connection": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_]{0,63}$(?![\\s\\S])"
+        },
+        "session": {
+          "enum": [
+            "node",
+            "run"
+          ],
+          "default": "node"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "connection"
+      ]
+    },
+    "SandboxResource": {
+      "type": "object",
+      "properties": {
+        "profile": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_]{0,63}$(?![\\s\\S])"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "profile"
+      ]
+    },
+    "SecretResource": {
+      "type": "object",
+      "properties": {
+        "ref": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_]{0,63}$(?![\\s\\S])"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "ref"
+      ]
+    },
+    "Defaults": {
+      "type": "object",
+      "properties": {
+        "execution": {
+          "$ref": "#/$defs/Execution"
+        },
+        "tools": {
+          "$ref": "#/$defs/ToolGrants"
+        }
+      },
+      "additionalProperties": false
+    },
+    "Graph": {
+      "type": "object",
+      "properties": {
+        "inputs": {
+          "type": "object",
+          "propertyNames": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_]{0,63}$(?![\\s\\S])"
+          },
+          "additionalProperties": {
+            "$ref": "#/$defs/InputPort"
+          },
+          "minProperties": 0
+        },
+        "outputs": {
+          "type": "object",
+          "propertyNames": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_]{0,63}$(?![\\s\\S])"
+          },
+          "additionalProperties": {
+            "$ref": "#/$defs/Export"
+          },
+          "minProperties": 1
+        },
+        "nodes": {
+          "type": "object",
+          "propertyNames": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_]{0,63}$(?![\\s\\S])"
+          },
+          "additionalProperties": {
+            "$ref": "#/$defs/Node"
+          },
+          "minProperties": 1
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "outputs",
+        "nodes"
+      ]
+    },
+    "LlmNode": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "const": "llm"
+        },
+        "description": {
+          "type": "string",
+          "minLength": 1
+        },
+        "inputs": {
+          "type": "object",
+          "propertyNames": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_]{0,63}$(?![\\s\\S])"
+          },
+          "additionalProperties": {
+            "$ref": "#/$defs/NodeInput"
+          },
+          "minProperties": 0
+        },
+        "needs": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_]{0,63}$(?![\\s\\S])"
+          },
+          "minItems": 0,
+          "uniqueItems": true
+        },
+        "when": {
+          "type": "string",
+          "minLength": 1
+        },
+        "execution": {
+          "$ref": "#/$defs/Execution"
+        },
+        "outputs": {
+          "type": "object",
+          "propertyNames": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_]{0,63}$(?![\\s\\S])"
+          },
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonOutput"
+          },
+          "minProperties": 1
+        },
+        "llm": {
+          "type": "object",
+          "properties": {
+            "model": {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9_]{0,63}$(?![\\s\\S])"
+            },
+            "instructions": {
+              "$ref": "#/$defs/TextSource"
+            },
+            "prompt": {
+              "$ref": "#/$defs/TextSource"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "model",
+            "prompt"
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "outputs",
+        "llm"
+      ]
+    },
+    "AgentNode": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "const": "agent"
+        },
+        "description": {
+          "type": "string",
+          "minLength": 1
+        },
+        "inputs": {
+          "type": "object",
+          "propertyNames": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_]{0,63}$(?![\\s\\S])"
+          },
+          "additionalProperties": {
+            "$ref": "#/$defs/NodeInput"
+          },
+          "minProperties": 0
+        },
+        "needs": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_]{0,63}$(?![\\s\\S])"
+          },
+          "minItems": 0,
+          "uniqueItems": true
+        },
+        "when": {
+          "type": "string",
+          "minLength": 1
+        },
+        "execution": {
+          "$ref": "#/$defs/Execution"
+        },
+        "outputs": {
+          "type": "object",
+          "propertyNames": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_]{0,63}$(?![\\s\\S])"
+          },
+          "additionalProperties": {
+            "$ref": "#/$defs/NodeOutput"
+          },
+          "minProperties": 1
+        },
+        "sandbox": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_]{0,63}$(?![\\s\\S])"
+        },
+        "env": {
+          "$ref": "#/$defs/Environment"
+        },
+        "tools": {
+          "$ref": "#/$defs/NodeToolGrants"
+        },
+        "agent": {
+          "type": "object",
+          "properties": {
+            "model": {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9_]{0,63}$(?![\\s\\S])"
+            },
+            "instructions": {
+              "$ref": "#/$defs/TextSource"
+            },
+            "prompt": {
+              "$ref": "#/$defs/TextSource"
+            },
+            "maxSteps": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 10000
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "model",
+            "prompt",
+            "maxSteps"
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "outputs",
+        "sandbox",
+        "agent"
+      ]
+    },
+    "CodeNode": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "const": "code"
+        },
+        "description": {
+          "type": "string",
+          "minLength": 1
+        },
+        "inputs": {
+          "type": "object",
+          "propertyNames": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_]{0,63}$(?![\\s\\S])"
+          },
+          "additionalProperties": {
+            "$ref": "#/$defs/NodeInput"
+          },
+          "minProperties": 0
+        },
+        "needs": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_]{0,63}$(?![\\s\\S])"
+          },
+          "minItems": 0,
+          "uniqueItems": true
+        },
+        "when": {
+          "type": "string",
+          "minLength": 1
+        },
+        "execution": {
+          "$ref": "#/$defs/Execution"
+        },
+        "outputs": {
+          "type": "object",
+          "propertyNames": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_]{0,63}$(?![\\s\\S])"
+          },
+          "additionalProperties": {
+            "$ref": "#/$defs/NodeOutput"
+          },
+          "minProperties": 1
+        },
+        "sandbox": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_]{0,63}$(?![\\s\\S])"
+        },
+        "env": {
+          "$ref": "#/$defs/Environment"
+        },
+        "code": {
+          "type": "object",
+          "properties": {
+            "command": {
+              "$ref": "#/$defs/Argv"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "command"
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "outputs",
+        "sandbox",
+        "code"
+      ]
+    },
+    "ToolNode": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "const": "tool"
+        },
+        "description": {
+          "type": "string",
+          "minLength": 1
+        },
+        "inputs": {
+          "type": "object",
+          "propertyNames": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_]{0,63}$(?![\\s\\S])"
+          },
+          "additionalProperties": {
+            "$ref": "#/$defs/NodeInput"
+          },
+          "minProperties": 0
+        },
+        "needs": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_]{0,63}$(?![\\s\\S])"
+          },
+          "minItems": 0,
+          "uniqueItems": true
+        },
+        "when": {
+          "type": "string",
+          "minLength": 1
+        },
+        "execution": {
+          "$ref": "#/$defs/Execution"
+        },
+        "outputs": {
+          "type": "object",
+          "properties": {
+            "result": {
+              "$ref": "#/$defs/JsonOutput"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "result"
+          ]
+        },
+        "tool": {
+          "type": "object",
+          "properties": {
+            "server": {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9_]{0,63}$(?![\\s\\S])"
+            },
+            "name": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9_.-]{1,128}$(?![\\s\\S])"
+            },
+            "arguments": {
+              "$ref": "#/$defs/Binding"
+            },
+            "response": {
+              "enum": [
+                "structured",
+                "content"
+              ],
+              "default": "structured"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "server",
+            "name",
+            "arguments"
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "outputs",
+        "tool"
+      ]
+    },
+    "SwitchNode": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "const": "switch"
+        },
+        "description": {
+          "type": "string",
+          "minLength": 1
+        },
+        "inputs": {
+          "type": "object",
+          "propertyNames": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_]{0,63}$(?![\\s\\S])"
+          },
+          "additionalProperties": {
+            "$ref": "#/$defs/NodeInput"
+          },
+          "minProperties": 0
+        },
+        "needs": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_]{0,63}$(?![\\s\\S])"
+          },
+          "minItems": 0,
+          "uniqueItems": true
+        },
+        "when": {
+          "type": "string",
+          "minLength": 1
+        },
+        "execution": {
+          "$ref": "#/$defs/Execution"
+        },
+        "switch": {
+          "type": "object",
+          "properties": {
+            "cases": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "pattern": "^[a-z][a-z0-9_]{0,63}$(?![\\s\\S])"
+                  },
+                  "when": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                },
+                "additionalProperties": false,
+                "required": [
+                  "name",
+                  "when"
+                ]
+              },
+              "minItems": 1
+            },
+            "default": {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9_]{0,63}$(?![\\s\\S])"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "cases",
+            "default"
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "switch"
+      ]
+    },
+    "HumanNode": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "const": "human"
+        },
+        "description": {
+          "type": "string",
+          "minLength": 1
+        },
+        "inputs": {
+          "type": "object",
+          "propertyNames": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_]{0,63}$(?![\\s\\S])"
+          },
+          "additionalProperties": {
+            "$ref": "#/$defs/NodeInput"
+          },
+          "minProperties": 0
+        },
+        "needs": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_]{0,63}$(?![\\s\\S])"
+          },
+          "minItems": 0,
+          "uniqueItems": true
+        },
+        "when": {
+          "type": "string",
+          "minLength": 1
+        },
+        "execution": {
+          "$ref": "#/$defs/Execution"
+        },
+        "outputs": {
+          "type": "object",
+          "propertyNames": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_]{0,63}$(?![\\s\\S])"
+          },
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonOutput"
+          },
+          "minProperties": 1
+        },
+        "human": {
+          "type": "object",
+          "properties": {
+            "prompt": {
+              "$ref": "#/$defs/TextSource"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "prompt"
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "outputs",
+        "human"
+      ]
+    },
+    "ForeachNode": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "const": "foreach"
+        },
+        "description": {
+          "type": "string",
+          "minLength": 1
+        },
+        "inputs": {
+          "type": "object",
+          "propertyNames": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_]{0,63}$(?![\\s\\S])"
+          },
+          "additionalProperties": {
+            "$ref": "#/$defs/NodeInput"
+          },
+          "minProperties": 0
+        },
+        "needs": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_]{0,63}$(?![\\s\\S])"
+          },
+          "minItems": 0,
+          "uniqueItems": true
+        },
+        "when": {
+          "type": "string",
+          "minLength": 1
+        },
+        "execution": {
+          "$ref": "#/$defs/Execution"
+        },
+        "foreach": {
+          "type": "object",
+          "properties": {
+            "over": {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9_]{0,63}$(?![\\s\\S])"
+            },
+            "concurrency": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 2147483647
+            },
+            "with": {
+              "type": "object",
+              "propertyNames": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9_]{0,63}$(?![\\s\\S])"
+              },
+              "additionalProperties": {
+                "$ref": "#/$defs/Binding"
+              },
+              "minProperties": 0
+            },
+            "body": {
+              "$ref": "#/$defs/Graph"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "over",
+            "concurrency",
+            "with",
+            "body"
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "foreach"
+      ]
+    },
+    "LoopState": {
+      "type": "object",
+      "properties": {
+        "schema": {
+          "$ref": "#/$defs/DataSchema"
+        },
+        "schemaRef": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_]{0,63}$(?![\\s\\S])"
+        },
+        "artifact": {
+          "$ref": "#/$defs/Artifact"
+        },
+        "description": {
+          "type": "string",
+          "minLength": 1
+        },
+        "initial": {
+          "$ref": "#/$defs/Binding"
+        },
+        "next": {
+          "$ref": "#/$defs/Binding"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "initial",
+        "next"
+      ],
+      "oneOf": [
+        {
+          "required": [
+            "schema"
+          ]
+        },
+        {
+          "required": [
+            "schemaRef"
+          ]
+        },
+        {
+          "required": [
+            "artifact"
+          ]
+        }
+      ]
+    },
+    "LoopNode": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "const": "loop"
+        },
+        "description": {
+          "type": "string",
+          "minLength": 1
+        },
+        "inputs": {
+          "type": "object",
+          "propertyNames": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_]{0,63}$(?![\\s\\S])"
+          },
+          "additionalProperties": {
+            "$ref": "#/$defs/NodeInput"
+          },
+          "minProperties": 0
+        },
+        "needs": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_]{0,63}$(?![\\s\\S])"
+          },
+          "minItems": 0,
+          "uniqueItems": true
+        },
+        "when": {
+          "type": "string",
+          "minLength": 1
+        },
+        "execution": {
+          "$ref": "#/$defs/Execution"
+        },
+        "loop": {
+          "type": "object",
+          "properties": {
+            "maxIterations": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100000
+            },
+            "onLimit": {
+              "enum": [
+                "fail",
+                "return_last"
+              ],
+              "default": "fail"
+            },
+            "state": {
+              "type": "object",
+              "propertyNames": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9_]{0,63}$(?![\\s\\S])"
+              },
+              "additionalProperties": {
+                "$ref": "#/$defs/LoopState"
+              },
+              "minProperties": 0
+            },
+            "with": {
+              "type": "object",
+              "propertyNames": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9_]{0,63}$(?![\\s\\S])"
+              },
+              "additionalProperties": {
+                "$ref": "#/$defs/Binding"
+              },
+              "minProperties": 0
+            },
+            "body": {
+              "$ref": "#/$defs/Graph"
+            },
+            "until": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "maxIterations",
+            "with",
+            "body",
+            "until"
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "loop"
+      ]
+    },
+    "CallPermissions": {
+      "type": "object",
+      "properties": {
+        "models": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_]{0,63}$(?![\\s\\S])"
+          },
+          "minItems": 0,
+          "uniqueItems": true
+        },
+        "mcp": {
+          "type": "object",
+          "propertyNames": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_]{0,63}$(?![\\s\\S])"
+          },
+          "additionalProperties": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9_.-]{1,128}$(?![\\s\\S])"
+            },
+            "minItems": 1,
+            "uniqueItems": true
+          },
+          "minProperties": 0
+        },
+        "sandboxes": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_]{0,63}$(?![\\s\\S])"
+          },
+          "minItems": 0,
+          "uniqueItems": true
+        },
+        "secrets": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_]{0,63}$(?![\\s\\S])"
+          },
+          "minItems": 0,
+          "uniqueItems": true
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "models",
+        "mcp",
+        "sandboxes",
+        "secrets"
+      ]
+    },
+    "PipelineNode": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "const": "pipeline"
+        },
+        "description": {
+          "type": "string",
+          "minLength": 1
+        },
+        "inputs": {
+          "type": "object",
+          "propertyNames": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_]{0,63}$(?![\\s\\S])"
+          },
+          "additionalProperties": {
+            "$ref": "#/$defs/NodeInput"
+          },
+          "minProperties": 0
+        },
+        "needs": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_]{0,63}$(?![\\s\\S])"
+          },
+          "minItems": 0,
+          "uniqueItems": true
+        },
+        "when": {
+          "type": "string",
+          "minLength": 1
+        },
+        "execution": {
+          "$ref": "#/$defs/Execution"
+        },
+        "pipeline": {
+          "type": "object",
+          "properties": {
+            "file": {
+              "$ref": "#/$defs/Path"
+            },
+            "permissions": {
+              "$ref": "#/$defs/CallPermissions"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "file",
+            "permissions"
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "pipeline"
+      ]
+    },
+    "Node": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/LlmNode"
+        },
+        {
+          "$ref": "#/$defs/AgentNode"
+        },
+        {
+          "$ref": "#/$defs/CodeNode"
+        },
+        {
+          "$ref": "#/$defs/ToolNode"
+        },
+        {
+          "$ref": "#/$defs/SwitchNode"
+        },
+        {
+          "$ref": "#/$defs/HumanNode"
+        },
+        {
+          "$ref": "#/$defs/ForeachNode"
+        },
+        {
+          "$ref": "#/$defs/LoopNode"
+        },
+        {
+          "$ref": "#/$defs/PipelineNode"
+        }
+      ]
+    },
+    "PipelineSpec": {
+      "type": "object",
+      "properties": {
+        "files": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Path"
+          },
+          "minItems": 0,
+          "uniqueItems": true
+        },
+        "schemas": {
+          "type": "object",
+          "propertyNames": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_]{0,63}$(?![\\s\\S])"
+          },
+          "additionalProperties": {
+            "$ref": "#/$defs/SchemaSource"
+          },
+          "minProperties": 0
+        },
+        "models": {
+          "type": "object",
+          "propertyNames": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_]{0,63}$(?![\\s\\S])"
+          },
+          "additionalProperties": {
+            "$ref": "#/$defs/Model"
+          },
+          "minProperties": 0
+        },
+        "mcp": {
+          "type": "object",
+          "propertyNames": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_]{0,63}$(?![\\s\\S])"
+          },
+          "additionalProperties": {
+            "$ref": "#/$defs/McpResource"
+          },
+          "minProperties": 0
+        },
+        "sandboxes": {
+          "type": "object",
+          "propertyNames": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_]{0,63}$(?![\\s\\S])"
+          },
+          "additionalProperties": {
+            "$ref": "#/$defs/SandboxResource"
+          },
+          "minProperties": 0
+        },
+        "secrets": {
+          "type": "object",
+          "propertyNames": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_]{0,63}$(?![\\s\\S])"
+          },
+          "additionalProperties": {
+            "$ref": "#/$defs/SecretResource"
+          },
+          "minProperties": 0
+        },
+        "defaults": {
+          "$ref": "#/$defs/Defaults"
+        },
+        "limits": {
+          "$ref": "#/$defs/Limits"
+        },
+        "inputs": {
+          "type": "object",
+          "propertyNames": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_]{0,63}$(?![\\s\\S])"
+          },
+          "additionalProperties": {
+            "$ref": "#/$defs/InputPort"
+          },
+          "minProperties": 0
+        },
+        "outputs": {
+          "type": "object",
+          "propertyNames": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_]{0,63}$(?![\\s\\S])"
+          },
+          "additionalProperties": {
+            "$ref": "#/$defs/Export"
+          },
+          "minProperties": 1
+        },
+        "nodes": {
+          "type": "object",
+          "propertyNames": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_]{0,63}$(?![\\s\\S])"
+          },
+          "additionalProperties": {
+            "$ref": "#/$defs/Node"
+          },
+          "minProperties": 1
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "outputs",
+        "nodes"
+      ]
+    },
+    "Pipeline": {
+      "type": "object",
+      "properties": {
+        "apiVersion": {
+          "const": "knotra/v1"
+        },
+        "kind": {
+          "const": "Pipeline"
+        },
+        "metadata": {
+          "$ref": "#/$defs/Metadata"
+        },
+        "spec": {
+          "$ref": "#/$defs/PipelineSpec"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "apiVersion",
+        "kind",
+        "metadata",
+        "spec"
+      ]
+    },
+    "SecretSource": {
+      "type": "object",
+      "properties": {
+        "env": {
+          "type": "string",
+          "pattern": "^[A-Za-z_][A-Za-z0-9_]*$(?![\\s\\S])"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "env"
+      ]
+    },
+    "CredentialValue": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "value": {
+              "type": "string"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "value"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "secretRef": {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9_]{0,63}$(?![\\s\\S])"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "secretRef"
+          ]
+        }
+      ]
+    },
+    "ModelConnection": {
+      "type": "object",
+      "properties": {
+        "provider": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_]{0,63}$(?![\\s\\S])"
+        },
+        "model": {
+          "type": "string",
+          "minLength": 1
+        },
+        "baseUrl": {
+          "type": "string",
+          "minLength": 1
+        },
+        "auth": {
+          "type": "object",
+          "propertyNames": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_]{0,63}$(?![\\s\\S])"
+          },
+          "additionalProperties": {
+            "type": "object",
+            "properties": {
+              "secretRef": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9_]{0,63}$(?![\\s\\S])"
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "secretRef"
+            ]
+          },
+          "minProperties": 0
+        },
+        "parameters": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/Json"
+          }
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "provider",
+        "model"
+      ]
+    },
+    "ToolPolicy": {
+      "type": "object",
+      "properties": {
+        "effect": {
+          "enum": [
+            "read",
+            "write",
+            "unknown"
+          ]
+        },
+        "idempotencyArgument": {
+          "type": "string",
+          "pattern": "^(/([^~]|~[01])*)+$(?![\\s\\S])"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "effect"
+      ]
+    },
+    "McpConnection": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "transport": {
+              "const": "streamable_http"
+            },
+            "allowedTools": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "pattern": "^[A-Za-z0-9_.-]{1,128}$(?![\\s\\S])"
+              },
+              "minItems": 0,
+              "uniqueItems": true
+            },
+            "toolPolicies": {
+              "type": "object",
+              "propertyNames": {
+                "type": "string",
+                "pattern": "^[A-Za-z0-9_.-]{1,128}$(?![\\s\\S])"
+              },
+              "additionalProperties": {
+                "$ref": "#/$defs/ToolPolicy"
+              }
+            },
+            "allowRunSession": {
+              "type": "boolean",
+              "default": false
+            },
+            "url": {
+              "type": "string",
+              "minLength": 1
+            },
+            "headers": {
+              "type": "object",
+              "additionalProperties": {
+                "$ref": "#/$defs/CredentialValue"
+              }
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "transport",
+            "url",
+            "allowedTools"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "transport": {
+              "const": "stdio"
+            },
+            "allowedTools": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "pattern": "^[A-Za-z0-9_.-]{1,128}$(?![\\s\\S])"
+              },
+              "minItems": 0,
+              "uniqueItems": true
+            },
+            "toolPolicies": {
+              "type": "object",
+              "propertyNames": {
+                "type": "string",
+                "pattern": "^[A-Za-z0-9_.-]{1,128}$(?![\\s\\S])"
+              },
+              "additionalProperties": {
+                "$ref": "#/$defs/ToolPolicy"
+              }
+            },
+            "allowRunSession": {
+              "type": "boolean",
+              "default": false
+            },
+            "sandbox": {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9_]{0,63}$(?![\\s\\S])"
+            },
+            "command": {
+              "$ref": "#/$defs/Argv"
+            },
+            "env": {
+              "type": "object",
+              "propertyNames": {
+                "type": "string",
+                "pattern": "^[A-Za-z_][A-Za-z0-9_]*$(?![\\s\\S])"
+              },
+              "additionalProperties": {
+                "$ref": "#/$defs/CredentialValue"
+              }
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "transport",
+            "sandbox",
+            "command",
+            "allowedTools"
+          ]
+        }
+      ]
+    },
+    "Resources": {
+      "type": "object",
+      "properties": {
+        "cpu": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "maximum": 128
+        },
+        "memoryMiB": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 2147483647
+        },
+        "diskMiB": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 2147483647
+        },
+        "pids": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 2147483647
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "cpu",
+        "memoryMiB",
+        "diskMiB",
+        "pids"
+      ]
+    },
+    "Network": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "mode": {
+              "const": "none"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "mode"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "mode": {
+              "const": "allowlist"
+            },
+            "hosts": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1
+              },
+              "minItems": 1,
+              "uniqueItems": true
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "mode",
+            "hosts"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "mode": {
+              "const": "any"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "mode"
+          ]
+        }
+      ]
+    },
+    "SandboxProfile": {
+      "type": "object",
+      "properties": {
+        "image": {
+          "type": "string",
+          "minLength": 1
+        },
+        "resources": {
+          "$ref": "#/$defs/Resources"
+        },
+        "network": {
+          "$ref": "#/$defs/Network"
+        },
+        "allowedTools": {
+          "type": "array",
+          "items": {
+            "enum": [
+              "files.read",
+              "files.write",
+              "process.exec"
+            ]
+          },
+          "minItems": 0,
+          "uniqueItems": true
+        },
+        "allowedSecrets": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_]{0,63}$(?![\\s\\S])"
+          },
+          "minItems": 0,
+          "uniqueItems": true
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "image",
+        "resources",
+        "network",
+        "allowedTools"
+      ]
+    },
+    "ProfileLimits": {
+      "type": "object",
+      "properties": {
+        "timeout": {
+          "type": "string",
+          "pattern": "^[1-9][0-9]*(ms|s|m|h)$(?![\\s\\S])"
+        },
+        "maxConcurrentNodes": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 2147483647
+        },
+        "maxNodeInstances": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 2147483647
+        },
+        "maxModelCalls": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 2147483647
+        },
+        "maxToolCalls": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 2147483647
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "timeout",
+        "maxConcurrentNodes",
+        "maxNodeInstances",
+        "maxModelCalls",
+        "maxToolCalls"
+      ]
+    },
+    "ProfileSpec": {
+      "type": "object",
+      "properties": {
+        "secrets": {
+          "type": "object",
+          "propertyNames": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_]{0,63}$(?![\\s\\S])"
+          },
+          "additionalProperties": {
+            "$ref": "#/$defs/SecretSource"
+          },
+          "minProperties": 0
+        },
+        "models": {
+          "type": "object",
+          "propertyNames": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_]{0,63}$(?![\\s\\S])"
+          },
+          "additionalProperties": {
+            "$ref": "#/$defs/ModelConnection"
+          },
+          "minProperties": 0
+        },
+        "mcp": {
+          "type": "object",
+          "propertyNames": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_]{0,63}$(?![\\s\\S])"
+          },
+          "additionalProperties": {
+            "$ref": "#/$defs/McpConnection"
+          },
+          "minProperties": 0
+        },
+        "sandboxes": {
+          "type": "object",
+          "propertyNames": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_]{0,63}$(?![\\s\\S])"
+          },
+          "additionalProperties": {
+            "$ref": "#/$defs/SandboxProfile"
+          },
+          "minProperties": 0
+        },
+        "limits": {
+          "$ref": "#/$defs/ProfileLimits"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "limits"
+      ]
+    },
+    "EngineProfile": {
+      "type": "object",
+      "properties": {
+        "apiVersion": {
+          "const": "knotra/v1"
+        },
+        "kind": {
+          "const": "EngineProfile"
+        },
+        "metadata": {
+          "$ref": "#/$defs/Metadata"
+        },
+        "spec": {
+          "$ref": "#/$defs/ProfileSpec"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "apiVersion",
+        "kind",
+        "metadata",
+        "spec"
+      ]
+    }
+  }
+}

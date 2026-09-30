@@ -1,0 +1,10 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$defs": {
+    "reply": {
+      "type": "string",
+      "minLength": 1
+    }
+  },
+  "$ref": "#/$defs/reply"
+}
