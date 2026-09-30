@@ -1,0 +1,33 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "main-window",
+  "description": "Native package dialogs, durable workspace storage and a restricted engine client.",
+  "windows": [
+    "main"
+  ],
+  "permissions": [
+    "core:default",
+    "allow-open-package",
+    "allow-export-package",
+    "allow-export-file",
+    {
+      "identifier": "opener:allow-open-url",
+      "allow": [
+        {
+          "url": "https://github.com/michael-bill/knotra"
+        }
+      ]
+    },
+    "allow-workspace-load",
+    "allow-workspace-save",
+    "allow-engine-connect",
+    "allow-engine-disconnect",
+    "allow-engine-call",
+    "allow-engine-cache",
+    "allow-engine-download",
+    "allow-engine-watch",
+    "allow-engine-unwatch",
+    "allow-engine-events",
+    "core:window:allow-destroy"
+  ]
+}

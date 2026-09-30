@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-engine-cache"
+description = "Enables the engine_cache command without any pre-configured scope."
+commands.allow = ["engine_cache"]
+
+[[permission]]
+identifier = "deny-engine-cache"
+description = "Denies the engine_cache command without any pre-configured scope."
+commands.deny = ["engine_cache"]

@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-engine-unwatch"
+description = "Enables the engine_unwatch command without any pre-configured scope."
+commands.allow = ["engine_unwatch"]
+
+[[permission]]
+identifier = "deny-engine-unwatch"
+description = "Denies the engine_unwatch command without any pre-configured scope."
+commands.deny = ["engine_unwatch"]

@@ -1,0 +1,1785 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Knotra desktop engine boundary",
+    "version": "0.1.0-proposal",
+    "description": "PROPOSAL. The app implements this client. No Go engine implementation is supplied. See desktop-v1.md for normative idempotency, events, security and execution rules."
+  },
+  "servers": [
+    {
+      "url": "http://127.0.0.1:8080/v1",
+      "description": "Future local engine"
+    }
+  ],
+  "security": [
+    {
+      "bearerAuth": []
+    },
+    {}
+  ],
+  "paths": {
+    "/info": {
+      "get": {
+        "operationId": "get_info",
+        "summary": "Discover protocol and durable engine identity",
+        "responses": {
+          "200": {
+            "description": "Successful result or durable command receipt.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Info"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Definitive rejection or engine failure. Consult status and code before retrying.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/profiles": {
+      "get": {
+        "operationId": "get_profiles",
+        "summary": "List engine profiles",
+        "responses": {
+          "200": {
+            "description": "Successful result or durable command receipt.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/Profile"
+                      }
+                    }
+                  },
+                  "required": [
+                    "items"
+                  ]
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Definitive rejection or engine failure. Consult status and code before retrying.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/resources": {
+      "get": {
+        "operationId": "get_resources",
+        "summary": "List engine resources",
+        "responses": {
+          "200": {
+            "description": "Successful result or durable command receipt.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/Resource"
+                      }
+                    }
+                  },
+                  "required": [
+                    "items"
+                  ]
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Definitive rejection or engine failure. Consult status and code before retrying.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/packages/validate": {
+      "post": {
+        "operationId": "post_packages_validate",
+        "summary": "Validate package, inputs and engine admission",
+        "responses": {
+          "200": {
+            "description": "Successful result or durable command receipt.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "valid": {
+                      "type": "boolean"
+                    },
+                    "diagnostics": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/Diagnostic"
+                      }
+                    }
+                  },
+                  "required": [
+                    "valid",
+                    "diagnostics"
+                  ]
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Definitive rejection or engine failure. Consult status and code before retrying.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "package": {
+                    "$ref": "#/components/schemas/Package"
+                  },
+                  "profile": {
+                    "type": "string"
+                  },
+                  "inputs": {
+                    "type": "object",
+                    "additionalProperties": true
+                  },
+                  "artifacts": {
+                    "$ref": "#/components/schemas/ArtifactBindings"
+                  }
+                },
+                "required": [
+                  "package",
+                  "profile",
+                  "inputs",
+                  "artifacts"
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    "/definitions": {
+      "get": {
+        "operationId": "get_definitions",
+        "summary": "List immutable definition versions",
+        "responses": {
+          "200": {
+            "description": "Successful result or durable command receipt.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/Definition"
+                      }
+                    }
+                  },
+                  "required": [
+                    "items"
+                  ]
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Definitive rejection or engine failure. Consult status and code before retrying.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "operationId": "post_definitions",
+        "summary": "Commit immutable package version",
+        "responses": {
+          "200": {
+            "description": "Successful result or durable command receipt.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "definition": {
+                      "$ref": "#/components/schemas/Definition"
+                    }
+                  },
+                  "required": [
+                    "definition"
+                  ]
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Definitive rejection or engine failure. Consult status and code before retrying.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9_-]{1,128}$"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "package": {
+                    "$ref": "#/components/schemas/Package"
+                  }
+                },
+                "required": [
+                  "package"
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    "/definitions/{definitionId}": {
+      "get": {
+        "operationId": "get_definitions_definitionId",
+        "summary": "Read exact definition snapshot",
+        "responses": {
+          "200": {
+            "description": "Successful result or durable command receipt.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "definition": {
+                      "$ref": "#/components/schemas/Definition"
+                    }
+                  },
+                  "required": [
+                    "definition"
+                  ]
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Definitive rejection or engine failure. Consult status and code before retrying.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "definitionId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            }
+          }
+        ]
+      }
+    },
+    "/runs": {
+      "get": {
+        "operationId": "get_runs",
+        "summary": "List authoritative run projections",
+        "responses": {
+          "200": {
+            "description": "Successful result or durable command receipt.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RunPage"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Definitive rejection or engine failure. Consult status and code before retrying.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      },
+      "post": {
+        "operationId": "post_runs",
+        "summary": "Admit and accept a run",
+        "responses": {
+          "200": {
+            "description": "Successful result or durable command receipt.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "run": {
+                      "$ref": "#/components/schemas/Run"
+                    }
+                  },
+                  "required": [
+                    "run"
+                  ]
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Definitive rejection or engine failure. Consult status and code before retrying.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9_-]{1,128}$"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "definitionId": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 256
+                  },
+                  "profile": {
+                    "type": "string"
+                  },
+                  "inputs": {
+                    "type": "object",
+                    "additionalProperties": true
+                  },
+                  "artifacts": {
+                    "$ref": "#/components/schemas/ArtifactBindings"
+                  }
+                },
+                "required": [
+                  "definitionId",
+                  "profile",
+                  "inputs",
+                  "artifacts"
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    "/runs/{runId}": {
+      "get": {
+        "operationId": "get_runs_runId",
+        "summary": "Read run with immutable snapshot and instance addresses",
+        "responses": {
+          "200": {
+            "description": "Successful result or durable command receipt.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "run": {
+                      "$ref": "#/components/schemas/Run"
+                    }
+                  },
+                  "required": [
+                    "run"
+                  ]
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Definitive rejection or engine failure. Consult status and code before retrying.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "runId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            }
+          }
+        ]
+      }
+    },
+    "/runs/{runId}/cancel": {
+      "post": {
+        "operationId": "post_runs_runId_cancel",
+        "summary": "Request cancel without inventing client-side transitions",
+        "responses": {
+          "200": {
+            "description": "Successful result or durable command receipt.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AcceptedRun"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Definitive rejection or engine failure. Consult status and code before retrying.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "runId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9_-]{1,128}$"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {},
+                "required": []
+              }
+            }
+          }
+        }
+      }
+    },
+    "/runs/{runId}/resume": {
+      "post": {
+        "operationId": "post_runs_runId_resume",
+        "summary": "Request resume without inventing client-side transitions",
+        "responses": {
+          "200": {
+            "description": "Successful result or durable command receipt.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AcceptedRun"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Definitive rejection or engine failure. Consult status and code before retrying.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "runId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9_-]{1,128}$"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {},
+                "required": []
+              }
+            }
+          }
+        }
+      }
+    },
+    "/runs/{runId}/instances/{instanceId}/resolve": {
+      "post": {
+        "operationId": "post_runs_runId_instances_instanceId_resolve",
+        "summary": "Resolve an unknown external outcome using evidence",
+        "responses": {
+          "200": {
+            "description": "Successful result or durable command receipt.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AcceptedRun"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Definitive rejection or engine failure. Consult status and code before retrying.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "runId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            }
+          },
+          {
+            "name": "instanceId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9_-]{1,128}$"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Resolution"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/requests": {
+      "get": {
+        "operationId": "get_requests",
+        "summary": "List saved human requests",
+        "responses": {
+          "200": {
+            "description": "Successful result or durable command receipt.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HumanRequestPage"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Definitive rejection or engine failure. Consult status and code before retrying.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      }
+    },
+    "/requests/{requestId}/response": {
+      "post": {
+        "operationId": "post_requests_requestId_response",
+        "summary": "Accept first valid response to exactly this saved request",
+        "responses": {
+          "200": {
+            "description": "Successful result or durable command receipt.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AcceptedResponse"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Definitive rejection or engine failure. Consult status and code before retrying.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "requestId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9_-]{1,128}$"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "outputs": {
+                    "type": "object",
+                    "additionalProperties": true
+                  }
+                },
+                "required": [
+                  "outputs"
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    "/artifacts": {
+      "get": {
+        "operationId": "get_artifacts",
+        "summary": "List immutable registered artifact descriptors",
+        "responses": {
+          "200": {
+            "description": "Successful result or durable command receipt.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ArtifactPage"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Definitive rejection or engine failure. Consult status and code before retrying.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      },
+      "post": {
+        "operationId": "post_artifacts",
+        "summary": "Register uploaded input bytes",
+        "responses": {
+          "200": {
+            "description": "Successful result or durable command receipt.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "artifact": {
+                      "$ref": "#/components/schemas/Artifact"
+                    }
+                  },
+                  "required": [
+                    "artifact"
+                  ]
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Definitive rejection or engine failure. Consult status and code before retrying.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9_-]{1,128}$"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string"
+                  },
+                  "mediaType": {
+                    "type": "string"
+                  },
+                  "content": {
+                    "type": "string",
+                    "contentEncoding": "base64"
+                  }
+                },
+                "required": [
+                  "name",
+                  "mediaType",
+                  "content"
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    "/artifacts/{artifactId}": {
+      "get": {
+        "operationId": "get_artifacts_artifactId",
+        "summary": "Read artifact identity, hash and origin",
+        "responses": {
+          "200": {
+            "description": "Successful result or durable command receipt.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "artifact": {
+                      "$ref": "#/components/schemas/Artifact"
+                    }
+                  },
+                  "required": [
+                    "artifact"
+                  ]
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Definitive rejection or engine failure. Consult status and code before retrying.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "artifactId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            }
+          }
+        ]
+      }
+    },
+    "/artifacts/{artifactId}/content": {
+      "get": {
+        "operationId": "get_artifact_content",
+        "summary": "Read exact bytes; redirects not permitted",
+        "parameters": [
+          {
+            "name": "artifactId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Immutable artifact bytes.",
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Artifact unavailable or not authorized.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/runs/{runId}/events": {
+      "get": {
+        "operationId": "watch_run_events",
+        "summary": "Durable SSE with replay, event IDs and heartbeat comments",
+        "parameters": [
+          {
+            "name": "runId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            }
+          },
+          {
+            "name": "Last-Event-ID",
+            "in": "header",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "SSE frames: id equals Event.id; data is Event JSON; heartbeat <=30s; frame <=256KiB.",
+            "content": {
+              "text/event-stream": {
+                "schema": {
+                  "type": "string"
+                },
+                "example": "id: e1\ndata: {\"id\":\"e1\",\"runId\":\"r1\",\"at\":\"2026-10-01T00:00:00Z\",\"type\":\"run.updated\",\"message\":\"Started\"}\n\n"
+              }
+            }
+          },
+          "default": {
+            "description": "Run or retained cursor unavailable; never silently skip a history gap.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "Error": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "diagnostics": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Diagnostic"
+            }
+          }
+        },
+        "required": [
+          "code",
+          "message",
+          "diagnostics"
+        ]
+      },
+      "Diagnostic": {
+        "type": "object",
+        "properties": {
+          "severity": {
+            "enum": [
+              "error",
+              "warning"
+            ]
+          },
+          "code": {
+            "type": "string"
+          },
+          "phase": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          },
+          "file": {
+            "type": "string"
+          },
+          "line": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "column": {
+            "type": "integer",
+            "minimum": 1
+          }
+        },
+        "required": [
+          "severity",
+          "code",
+          "phase",
+          "message",
+          "path"
+        ]
+      },
+      "PackageFile": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string"
+          },
+          "content": {
+            "type": "string",
+            "contentEncoding": "base64"
+          }
+        },
+        "required": [
+          "path",
+          "content"
+        ]
+      },
+      "Package": {
+        "type": "object",
+        "properties": {
+          "entrypoint": {
+            "type": "string"
+          },
+          "source": {
+            "type": "string"
+          },
+          "files": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PackageFile"
+            },
+            "maxItems": 511
+          }
+        },
+        "required": [
+          "entrypoint",
+          "source",
+          "files"
+        ]
+      },
+      "Info": {
+        "type": "object",
+        "properties": {
+          "protocol": {
+            "const": "knotra.desktop/1"
+          },
+          "engineId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          },
+          "version": {
+            "type": "string"
+          },
+          "capabilities": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "principalId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          }
+        },
+        "required": [
+          "protocol",
+          "engineId",
+          "version",
+          "capabilities",
+          "principalId"
+        ]
+      },
+      "Profile": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          },
+          "title": {
+            "type": "string"
+          },
+          "revision": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "revision"
+        ]
+      },
+      "Resource": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          },
+          "kind": {
+            "enum": [
+              "model",
+              "mcp",
+              "sandbox",
+              "secret"
+            ]
+          },
+          "title": {
+            "type": "string"
+          },
+          "capabilities": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "status": {
+            "enum": [
+              "available",
+              "unavailable"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "title",
+          "capabilities",
+          "status"
+        ]
+      },
+      "Definition": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          },
+          "name": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "packageDigest": {
+            "type": "string"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "package": {
+            "$ref": "#/components/schemas/Package"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "title",
+          "packageDigest",
+          "createdAt",
+          "package"
+        ]
+      },
+      "Status": {
+        "enum": [
+          "pending",
+          "ready",
+          "running",
+          "retry_wait",
+          "waiting_human",
+          "waiting_resolution",
+          "succeeded",
+          "skipped",
+          "failed",
+          "cancelled"
+        ]
+      },
+      "Artifact": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          },
+          "name": {
+            "type": "string"
+          },
+          "mediaType": {
+            "type": "string"
+          },
+          "size": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 67108864
+          },
+          "sha256": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          },
+          "origin": {
+            "type": "object",
+            "properties": {
+              "runId": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 256
+              },
+              "instanceId": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 256
+              },
+              "attemptId": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 256
+              },
+              "operationId": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 256
+              }
+            },
+            "required": []
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "mediaType",
+          "size",
+          "sha256",
+          "origin"
+        ]
+      },
+      "Instance": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          },
+          "nodeId": {
+            "type": "string"
+          },
+          "scope": {
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/Status"
+          },
+          "attemptId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          },
+          "error": {
+            "$ref": "#/components/schemas/Diagnostic"
+          }
+        },
+        "required": [
+          "id",
+          "nodeId",
+          "scope",
+          "status"
+        ]
+      },
+      "Event": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          },
+          "runId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          },
+          "at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "type": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "instanceId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          },
+          "attemptId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          },
+          "operationId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          },
+          "data": {}
+        },
+        "required": [
+          "id",
+          "runId",
+          "at",
+          "type",
+          "message"
+        ]
+      },
+      "ArtifactBindings": {
+        "type": "object",
+        "additionalProperties": {
+          "oneOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            },
+            {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 256
+              }
+            }
+          ]
+        }
+      },
+      "HumanRequest": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          },
+          "runId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          },
+          "instanceId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          },
+          "attemptId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          },
+          "status": {
+            "enum": [
+              "open",
+              "answered",
+              "cancelled",
+              "expired"
+            ]
+          },
+          "prompt": {
+            "type": "string"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "deadline": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "inputs": {
+            "type": "object",
+            "properties": {
+              "values": {
+                "type": "object",
+                "additionalProperties": true
+              },
+              "artifacts": {
+                "type": "object",
+                "additionalProperties": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/Artifact"
+                    },
+                    {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/Artifact"
+                      }
+                    }
+                  ]
+                }
+              }
+            },
+            "required": [
+              "values",
+              "artifacts"
+            ]
+          },
+          "responseSchema": {
+            "oneOf": [
+              {
+                "type": "object"
+              },
+              {
+                "type": "boolean"
+              }
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "runId",
+          "instanceId",
+          "attemptId",
+          "status",
+          "prompt",
+          "createdAt",
+          "deadline",
+          "inputs",
+          "responseSchema"
+        ]
+      },
+      "Resolution": {
+        "type": "object",
+        "properties": {
+          "outcome": {
+            "enum": [
+              "succeeded",
+              "not_started",
+              "failed"
+            ]
+          },
+          "evidence": {
+            "type": "string",
+            "minLength": 1
+          },
+          "outputs": {
+            "type": "object",
+            "additionalProperties": true
+          }
+        },
+        "required": [
+          "outcome",
+          "evidence"
+        ]
+      },
+      "AcceptedRun": {
+        "type": "object",
+        "properties": {
+          "accepted": {
+            "const": true
+          },
+          "runId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          }
+        },
+        "required": [
+          "accepted",
+          "runId"
+        ]
+      },
+      "AcceptedResponse": {
+        "type": "object",
+        "properties": {
+          "accepted": {
+            "const": true
+          },
+          "requestId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          }
+        },
+        "required": [
+          "accepted",
+          "requestId"
+        ]
+      },
+      "Run": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          },
+          "definitionId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          },
+          "title": {
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/Status"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "profile": {
+            "type": "string"
+          },
+          "package": {
+            "$ref": "#/components/schemas/Package"
+          },
+          "inputs": {
+            "type": "object",
+            "additionalProperties": true
+          },
+          "inputArtifacts": {
+            "$ref": "#/components/schemas/ArtifactBindings"
+          },
+          "outputs": {
+            "type": "object",
+            "additionalProperties": true
+          },
+          "artifacts": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Artifact"
+            }
+          },
+          "instances": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Instance"
+            }
+          },
+          "diagnostics": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Diagnostic"
+            }
+          },
+          "availableActions": {
+            "type": "array",
+            "items": {
+              "enum": [
+                "cancel",
+                "resume",
+                "resolve"
+              ]
+            }
+          }
+        },
+        "required": [
+          "id",
+          "definitionId",
+          "title",
+          "status",
+          "createdAt",
+          "updatedAt",
+          "profile",
+          "package",
+          "inputs",
+          "inputArtifacts",
+          "outputs",
+          "artifacts",
+          "instances",
+          "diagnostics",
+          "availableActions"
+        ]
+      },
+      "RunPage": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Run"
+            }
+          },
+          "nextCursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "items",
+          "nextCursor"
+        ]
+      },
+      "HumanRequestPage": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/HumanRequest"
+            }
+          },
+          "nextCursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "items",
+          "nextCursor"
+        ]
+      },
+      "ArtifactPage": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Artifact"
+            }
+          },
+          "nextCursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "items",
+          "nextCursor"
+        ]
+      }
+    },
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "description": "Required for remote HTTPS deployments; optional loopback according to engine policy."
+      }
+    }
+  }
+}

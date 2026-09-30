@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-engine-connect"
+description = "Enables the engine_connect command without any pre-configured scope."
+commands.allow = ["engine_connect"]
+
+[[permission]]
+identifier = "deny-engine-connect"
+description = "Denies the engine_connect command without any pre-configured scope."
+commands.deny = ["engine_connect"]

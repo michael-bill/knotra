@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-engine-watch"
+description = "Enables the engine_watch command without any pre-configured scope."
+commands.allow = ["engine_watch"]
+
+[[permission]]
+identifier = "deny-engine-watch"
+description = "Denies the engine_watch command without any pre-configured scope."
+commands.deny = ["engine_watch"]

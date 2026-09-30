@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-engine-disconnect"
+description = "Enables the engine_disconnect command without any pre-configured scope."
+commands.allow = ["engine_disconnect"]
+
+[[permission]]
+identifier = "deny-engine-disconnect"
+description = "Denies the engine_disconnect command without any pre-configured scope."
+commands.deny = ["engine_disconnect"]

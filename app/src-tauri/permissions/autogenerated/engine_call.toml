@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-engine-call"
+description = "Enables the engine_call command without any pre-configured scope."
+commands.allow = ["engine_call"]
+
+[[permission]]
+identifier = "deny-engine-call"
+description = "Denies the engine_call command without any pre-configured scope."
+commands.deny = ["engine_call"]

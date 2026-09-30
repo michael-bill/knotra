@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-engine-events"
+description = "Enables the engine_events command without any pre-configured scope."
+commands.allow = ["engine_events"]
+
+[[permission]]
+identifier = "deny-engine-events"
+description = "Denies the engine_events command without any pre-configured scope."
+commands.deny = ["engine_events"]

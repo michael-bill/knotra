@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-workspace-load"
+description = "Enables the workspace_load command without any pre-configured scope."
+commands.allow = ["workspace_load"]
+
+[[permission]]
+identifier = "deny-workspace-load"
+description = "Denies the workspace_load command without any pre-configured scope."
+commands.deny = ["workspace_load"]
