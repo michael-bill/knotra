@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+
 	"github.com/michael-bill/knotra/internal/contract"
 	"github.com/michael-bill/knotra/internal/engine"
 	"github.com/michael-bill/knotra/internal/protocol"
@@ -30,6 +31,7 @@ func lockRun(ctx context.Context, tx pgx.Tx, id string) (protocol.Run, bool, err
 	}
 	return run, cancelling, classify(err)
 }
+
 func Cancel(ctx context.Context, tx pgx.Tx, id string) error {
 	run, cancelling, err := lockRun(ctx, tx, id)
 	if err != nil {
@@ -84,15 +86,33 @@ func Respond(ctx context.Context, tx pgx.Tx, id, responseID string, values contr
 	if err != nil {
 		return err
 	}
-	if _, err = tx.Exec(ctx, "UPDATE knotra_requests SET status='answered',response_id=$2,response=$3,accepted_at=$4 WHERE id=$1", id, responseID, response, accepted); err != nil {
+	if _, err = tx.Exec(
+		ctx,
+		"UPDATE knotra_requests SET status='answered',response_id=$2,response=$3,accepted_at=$4 WHERE id=$1",
+		id,
+		responseID,
+		response,
+		accepted,
+	); err != nil {
 		return err
 	}
-	return Enqueue(ctx, tx, runID, "human", engine.HumanSignal{RequestID: id, ResponseID: responseID, Values: values, AcceptedAt: accepted})
+	return Enqueue(
+		ctx,
+		tx,
+		runID,
+		"human",
+		engine.HumanSignal{RequestID: id, ResponseID: responseID, Values: values, AcceptedAt: accepted},
+	)
 }
 
 // Resolve accepts only the currently open, matching resolution. It never sends
 // arbitrary instance/operation IDs into a workflow or silently ignores bad data.
-func Resolve(ctx context.Context, tx pgx.Tx, runID, instanceID, responseID, decision, evidence string, outputs contract.Values) error {
+func Resolve(
+	ctx context.Context,
+	tx pgx.Tx,
+	runID, instanceID, responseID, decision, evidence string,
+	outputs contract.Values,
+) error {
 	run, cancelling, err := lockRun(ctx, tx, runID)
 	if err != nil {
 		return err
@@ -101,7 +121,12 @@ func Resolve(ctx context.Context, tx pgx.Tx, runID, instanceID, responseID, deci
 		return ErrConflict
 	}
 	var b []byte
-	err = tx.QueryRow(ctx, `SELECT document FROM knotra_requests WHERE run_id=$1 AND kind='resolution' AND status='open' AND document->>'instanceId'=$2 ORDER BY created_at DESC LIMIT 1 FOR UPDATE`, runID, instanceID).Scan(&b)
+	err = tx.QueryRow(
+		ctx,
+		`SELECT document FROM knotra_requests WHERE run_id=$1 AND kind='resolution' AND status='open' AND document->>'instanceId'=$2 ORDER BY created_at DESC LIMIT 1 FOR UPDATE`,
+		runID,
+		instanceID,
+	).Scan(&b)
 	if err != nil {
 		return classify(err)
 	}
@@ -115,6 +140,7 @@ func Resolve(ctx context.Context, tx pgx.Tx, runID, instanceID, responseID, deci
 	if strings.TrimSpace(evidence) == "" {
 		return &ValidationError{"resolution requires evidence"}
 	}
+
 	switch decision {
 	case "completed":
 		for key, value := range outputs {
@@ -137,13 +163,29 @@ func Resolve(ctx context.Context, tx pgx.Tx, runID, instanceID, responseID, deci
 	default:
 		return &ValidationError{fmt.Sprintf("invalid resolution decision %q", decision)}
 	}
+
 	accepted := time.Now().UTC()
-	signal := engine.ResolutionSignal{AcceptedAt: accepted, InstanceID: instanceID, OperationID: req.Failure.OperationID, ResponseID: responseID, Decision: decision, Evidence: evidence, Outputs: outputs}
+	signal := engine.ResolutionSignal{
+		AcceptedAt:  accepted,
+		InstanceID:  instanceID,
+		OperationID: req.Failure.OperationID,
+		ResponseID:  responseID,
+		Decision:    decision,
+		Evidence:    evidence,
+		Outputs:     outputs,
+	}
 	response, err := raw(signal)
 	if err != nil {
 		return err
 	}
-	if _, err = tx.Exec(ctx, "UPDATE knotra_requests SET status='resolved',response_id=$2,response=$3,accepted_at=$4 WHERE id=$1", req.ID, responseID, response, accepted); err != nil {
+	if _, err = tx.Exec(
+		ctx,
+		"UPDATE knotra_requests SET status='resolved',response_id=$2,response=$3,accepted_at=$4 WHERE id=$1",
+		req.ID,
+		responseID,
+		response,
+		accepted,
+	); err != nil {
 		return err
 	}
 	return Enqueue(ctx, tx, runID, "resolve", signal)
@@ -163,7 +205,16 @@ func (s *Store) Resolution(ctx context.Context, q engine.AnswerRequest) (*engine
 	var status string
 	var b []byte
 	var accepted *time.Time
-	err = tx.QueryRow(ctx, "SELECT status,response,accepted_at FROM knotra_requests WHERE id=$1 AND run_id=$2 AND kind='resolution' FOR UPDATE", q.RequestID, q.RunID).Scan(&status, &b, &accepted)
+	err = tx.QueryRow(
+		ctx,
+		"SELECT status,response,accepted_at FROM knotra_requests WHERE id=$1 AND run_id=$2 AND kind='resolution' FOR UPDATE",
+		q.RequestID,
+		q.RunID,
+	).Scan(
+		&status,
+		&b,
+		&accepted,
+	)
 	if err != nil {
 		return nil, classify(err)
 	}
@@ -179,7 +230,12 @@ func (s *Store) Resolution(ctx context.Context, q engine.AnswerRequest) (*engine
 		if q.CloseIfAbsent != "cancelled" && q.CloseIfAbsent != "expired" {
 			return nil, ErrConflict
 		}
-		if _, err = tx.Exec(ctx, "UPDATE knotra_requests SET status=$2 WHERE id=$1 AND status IN ('open','pending')", q.RequestID, q.CloseIfAbsent); err != nil {
+		if _, err = tx.Exec(
+			ctx,
+			"UPDATE knotra_requests SET status=$2 WHERE id=$1 AND status IN ('open','pending')",
+			q.RequestID,
+			q.CloseIfAbsent,
+		); err != nil {
 			return nil, err
 		}
 	}

@@ -65,9 +65,7 @@
                       }
                     }
                   },
-                  "required": [
-                    "items"
-                  ]
+                  "required": ["items"]
                 }
               }
             }
@@ -104,9 +102,7 @@
                       }
                     }
                   },
-                  "required": [
-                    "items"
-                  ]
+                  "required": ["items"]
                 }
               }
             }
@@ -146,10 +142,7 @@
                       }
                     }
                   },
-                  "required": [
-                    "valid",
-                    "diagnostics"
-                  ]
+                  "required": ["valid", "diagnostics"]
                 }
               }
             }
@@ -186,12 +179,7 @@
                     "$ref": "#/components/schemas/ArtifactBindings"
                   }
                 },
-                "required": [
-                  "package",
-                  "profile",
-                  "inputs",
-                  "artifacts"
-                ]
+                "required": ["package", "profile", "inputs", "artifacts"]
               }
             }
           }
@@ -217,16 +205,10 @@
                       }
                     },
                     "nextCursor": {
-                      "type": [
-                        "string",
-                        "null"
-                      ]
+                      "type": ["string", "null"]
                     }
                   },
-                  "required": [
-                    "items",
-                    "nextCursor"
-                  ]
+                  "required": ["items", "nextCursor"]
                 }
               }
             }
@@ -268,9 +250,7 @@
                       "$ref": "#/components/schemas/Definition"
                     }
                   },
-                  "required": [
-                    "definition"
-                  ]
+                  "required": ["definition"]
                 }
               }
             }
@@ -308,9 +288,7 @@
                     "$ref": "#/components/schemas/Package"
                   }
                 },
-                "required": [
-                  "package"
-                ]
+                "required": ["package"]
               }
             }
           }
@@ -333,9 +311,7 @@
                       "$ref": "#/components/schemas/Definition"
                     }
                   },
-                  "required": [
-                    "definition"
-                  ]
+                  "required": ["definition"]
                 }
               }
             }
@@ -417,9 +393,7 @@
                       "$ref": "#/components/schemas/Run"
                     }
                   },
-                  "required": [
-                    "run"
-                  ]
+                  "required": ["run"]
                 }
               }
             }
@@ -469,12 +443,7 @@
                     "$ref": "#/components/schemas/ArtifactBindings"
                   }
                 },
-                "required": [
-                  "definitionId",
-                  "profile",
-                  "inputs",
-                  "artifacts"
-                ]
+                "required": ["definitionId", "profile", "inputs", "artifacts"]
               }
             }
           }
@@ -497,9 +466,7 @@
                       "$ref": "#/components/schemas/Run"
                     }
                   },
-                  "required": [
-                    "run"
-                  ]
+                  "required": ["run"]
                 }
               }
             }
@@ -817,9 +784,7 @@
                     "additionalProperties": true
                   }
                 },
-                "required": [
-                  "outputs"
-                ]
+                "required": ["outputs"]
               }
             }
           }
@@ -878,9 +843,7 @@
                       "$ref": "#/components/schemas/Artifact"
                     }
                   },
-                  "required": [
-                    "artifact"
-                  ]
+                  "required": ["artifact"]
                 }
               }
             }
@@ -925,11 +888,7 @@
                     "contentEncoding": "base64"
                   }
                 },
-                "required": [
-                  "name",
-                  "mediaType",
-                  "content"
-                ]
+                "required": ["name", "mediaType", "content"]
               }
             }
           }
@@ -952,9 +911,7 @@
                       "$ref": "#/components/schemas/Artifact"
                     }
                   },
-                  "required": [
-                    "artifact"
-                  ]
+                  "required": ["artifact"]
                 }
               }
             }
@@ -1094,20 +1051,13 @@
             }
           }
         },
-        "required": [
-          "code",
-          "message",
-          "diagnostics"
-        ]
+        "required": ["code", "message", "diagnostics"]
       },
       "Diagnostic": {
         "type": "object",
         "properties": {
           "severity": {
-            "enum": [
-              "error",
-              "warning"
-            ]
+            "enum": ["error", "warning"]
           },
           "code": {
             "type": "string"
@@ -1133,13 +1083,7 @@
             "minimum": 1
           }
         },
-        "required": [
-          "severity",
-          "code",
-          "phase",
-          "message",
-          "path"
-        ]
+        "required": ["severity", "code", "phase", "message", "path"]
       },
       "PackageFile": {
         "type": "object",
@@ -1152,10 +1096,7 @@
             "contentEncoding": "base64"
           }
         },
-        "required": [
-          "path",
-          "content"
-        ]
+        "required": ["path", "content"]
       },
       "Package": {
         "type": "object",
@@ -1176,11 +1117,7 @@
             "description": "Complete package manifest, including the entrypoint. Its decoded bytes must equal source when source is nonempty."
           }
         },
-        "required": [
-          "entrypoint",
-          "source",
-          "files"
-        ]
+        "required": ["entrypoint", "source", "files"]
       },
       "Info": {
         "type": "object",
@@ -1208,13 +1145,7 @@
             "maxLength": 256
           }
         },
-        "required": [
-          "protocol",
-          "engineId",
-          "version",
-          "capabilities",
-          "principalId"
-        ]
+        "required": ["protocol", "engineId", "version", "capabilities", "principalId"]
       },
       "Profile": {
         "type": "object",
@@ -1231,11 +1162,7 @@
             "type": "string"
           }
         },
-        "required": [
-          "id",
-          "title",
-          "revision"
-        ]
+        "required": ["id", "title", "revision"]
       },
       "Resource": {
         "type": "object",
@@ -1246,12 +1173,7 @@
             "maxLength": 256
           },
           "kind": {
-            "enum": [
-              "model",
-              "mcp",
-              "sandbox",
-              "secret"
-            ]
+            "enum": ["model", "mcp", "sandbox", "secret"]
           },
           "title": {
             "type": "string"
@@ -1263,19 +1185,10 @@
             }
           },
           "status": {
-            "enum": [
-              "available",
-              "unavailable"
-            ]
+            "enum": ["available", "unavailable"]
           }
         },
-        "required": [
-          "id",
-          "kind",
-          "title",
-          "capabilities",
-          "status"
-        ]
+        "required": ["id", "kind", "title", "capabilities", "status"]
       },
       "Definition": {
         "type": "object",
@@ -1302,14 +1215,7 @@
             "$ref": "#/components/schemas/Package"
           }
         },
-        "required": [
-          "id",
-          "name",
-          "title",
-          "packageDigest",
-          "createdAt",
-          "package"
-        ]
+        "required": ["id", "name", "title", "packageDigest", "createdAt", "package"]
       },
       "Status": {
         "enum": [
@@ -1375,14 +1281,7 @@
             "required": []
           }
         },
-        "required": [
-          "id",
-          "name",
-          "mediaType",
-          "size",
-          "sha256",
-          "origin"
-        ]
+        "required": ["id", "name", "mediaType", "size", "sha256", "origin"]
       },
       "Instance": {
         "type": "object",
@@ -1410,12 +1309,7 @@
             "$ref": "#/components/schemas/Diagnostic"
           }
         },
-        "required": [
-          "id",
-          "nodeId",
-          "scope",
-          "status"
-        ]
+        "required": ["id", "nodeId", "scope", "status"]
       },
       "Event": {
         "type": "object",
@@ -1457,13 +1351,7 @@
           },
           "data": {}
         },
-        "required": [
-          "id",
-          "runId",
-          "at",
-          "type",
-          "message"
-        ]
+        "required": ["id", "runId", "at", "type", "message"]
       },
       "ArtifactBindings": {
         "type": "object",
@@ -1509,12 +1397,7 @@
             "maxLength": 256
           },
           "status": {
-            "enum": [
-              "open",
-              "answered",
-              "cancelled",
-              "expired"
-            ]
+            "enum": ["open", "answered", "cancelled", "expired"]
           },
           "prompt": {
             "type": "string"
@@ -1551,10 +1434,7 @@
                 }
               }
             },
-            "required": [
-              "values",
-              "artifacts"
-            ]
+            "required": ["values", "artifacts"]
           },
           "responseSchema": {
             "oneOf": [
@@ -1584,11 +1464,7 @@
         "type": "object",
         "properties": {
           "outcome": {
-            "enum": [
-              "succeeded",
-              "not_started",
-              "failed"
-            ]
+            "enum": ["succeeded", "not_started", "failed"]
           },
           "evidence": {
             "type": "string",
@@ -1599,10 +1475,7 @@
             "additionalProperties": true
           }
         },
-        "required": [
-          "outcome",
-          "evidence"
-        ]
+        "required": ["outcome", "evidence"]
       },
       "AcceptedRun": {
         "type": "object",
@@ -1616,10 +1489,7 @@
             "maxLength": 256
           }
         },
-        "required": [
-          "accepted",
-          "runId"
-        ]
+        "required": ["accepted", "runId"]
       },
       "AcceptedResponse": {
         "type": "object",
@@ -1633,10 +1503,7 @@
             "maxLength": 256
           }
         },
-        "required": [
-          "accepted",
-          "requestId"
-        ]
+        "required": ["accepted", "requestId"]
       },
       "Run": {
         "type": "object",
@@ -1703,11 +1570,7 @@
           "availableActions": {
             "type": "array",
             "items": {
-              "enum": [
-                "cancel",
-                "resume",
-                "resolve"
-              ]
+              "enum": ["cancel", "resume", "resolve"]
             }
           }
         },
@@ -1739,16 +1602,10 @@
             }
           },
           "nextCursor": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           }
         },
-        "required": [
-          "items",
-          "nextCursor"
-        ]
+        "required": ["items", "nextCursor"]
       },
       "HumanRequestPage": {
         "type": "object",
@@ -1760,16 +1617,10 @@
             }
           },
           "nextCursor": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           }
         },
-        "required": [
-          "items",
-          "nextCursor"
-        ]
+        "required": ["items", "nextCursor"]
       },
       "ArtifactPage": {
         "type": "object",
@@ -1781,16 +1632,10 @@
             }
           },
           "nextCursor": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           }
         },
-        "required": [
-          "items",
-          "nextCursor"
-        ]
+        "required": ["items", "nextCursor"]
       },
       "ContextArtifact": {
         "type": "object",
@@ -1814,12 +1659,7 @@
             "pattern": "^[a-f0-9]{64}$"
           }
         },
-        "required": [
-          "id",
-          "mediaType",
-          "size",
-          "sha256"
-        ]
+        "required": ["id", "mediaType", "size", "sha256"]
       }
     },
     "securitySchemes": {

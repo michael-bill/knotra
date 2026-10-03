@@ -25,15 +25,16 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"github.com/modelcontextprotocol/go-sdk/mcp"
+	"go.temporal.io/api/enums/v1"
+	"go.temporal.io/api/serviceerror"
+	temporalclient "go.temporal.io/sdk/client"
+
 	"github.com/michael-bill/knotra/internal/app"
 	"github.com/michael-bill/knotra/internal/cli"
 	"github.com/michael-bill/knotra/internal/client"
 	"github.com/michael-bill/knotra/internal/contract"
 	"github.com/michael-bill/knotra/internal/protocol"
-	"github.com/modelcontextprotocol/go-sdk/mcp"
-	"go.temporal.io/api/enums/v1"
-	"go.temporal.io/api/serviceerror"
-	temporalclient "go.temporal.io/sdk/client"
 )
 
 // This acceptance test runs real services end to end. No model, Docker, MCP,
@@ -85,10 +86,23 @@ func TestRealConcurrentPipelines(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelInfo}))
 	serverCtx, stopServer := context.WithCancel(ctx)
 	serverDone := make(chan error, 1)
-	options := app.Options{Listen: address, DatabaseURL: dsn, TemporalAddress: env("KNOTRA_TEST_TEMPORAL", "127.0.0.1:7233"), Namespace: env("KNOTRA_TEST_NAMESPACE", "default"), TaskQueue: "knotra-real-" + uuid.NewString(), DataDir: filepath.Join(work, "engine"), DockerHost: os.Getenv("DOCKER_HOST"), HelperPath: snapshotHelper(t, root, work), FirewallImage: env("KNOTRA_TEST_FIREWALL_IMAGE", "knotra-firewall:dev"), Profiles: []string{profilePath}, Version: "integration"}
+	options := app.Options{
+		Listen:          address,
+		DatabaseURL:     dsn,
+		TemporalAddress: env("KNOTRA_TEST_TEMPORAL", "127.0.0.1:7233"),
+		Namespace:       env("KNOTRA_TEST_NAMESPACE", "default"),
+		TaskQueue:       "knotra-real-" + uuid.NewString(),
+		DataDir:         filepath.Join(work, "engine"),
+		DockerHost:      os.Getenv("DOCKER_HOST"),
+		HelperPath:      snapshotHelper(t, root, work),
+		FirewallImage:   env("KNOTRA_TEST_FIREWALL_IMAGE", "knotra-firewall:dev"),
+		Profiles:        []string{profilePath},
+		Version:         "integration",
+	}
 	go func() { defer close(serverDone); serverDone <- app.Serve(serverCtx, options, logger) }()
 	t.Cleanup(func() {
 		stopServer()
+
 		select {
 		case err := <-serverDone:
 			if err != nil && !errors.Is(err, context.Canceled) {
@@ -117,7 +131,11 @@ func TestRealConcurrentPipelines(t *testing.T) {
 	if err := api.Command(ctx, "/definitions", map[string]any{"package": pkg}, uuid.NewString(), &definition); err != nil {
 		t.Fatal(err)
 	}
-	markers := []string{"report-alpha-" + uuid.NewString(), "report-beta-" + uuid.NewString(), "report-gamma-" + uuid.NewString()}
+	markers := []string{
+		"report-alpha-" + uuid.NewString(),
+		"report-beta-" + uuid.NewString(),
+		"report-gamma-" + uuid.NewString(),
+	}
 	type execution struct {
 		marker      string
 		run         protocol.Run
@@ -131,15 +149,18 @@ func TestRealConcurrentPipelines(t *testing.T) {
 			return
 		}
 		var owned []string
+
 		for _, run := range runs {
 			if run != nil {
 				owned = append(owned, run.run.ID)
 			}
 		}
+
 		cleanupWorkflows(t, options, owned)
 	})
 	started := make(chan error, len(markers))
 	var starters sync.WaitGroup
+
 	for i, marker := range markers {
 		starters.Go(func() {
 			var response struct {
@@ -149,12 +170,39 @@ func TestRealConcurrentPipelines(t *testing.T) {
 			if i == 0 {
 				var output bytes.Buffer
 				encoded, _ := json.Marshal(marker)
-				err = cli.Execute(ctx, []string{"--endpoint", api.BaseURL, "--state-dir", filepath.Join(work, "cli"), "--json", "run", filepath.Join(root, "examples/integration/pipeline.yaml"), "--profile", profile.Metadata.Name, "--input", "marker=" + string(encoded)}, cli.Options{Out: &output, Err: &output})
+				err = cli.Execute(
+					ctx,
+					[]string{
+						"--endpoint",
+						api.BaseURL,
+						"--state-dir",
+						filepath.Join(work, "cli"),
+						"--json",
+						"run",
+						filepath.Join(root, "examples/integration/pipeline.yaml"),
+						"--profile",
+						profile.Metadata.Name,
+						"--input",
+						"marker=" + string(encoded),
+					},
+					cli.Options{Out: &output, Err: &output},
+				)
 				if err == nil {
 					err = json.Unmarshal(output.Bytes(), &response)
 				}
 			} else {
-				err = api.Command(ctx, "/runs", map[string]any{"definitionId": definition.Definition.ID, "profile": profile.Metadata.Name, "inputs": map[string]any{"marker": marker}, "artifacts": map[string]any{}}, uuid.NewString(), &response)
+				err = api.Command(
+					ctx,
+					"/runs",
+					map[string]any{
+						"definitionId": definition.Definition.ID,
+						"profile":      profile.Metadata.Name,
+						"inputs":       map[string]any{"marker": marker},
+						"artifacts":    map[string]any{},
+					},
+					uuid.NewString(),
+					&response,
+				)
 			}
 			if err != nil {
 				started <- err
@@ -164,14 +212,18 @@ func TestRealConcurrentPipelines(t *testing.T) {
 			t.Logf("started independent run %s (%s)", response.Run.ID, marker)
 		})
 	}
+
 	starters.Wait()
 	close(started)
+
 	for err := range started {
 		t.Error(err)
 	}
+
 	if t.Failed() {
 		return
 	}
+
 	for _, run := range runs {
 		runID := run.run.ID
 		watchCtx, watchCancel := context.WithCancel(ctx)
@@ -192,36 +244,53 @@ func TestRealConcurrentPipelines(t *testing.T) {
 			run.watchDone <- err
 		}()
 	}
+
 	approved := map[string]bool{}
 	finished := map[string]bool{}
 	ticker := time.NewTicker(time.Second)
 	defer ticker.Stop()
+
 	for len(finished) < len(runs) {
 		select {
 		case <-ctx.Done():
 			t.Fatal(ctx.Err())
 		case <-ticker.C:
 		}
+
 		var requests protocol.Page[protocol.HumanRequest]
 		if err := api.Get(ctx, "/requests", &requests); err != nil {
 			t.Fatal(err)
 		}
+
 		for _, request := range requests.Items {
 			if request.Status != "open" || approved[request.ID] {
 				continue
 			}
 			var ignored any
-			err := api.Command(ctx, "/requests/"+request.ID+"/response", map[string]any{"outputs": map[string]any{"approved": "yes"}}, uuid.NewString(), &ignored)
+			err := api.Command(
+				ctx,
+				"/requests/"+request.ID+"/response",
+				map[string]any{"outputs": map[string]any{"approved": "yes"}},
+				uuid.NewString(),
+				&ignored,
+			)
 			var httpErr *client.HTTPError
 			if !errors.As(err, &httpErr) || httpErr.Status != 422 {
 				t.Fatalf("invalid human response was not rejected: %v", err)
 			}
-			if err := api.Command(ctx, "/requests/"+request.ID+"/response", map[string]any{"outputs": map[string]any{"approved": true}}, uuid.NewString(), &ignored); err != nil {
+			if err := api.Command(
+				ctx,
+				"/requests/"+request.ID+"/response",
+				map[string]any{"outputs": map[string]any{"approved": true}},
+				uuid.NewString(),
+				&ignored,
+			); err != nil {
 				t.Fatal(err)
 			}
 			approved[request.ID] = true
 			t.Logf("validated and approved human request for run %s", request.RunID)
 		}
+
 		for _, run := range runs {
 			if finished[run.run.ID] {
 				continue
@@ -244,6 +313,7 @@ func TestRealConcurrentPipelines(t *testing.T) {
 			}
 		}
 	}
+
 	for _, run := range runs {
 		select {
 		case err := <-run.watchDone:
@@ -254,6 +324,7 @@ func TestRealConcurrentPipelines(t *testing.T) {
 			t.Fatal("terminal SSE event missing")
 		}
 	}
+
 	if t.Failed() {
 		return
 	}
@@ -263,6 +334,7 @@ func TestRealConcurrentPipelines(t *testing.T) {
 	allEvents := []protocol.Event{}
 	leafIDs := map[string]bool{}
 	artifacts := map[string]bool{}
+
 	for _, run := range runs {
 		if len(run.run.Instances) != 18 {
 			t.Errorf("unexpected dynamic instance count %d", len(run.run.Instances))
@@ -271,14 +343,29 @@ func TestRealConcurrentPipelines(t *testing.T) {
 			t.Errorf("incorrect deterministic outputs: %v", run.run.Outputs)
 		}
 		skipped := 0
+
 		for _, instance := range run.run.Instances {
 			if instance.NodeID == "fallback" && instance.Status == "skipped" {
 				skipped++
 			}
-			if slices.Contains([]string{"prepare", "double", "increment", "write_report", "narrative", "statistics", "assemble", "archive", "verify"}, instance.NodeID) {
+			if slices.Contains(
+				[]string{
+					"prepare",
+					"double",
+					"increment",
+					"write_report",
+					"narrative",
+					"statistics",
+					"assemble",
+					"archive",
+					"verify",
+				},
+				instance.NodeID,
+			) {
 				leafIDs[instance.ID] = true
 			}
 		}
+
 		if skipped != 1 {
 			t.Error("unselected branch was not skipped")
 		}
@@ -301,17 +388,21 @@ func TestRealConcurrentPipelines(t *testing.T) {
 		if !strings.Contains(string(content), "Run marker: "+run.marker) || !strings.Contains(string(content), "Doubled total: 24") {
 			t.Fatalf("report is not this run's result: %s", content)
 		}
+
 		for _, other := range markers {
 			if other != run.marker && strings.Contains(string(content), other) {
 				t.Fatal("agent/file data leaked between runs")
 			}
 		}
+
 		allEvents = append(allEvents, run.events...)
 		assertAgentEvidence(t, ctx, dsn, run.run)
 	}
+
 	slices.SortStableFunc(allEvents, func(a, b protocol.Event) int { return a.At.Compare(b.At) })
 	active := map[string]string{}
 	maxLeaves, maxRuns := 0, 0
+
 	for _, event := range allEvents {
 		if !leafIDs[event.InstanceID] {
 			continue
@@ -324,16 +415,20 @@ func TestRealConcurrentPipelines(t *testing.T) {
 			delete(active, event.InstanceID)
 		}
 		activeRuns := map[string]bool{}
+
 		for _, id := range active {
 			activeRuns[id] = true
 		}
+
 		maxLeaves = max(maxLeaves, len(active))
 		maxRuns = max(maxRuns, len(activeRuns))
 	}
+
 	if maxLeaves < 2 || maxRuns < 2 {
 		t.Fatalf("no actual cross-run parallel execution: leaves=%d runs=%d", maxLeaves, maxRuns)
 	}
 	checkMCPJournal(t, serviceDir, markers)
+
 	for _, run := range runs {
 		command := exec.CommandContext(ctx, "docker", "ps", "-aq", "--filter", "label=io.knotra.run="+run.run.ID)
 		if options.DockerHost != "" {
@@ -347,16 +442,47 @@ func TestRealConcurrentPipelines(t *testing.T) {
 			t.Errorf("containers leaked for run %s: %s", run.run.ID, output)
 		}
 	}
-	t.Logf("real acceptance passed: 3 concurrent runs, 15 static/18 dynamic nodes each, peak %d leaves across %d runs, 3 verified independent reports", maxLeaves, maxRuns)
+
+	t.Logf(
+		"real acceptance passed: 3 concurrent runs, 15 static/18 dynamic nodes each, peak %d leaves across %d runs, 3 verified independent reports",
+		maxLeaves,
+		maxRuns,
+	)
 }
 
 func integrationProfile(mcpURL, ollamaURL string) contract.Profile {
 	return contract.Profile{APIVersion: "knotra/v1", Kind: "EngineProfile", Metadata: contract.Metadata{Name: "real-integration"}, Spec: contract.ProfileSpec{
-		Secrets:   map[string]contract.SecretSource{"integration_label": {Env: "KNOTRA_INTEGRATION_LABEL"}},
-		Models:    map[string]contract.ModelConnection{"local_model": {Provider: "ollama", Model: "qwen3.5:9b", BaseURL: ollamaURL, Parameters: map[string]any{"think": false, "temperature": 0, "num_predict": 512, "num_ctx": 8192}}},
-		MCP:       map[string]contract.MCPConnection{"dataset_service": {Transport: "streamable_http", URL: mcpURL, AllowedTools: []string{"stats", "archive"}, AllowRunSession: true, ToolPolicies: map[string]contract.ToolPolicy{"stats": {Effect: "read"}, "archive": {Effect: "write", IdempotencyArgument: "/key"}}}},
-		Sandboxes: map[string]contract.SandboxProfile{"python": {Image: "python:3.13-alpine", Resources: contract.Resources{CPU: 0.5, MemoryMiB: 256, DiskMiB: 64, Pids: 64}, Network: contract.Network{Mode: "none"}, AllowedTools: []string{"files.read", "files.write", "process.exec"}, AllowedSecrets: []string{"integration_label"}}},
-		Limits:    contract.Limits{Timeout: "30m", MaxConcurrentNodes: 6, MaxNodeInstances: 128, MaxModelCalls: 40, MaxToolCalls: 100},
+		Secrets: map[string]contract.SecretSource{"integration_label": {Env: "KNOTRA_INTEGRATION_LABEL"}},
+		Models: map[string]contract.ModelConnection{"local_model": {
+			Provider:   "ollama",
+			Model:      "qwen3.5:9b",
+			BaseURL:    ollamaURL,
+			Parameters: map[string]any{"think": false, "temperature": 0, "num_predict": 512, "num_ctx": 8192},
+		}},
+		MCP: map[string]contract.MCPConnection{"dataset_service": {
+			Transport:       "streamable_http",
+			URL:             mcpURL,
+			AllowedTools:    []string{"stats", "archive"},
+			AllowRunSession: true,
+			ToolPolicies: map[string]contract.ToolPolicy{
+				"stats":   {Effect: "read"},
+				"archive": {Effect: "write", IdempotencyArgument: "/key"},
+			},
+		}},
+		Sandboxes: map[string]contract.SandboxProfile{"python": {
+			Image:          "python:3.13-alpine",
+			Resources:      contract.Resources{CPU: 0.5, MemoryMiB: 256, DiskMiB: 64, Pids: 64},
+			Network:        contract.Network{Mode: "none"},
+			AllowedTools:   []string{"files.read", "files.write", "process.exec"},
+			AllowedSecrets: []string{"integration_label"},
+		}},
+		Limits: contract.Limits{
+			Timeout:            "30m",
+			MaxConcurrentNodes: 6,
+			MaxNodeInstances:   128,
+			MaxModelCalls:      40,
+			MaxToolCalls:       100,
+		},
 	}}
 }
 
@@ -419,6 +545,7 @@ func cleanupWorkflows(t *testing.T, options app.Options, owned []string) {
 		return
 	}
 	defer connection.Close()
+
 	for _, id := range owned {
 		state, err := connection.DescribeWorkflowExecution(ctx, id, "")
 		var missing *serviceerror.NotFound
@@ -489,11 +616,13 @@ func waitReady(t *testing.T, ctx context.Context, c *client.Client, done <-chan 
 	defer timeout.Stop()
 	ticker := time.NewTicker(200 * time.Millisecond)
 	defer ticker.Stop()
+
 	for {
 		var info map[string]any
 		if c.Get(ctx, "/info", &info) == nil {
 			return
 		}
+
 		select {
 		case err := <-done:
 			t.Fatalf("engine startup failed: %v", err)
@@ -510,6 +639,7 @@ func staticNodes(plan *contract.Plan) int {
 	var graph func(contract.Graph) int
 	graph = func(g contract.Graph) int {
 		n := len(g.Nodes)
+
 		for _, node := range g.Nodes {
 			if node.Foreach != nil {
 				n += graph(node.Foreach.Body)
@@ -518,12 +648,15 @@ func staticNodes(plan *contract.Plan) int {
 				n += graph(node.Loop.Body)
 			}
 		}
+
 		return n
 	}
 	total := 0
+
 	for _, pipeline := range plan.Pipelines {
 		total += graph(pipeline.Spec.Graph)
 	}
+
 	return total
 }
 
@@ -531,22 +664,26 @@ type statsInput struct {
 	Numbers []int64 `json:"numbers"`
 	Marker  string  `json:"marker"`
 }
+
 type statsOutput struct {
 	Count int     `json:"count"`
 	Sum   int64   `json:"sum"`
 	Mean  float64 `json:"mean"`
 }
+
 type archiveInput struct {
 	Caption string `json:"caption"`
 	Total   int64  `json:"total"`
 	Marker  string `json:"marker"`
 	Key     string `json:"key"`
 }
+
 type archiveOutput struct {
 	Receipt string `json:"receipt"`
 	Total   int64  `json:"total"`
 	Writes  int    `json:"writes"`
 }
+
 type auditRecord struct {
 	Tool, Marker, Session string
 	At                    time.Time
@@ -572,11 +709,16 @@ func TestMCPServiceProcess(t *testing.T) {
 		}
 		return file.Sync()
 	}
-	mcp.AddTool(server, &mcp.Tool{Name: "stats", Description: "Compute count, sum and mean for numbers belonging to one run marker."}, func(ctx context.Context, req *mcp.CallToolRequest, input statsInput) (*mcp.CallToolResult, statsOutput, error) {
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "stats",
+		Description: "Compute count, sum and mean for numbers belonging to one run marker.",
+	}, func(ctx context.Context, req *mcp.CallToolRequest, input statsInput) (*mcp.CallToolResult, statsOutput, error) {
 		result := statsOutput{Count: len(input.Numbers)}
+
 		for _, number := range input.Numbers {
 			result.Sum += number
 		}
+
 		if result.Count > 0 {
 			result.Mean = float64(result.Sum) / float64(result.Count)
 		}
@@ -593,7 +735,10 @@ func TestMCPServiceProcess(t *testing.T) {
 		record := struct {
 			Input  archiveInput
 			Output archiveOutput
-		}{Input: input, Output: archiveOutput{Receipt: input.Key, Total: input.Total, Writes: 1}}
+		}{
+			Input:  input,
+			Output: archiveOutput{Receipt: input.Key, Total: input.Total, Writes: 1},
+		}
 		raw, err := os.ReadFile(path)
 		if err == nil {
 			var existing struct {
@@ -632,7 +777,10 @@ func TestMCPServiceProcess(t *testing.T) {
 		err = appendAudit(auditRecord{"archive", input.Marker, req.Session.ID(), time.Now().UTC()})
 		return nil, record.Output, err
 	})
-	handler := mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return server }, &mcp.StreamableHTTPOptions{JSONResponse: true})
+	handler := mcp.NewStreamableHTTPHandler(
+		func(*http.Request) *mcp.Server { return server },
+		&mcp.StreamableHTTPOptions{JSONResponse: true},
+	)
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
@@ -662,6 +810,7 @@ func startMCPService(t *testing.T, ctx context.Context, directory string) string
 	go func() { done <- command.Wait() }()
 	t.Cleanup(func() {
 		cancel()
+
 		select {
 		case <-done:
 		case <-time.After(10 * time.Second):
@@ -671,6 +820,7 @@ func startMCPService(t *testing.T, ctx context.Context, directory string) string
 	ready := make(chan string, 1)
 	go func() {
 		scanner := bufio.NewScanner(output)
+
 		for scanner.Scan() {
 			line := scanner.Text()
 			if strings.HasPrefix(line, "KNOTRA_MCP_URL=") {
@@ -678,6 +828,7 @@ func startMCPService(t *testing.T, ctx context.Context, directory string) string
 			}
 		}
 	}()
+
 	select {
 	case endpoint := <-ready:
 		return endpoint
@@ -686,6 +837,7 @@ func startMCPService(t *testing.T, ctx context.Context, directory string) string
 	case <-ctx.Done():
 		t.Fatal(ctx.Err())
 	}
+
 	return ""
 }
 
@@ -700,6 +852,7 @@ func checkMCPJournal(t *testing.T, directory string, markers []string) {
 	stats := map[string]int{}
 	writes := map[string]int{}
 	sessions := map[string]map[string]bool{}
+
 	for {
 		var record auditRecord
 		err := decoder.Decode(&record)
@@ -722,7 +875,9 @@ func checkMCPJournal(t *testing.T, directory string, markers []string) {
 		}
 		sessions[record.Marker][record.Session] = true
 	}
+
 	unique := map[string]bool{}
+
 	for _, marker := range markers {
 		if stats[marker] < 2 || writes[marker] != 1 {
 			t.Errorf("MCP work missing/duplicated for %s: stats=%d archive=%d", marker, stats[marker], writes[marker])
@@ -730,6 +885,7 @@ func checkMCPJournal(t *testing.T, directory string, markers []string) {
 		if len(sessions[marker]) != 1 {
 			t.Errorf("run session unexpectedly changed: %v", sessions[marker])
 		}
+
 		for session := range sessions[marker] {
 			if session == "" || unique[session] {
 				t.Error("MCP run session shared across runs or missing")
@@ -737,6 +893,7 @@ func checkMCPJournal(t *testing.T, directory string, markers []string) {
 			unique[session] = true
 		}
 	}
+
 	files, err := filepath.Glob(filepath.Join(directory, "record-*.json"))
 	if err != nil || len(files) != len(markers) {
 		t.Fatalf("expected three durable archive records, got %d (%v)", len(files), err)

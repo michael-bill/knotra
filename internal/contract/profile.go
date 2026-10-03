@@ -35,26 +35,44 @@ func validateProfile(p Profile) []Diagnostic {
 			secret(v.SecretRef, where)
 		}
 	}
+
 	for _, name := range sortedKeys(p.Spec.Models) {
 		m := p.Spec.Models[name]
 		where := "/spec/models/" + name
 		if m.BaseURL != "" {
 			add(where+"/baseUrl", httpURL(m.BaseURL))
 		}
+
 		for key, auth := range m.Auth {
 			credential(auth, where+"/auth/"+key)
 		}
 	}
+
 	headerName := regexp.MustCompile("^[!#$%&'*+.^_`|~0-9A-Za-z-]+$")
+
 	for _, name := range sortedKeys(p.Spec.MCP) {
 		m := p.Spec.MCP[name]
 		where := "/spec/mcp/" + name
 		if m.Transport == "streamable_http" {
 			add(where+"/url", httpURL(m.URL))
 			seen := map[string]bool{}
+
 			for _, key := range sortedKeys(m.Headers) {
 				lower := strings.ToLower(key)
-				if !headerName.MatchString(key) || seen[lower] || contains([]string{"host", "content-length", "connection", "transfer-encoding", "accept", "content-type", "mcp-session-id", "mcp-protocol-version", "last-event-id"}, lower) {
+				if !headerName.MatchString(key) || seen[lower] || contains(
+					[]string{
+						"host",
+						"content-length",
+						"connection",
+						"transfer-encoding",
+						"accept",
+						"content-type",
+						"mcp-session-id",
+						"mcp-protocol-version",
+						"last-event-id",
+					},
+					lower,
+				) {
 					add(where+"/headers", fmt.Errorf("invalid, duplicate or reserved HTTP header %q", key))
 				}
 				seen[lower] = true
@@ -70,6 +88,7 @@ func validateProfile(p Profile) []Diagnostic {
 			if !ok {
 				add(where+"/sandbox", fmt.Errorf("unknown sandbox %q", m.Sandbox))
 			}
+
 			for key, v := range m.Env {
 				credential(v, where+"/env/"+key)
 				if strings.HasPrefix(key, "KNOTRA_") {
@@ -80,6 +99,7 @@ func validateProfile(p Profile) []Diagnostic {
 				}
 			}
 		}
+
 		for _, tool := range sortedKeys(m.ToolPolicies) {
 			policy := m.ToolPolicies[tool]
 			if !contains(m.AllowedTools, tool) {
@@ -91,14 +111,19 @@ func validateProfile(p Profile) []Diagnostic {
 			}
 		}
 	}
+
 	hostname := regexp.MustCompile(`^[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?$`)
+
 	for _, name := range sortedKeys(p.Spec.Sandboxes) {
 		s := p.Spec.Sandboxes[name]
 		where := "/spec/sandboxes/" + name
+
 		for _, ref := range s.AllowedSecrets {
 			secret(ref, where+"/allowedSecrets")
 		}
+
 		seen := map[string]bool{}
+
 		for _, host := range s.Network.Hosts {
 			normalized := strings.ToLower(strings.TrimSuffix(host, "."))
 			if ip := net.ParseIP(host); ip != nil {
@@ -107,6 +132,7 @@ func validateProfile(p Profile) []Diagnostic {
 				if len(normalized) > 253 {
 					add(where, fmt.Errorf("DNS name too long"))
 				}
+
 				for _, label := range strings.Split(normalized, ".") {
 					if !hostname.MatchString(label) {
 						add(where, fmt.Errorf("invalid exact DNS host %q", host))
@@ -120,6 +146,7 @@ func validateProfile(p Profile) []Diagnostic {
 			seen[normalized] = true
 		}
 	}
+
 	return out
 }
 
@@ -135,6 +162,7 @@ func (c *compiler) admit(file string, ceiling *Permissions, parent Limits, depth
 	profile := c.plan.Profile.Spec
 	limits, err := narrowLimits(parent, spec.Limits)
 	c.add("LIMIT_EXCEEDED", "admission", file, "/spec/limits", err)
+
 	for _, name := range sortedKeys(spec.Models) {
 		m := spec.Models[name]
 		connection, ok := profile.Models[m.Connection]
@@ -142,21 +170,31 @@ func (c *compiler) admit(file string, ceiling *Permissions, parent Limits, depth
 			c.add("RESOURCE_UNKNOWN", "admission", file, "/spec/models/"+name, fmt.Errorf("unknown profile model %q", m.Connection))
 		}
 		if ceiling != nil && !contains(ceiling.Models, m.Connection) {
-			c.add("PERMISSION_DENIED", "admission", file, "/spec/models/"+name, fmt.Errorf("model %q outside delegated permissions", m.Connection))
+			c.add(
+				"PERMISSION_DENIED",
+				"admission",
+				file,
+				"/spec/models/"+name,
+				fmt.Errorf("model %q outside delegated permissions", m.Connection),
+			)
 		}
 		if m.Model == "" {
 			m.Model = connection.Model
 		}
 		params := map[string]any{}
+
 		for k, v := range connection.Parameters {
 			params[k] = v
 		}
+
 		for k, v := range m.Parameters {
 			params[k] = v
 		}
+
 		m.Parameters = params
 		spec.Models[name] = m
 	}
+
 	for _, name := range sortedKeys(spec.MCP) {
 		m := spec.MCP[name]
 		connection, ok := profile.MCP[m.Connection]
@@ -165,31 +203,58 @@ func (c *compiler) admit(file string, ceiling *Permissions, parent Limits, depth
 		}
 		if ceiling != nil {
 			if _, ok := ceiling.MCP[m.Connection]; !ok {
-				c.add("PERMISSION_DENIED", "admission", file, "/spec/mcp/"+name, fmt.Errorf("MCP %q outside delegated permissions", m.Connection))
+				c.add(
+					"PERMISSION_DENIED",
+					"admission",
+					file,
+					"/spec/mcp/"+name,
+					fmt.Errorf("MCP %q outside delegated permissions", m.Connection),
+				)
 			}
 		}
 		if m.Session == "run" && !connection.AllowRunSession {
 			c.add("PERMISSION_DENIED", "admission", file, "/spec/mcp/"+name, fmt.Errorf("run session not permitted"))
 		}
 	}
+
 	for _, name := range sortedKeys(spec.Sandboxes) {
 		s := spec.Sandboxes[name]
 		if _, ok := profile.Sandboxes[s.Profile]; !ok {
-			c.add("RESOURCE_UNKNOWN", "admission", file, "/spec/sandboxes/"+name, fmt.Errorf("unknown profile sandbox %q", s.Profile))
+			c.add(
+				"RESOURCE_UNKNOWN",
+				"admission",
+				file,
+				"/spec/sandboxes/"+name,
+				fmt.Errorf("unknown profile sandbox %q", s.Profile),
+			)
 		}
 		if ceiling != nil && !contains(ceiling.Sandboxes, s.Profile) {
-			c.add("PERMISSION_DENIED", "admission", file, "/spec/sandboxes/"+name, fmt.Errorf("sandbox %q outside delegated permissions", s.Profile))
+			c.add(
+				"PERMISSION_DENIED",
+				"admission",
+				file,
+				"/spec/sandboxes/"+name,
+				fmt.Errorf("sandbox %q outside delegated permissions", s.Profile),
+			)
 		}
 	}
+
 	for _, name := range sortedKeys(spec.Secrets) {
 		s := spec.Secrets[name]
 		if _, ok := profile.Secrets[s.Ref]; !ok {
 			c.add("RESOURCE_UNKNOWN", "admission", file, "/spec/secrets/"+name, fmt.Errorf("unknown profile secret %q", s.Ref))
 		}
 		if ceiling != nil && !contains(ceiling.Secrets, s.Ref) {
-			c.add("PERMISSION_DENIED", "admission", file, "/spec/secrets/"+name, fmt.Errorf("secret %q outside delegated permissions", s.Ref))
+			c.add(
+				"PERMISSION_DENIED",
+				"admission",
+				file,
+				"/spec/secrets/"+name,
+				fmt.Errorf("secret %q outside delegated permissions", s.Ref),
+			)
 		}
 	}
+
 	grant := func(alias, tool, where string) {
 		resource, ok := spec.MCP[alias]
 		if !ok {
@@ -198,10 +263,22 @@ func (c *compiler) admit(file string, ceiling *Permissions, parent Limits, depth
 		}
 		connection := profile.MCP[resource.Connection]
 		if !contains(connection.AllowedTools, tool) {
-			c.add("PERMISSION_DENIED", "admission", file, where, fmt.Errorf("tool %s/%s not allowed by profile", resource.Connection, tool))
+			c.add(
+				"PERMISSION_DENIED",
+				"admission",
+				file,
+				where,
+				fmt.Errorf("tool %s/%s not allowed by profile", resource.Connection, tool),
+			)
 		}
 		if ceiling != nil && !contains(ceiling.MCP[resource.Connection], tool) {
-			c.add("PERMISSION_DENIED", "admission", file, where, fmt.Errorf("tool %s/%s outside delegated permissions", resource.Connection, tool))
+			c.add(
+				"PERMISSION_DENIED",
+				"admission",
+				file,
+				where,
+				fmt.Errorf("tool %s/%s outside delegated permissions", resource.Connection, tool),
+			)
 		}
 	}
 	// Unused default grants must still be valid declarations.
@@ -210,6 +287,7 @@ func (c *compiler) admit(file string, ceiling *Permissions, parent Limits, depth
 			grant(alias, tool, "/spec/defaults/tools")
 		}
 	}
+
 	var graph func(Graph, string)
 	graph = func(g Graph, prefix string) {
 		for _, name := range sortedKeys(g.Nodes) {
@@ -237,12 +315,19 @@ func (c *compiler) admit(file string, ceiling *Permissions, parent Limits, depth
 						}
 					}
 				}
+
 				for _, env := range sortedKeys(n.Env) {
 					v := n.Env[env]
 					if v.Secret != "" {
 						canonical := spec.Secrets[v.Secret].Ref
 						if !contains(sandbox.AllowedSecrets, canonical) {
-							c.add("PERMISSION_DENIED", "admission", file, where+"/env/"+env, fmt.Errorf("secret %s not allowed in sandbox", canonical))
+							c.add(
+								"PERMISSION_DENIED",
+								"admission",
+								file,
+								where+"/env/"+env,
+								fmt.Errorf("secret %s not allowed in sandbox", canonical),
+							)
 						}
 					}
 				}
@@ -268,10 +353,22 @@ func (c *compiler) checkPermissions(file, where string, p Permissions, parent *P
 	check := func(category string, values []string, exists func(string) bool, upper []string) {
 		for _, id := range values {
 			if !exists(id) {
-				c.add("RESOURCE_UNKNOWN", "admission", file, where+"/permissions/"+category, fmt.Errorf("unknown canonical profile ID %q", id))
+				c.add(
+					"RESOURCE_UNKNOWN",
+					"admission",
+					file,
+					where+"/permissions/"+category,
+					fmt.Errorf("unknown canonical profile ID %q", id),
+				)
 			}
 			if parent != nil && !contains(upper, id) {
-				c.add("PERMISSION_DENIED", "admission", file, where+"/permissions/"+category, fmt.Errorf("delegation expands parent permissions for %q", id))
+				c.add(
+					"PERMISSION_DENIED",
+					"admission",
+					file,
+					where+"/permissions/"+category,
+					fmt.Errorf("delegation expands parent permissions for %q", id),
+				)
 			}
 		}
 	}
@@ -282,11 +379,13 @@ func (c *compiler) checkPermissions(file, where string, p Permissions, parent *P
 	check("models", p.Models, func(s string) bool { _, ok := profile.Models[s]; return ok }, ceiling.Models)
 	check("sandboxes", p.Sandboxes, func(s string) bool { _, ok := profile.Sandboxes[s]; return ok }, ceiling.Sandboxes)
 	check("secrets", p.Secrets, func(s string) bool { _, ok := profile.Secrets[s]; return ok }, ceiling.Secrets)
+
 	for _, id := range sortedKeys(p.MCP) {
 		m, ok := profile.MCP[id]
 		if !ok {
 			c.add("RESOURCE_UNKNOWN", "admission", file, where, fmt.Errorf("unknown canonical MCP %q", id))
 		}
+
 		for _, tool := range p.MCP[id] {
 			if !contains(m.AllowedTools, tool) || parent != nil && !contains(parent.MCP[id], tool) {
 				c.add("PERMISSION_DENIED", "admission", file, where, fmt.Errorf("delegation expands permissions for %s/%s", id, tool))
@@ -307,15 +406,22 @@ func narrowLimits(parent, requested Limits) (Limits, error) {
 		*target = requested
 		return nil
 	}
+
 	for _, pair := range []struct {
 		name      string
 		requested int
 		target    *int
-	}{{"maxConcurrentNodes", requested.MaxConcurrentNodes, &out.MaxConcurrentNodes}, {"maxNodeInstances", requested.MaxNodeInstances, &out.MaxNodeInstances}, {"maxModelCalls", requested.MaxModelCalls, &out.MaxModelCalls}, {"maxToolCalls", requested.MaxToolCalls, &out.MaxToolCalls}} {
+	}{
+		{"maxConcurrentNodes", requested.MaxConcurrentNodes, &out.MaxConcurrentNodes},
+		{"maxNodeInstances", requested.MaxNodeInstances, &out.MaxNodeInstances},
+		{"maxModelCalls", requested.MaxModelCalls, &out.MaxModelCalls},
+		{"maxToolCalls", requested.MaxToolCalls, &out.MaxToolCalls},
+	} {
 		if err := check(pair.name, pair.requested, pair.target); err != nil {
 			return out, err
 		}
 	}
+
 	if requested.Timeout != "" {
 		a, err := Duration(requested.Timeout)
 		if err != nil {
@@ -354,16 +460,19 @@ func (c *compiler) offlineDelegation(file string, parent *Permissions, upper Lim
 				c.semantic(file, "/spec/models/"+name, fmt.Errorf("model %q outside delegated permissions", m.Connection))
 			}
 		}
+
 		for name, m := range spec.Sandboxes {
 			if !contains(parent.Sandboxes, m.Profile) {
 				c.semantic(file, "/spec/sandboxes/"+name, fmt.Errorf("sandbox %q outside delegated permissions", m.Profile))
 			}
 		}
+
 		for name, m := range spec.Secrets {
 			if !contains(parent.Secrets, m.Ref) {
 				c.semantic(file, "/spec/secrets/"+name, fmt.Errorf("secret %q outside delegated permissions", m.Ref))
 			}
 		}
+
 		for name, m := range spec.MCP {
 			if _, ok := parent.MCP[m.Connection]; !ok {
 				c.semantic(file, "/spec/mcp/"+name, fmt.Errorf("MCP %q outside delegated permissions", m.Connection))
@@ -380,11 +489,13 @@ func (c *compiler) offlineDelegation(file string, parent *Permissions, upper Lim
 			c.semantic(file, where, fmt.Errorf("tool %s/%s outside delegated permissions", m.Connection, tool))
 		}
 	}
+
 	for alias, list := range spec.Defaults.Tools.MCP {
 		for _, tool := range list {
 			grant(alias, tool, "/spec/defaults/tools")
 		}
 	}
+
 	var visit func(Graph, string)
 	visit = func(g Graph, where string) {
 		for _, name := range sortedKeys(g.Nodes) {
@@ -409,13 +520,18 @@ func (c *compiler) offlineDelegation(file string, parent *Permissions, upper Lim
 			if n.Pipeline != nil {
 				p := n.Pipeline.Permissions
 				if parent != nil {
-					for _, entry := range []struct{ requested, allowed []string }{{p.Models, parent.Models}, {p.Sandboxes, parent.Sandboxes}, {p.Secrets, parent.Secrets}} {
+					for _, entry := range []struct{ requested, allowed []string }{
+						{p.Models, parent.Models},
+						{p.Sandboxes, parent.Sandboxes},
+						{p.Secrets, parent.Secrets},
+					} {
 						for _, id := range entry.requested {
 							if !contains(entry.allowed, id) {
 								c.semantic(file, nodePath, fmt.Errorf("delegation expands ancestor permissions for %q", id))
 							}
 						}
 					}
+
 					for id, tools := range p.MCP {
 						for _, tool := range tools {
 							if !contains(parent.MCP[id], tool) {

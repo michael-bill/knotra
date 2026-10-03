@@ -14,6 +14,7 @@ import (
 )
 
 const sandboxLeaseTTL = 45 * time.Second
+
 const sandboxHeartbeat = 5 * time.Second
 
 func (r *Runner) workRoot() string {
@@ -48,6 +49,7 @@ func (r *Runner) CleanupOwned(ctx context.Context) error {
 	if err = docker.json(ctx, "GET", "/containers/json?all=true&filters="+url.QueryEscape(string(filters)), nil, &containers); err != nil {
 		return err
 	}
+
 	for _, container := range containers {
 		if container.Labels["io.knotra.engine"] != r.EngineID || container.ID == "" {
 			return fmt.Errorf("Docker returned an unexpected container identity during cleanup")
@@ -56,6 +58,7 @@ func (r *Runner) CleanupOwned(ctx context.Context) error {
 			return err
 		}
 	}
+
 	entries, err := os.ReadDir(r.workRoot())
 	if os.IsNotExist(err) {
 		return nil
@@ -63,6 +66,7 @@ func (r *Runner) CleanupOwned(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+
 	for _, entry := range entries {
 		if strings.HasPrefix(entry.Name(), "sandbox-") {
 			if err = os.RemoveAll(filepath.Join(r.workRoot(), entry.Name())); err != nil {
@@ -70,6 +74,7 @@ func (r *Runner) CleanupOwned(ctx context.Context) error {
 			}
 		}
 	}
+
 	return nil
 }
 
@@ -102,6 +107,7 @@ func (s *sandbox) startLease(deadline time.Time) error {
 func keepLease(ctx context.Context, expires time.Time, interval time.Duration, renew func() (time.Time, error)) {
 	tick := time.NewTicker(interval)
 	defer tick.Stop()
+
 	for {
 		select {
 		case <-ctx.Done():

@@ -45,7 +45,12 @@ func (s *commandState) watchRun(ctx context.Context, runID, cursor string, fromS
 		return err
 	}
 	path := filepath.Join(dir, hex.EncodeToString(digest[:])+".json")
-	journal := eventJournal{EngineID: info.EngineID, PrincipalID: info.PrincipalID, RunID: runID, Events: []protocol.Event{}}
+	journal := eventJournal{
+		EngineID:    info.EngineID,
+		PrincipalID: info.PrincipalID,
+		RunID:       runID,
+		Events:      []protocol.Event{},
+	}
 	if cursor == "" && !fromStart {
 		data, err := os.ReadFile(path)
 		if err == nil {
@@ -79,6 +84,7 @@ func (s *commandState) watchRun(ctx context.Context, runID, cursor string, fromS
 			if err != nil {
 				return err
 			}
+
 			for len(data) > 8<<20 && len(journal.Events) > 1 {
 				journal.Events = journal.Events[len(journal.Events)/2:]
 				data, err = json.Marshal(journal)
@@ -86,6 +92,7 @@ func (s *commandState) watchRun(ctx context.Context, runID, cursor string, fromS
 					return err
 				}
 			}
+
 			if err = atomicFile(path, data, true); err != nil {
 				return err
 			}
@@ -93,7 +100,14 @@ func (s *commandState) watchRun(ctx context.Context, runID, cursor string, fromS
 			if s.json {
 				err = s.printJSON(event)
 			} else {
-				_, err = fmt.Fprintf(s.options.Out, "%s  %-20s %-20s %s\n", event.At.Format(time.RFC3339), event.Type, event.InstanceID, safeText(event.Message))
+				_, err = fmt.Fprintf(
+					s.options.Out,
+					"%s  %-20s %-20s %s\n",
+					event.At.Format(time.RFC3339),
+					event.Type,
+					event.InstanceID,
+					safeText(event.Message),
+				)
 			}
 			if err != nil {
 				return err
@@ -106,6 +120,7 @@ func (s *commandState) watchRun(ctx context.Context, runID, cursor string, fromS
 	}()
 	ticker := time.NewTicker(2 * time.Second)
 	defer ticker.Stop()
+
 	for {
 		select {
 		case err := <-done:

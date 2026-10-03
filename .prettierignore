@@ -1,0 +1,12 @@
+**/node_modules/
+**/dist/
+**/target/
+**/gen/
+**/test-results/
+**/playwright-report/
+**/bun.lock
+**/Cargo.lock
+.knotra/
+bin/
+contracts/v1/fixtures/**/*.yaml
+contracts/v1/fixtures/**/*.json

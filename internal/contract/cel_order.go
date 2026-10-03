@@ -25,6 +25,7 @@ func orderedMapConstructors(step interpreter.InterpretableV2) (interpreter.Inter
 			return orderedConstructor{value}, nil
 		}
 	}
+
 	return step, nil
 }
 
@@ -33,6 +34,7 @@ type orderedConstant struct{ interpreter.InterpretableConst }
 func (s orderedConstant) Exec(f *interpreter.ExecutionFrame) ref.Val {
 	return orderedRange(s.InterpretableConst.Exec(f))
 }
+
 func (s orderedConstant) Eval(a interpreter.Activation) ref.Val {
 	return orderedRange(s.InterpretableConst.Eval(a))
 }
@@ -44,6 +46,7 @@ type orderedConstructor struct {
 func (s orderedConstructor) Exec(f *interpreter.ExecutionFrame) ref.Val {
 	return orderedRange(s.InterpretableConstructor.Exec(f))
 }
+
 func (s orderedConstructor) Eval(a interpreter.Activation) ref.Val {
 	return orderedRange(s.InterpretableConstructor.Eval(a))
 }
@@ -83,6 +86,7 @@ func orderedRange(value ref.Val) ref.Val {
 			}
 		}
 	}
+
 	return &orderedMap{Mapper: mapping}
 }
 
@@ -90,6 +94,7 @@ func compareCELKeys(a, b ref.Val) int {
 	if order := cmp.Compare(a.Type().TypeName(), b.Type().TypeName()); order != 0 {
 		return order
 	}
+
 	switch x := a.(type) {
 	case types.Bool:
 		if x == b.(types.Bool) {
@@ -128,9 +133,11 @@ func (m *orderedMap) Fold(folder traits.Folder) {
 func (m *orderedMap) sortedKeys() []ref.Val {
 	keys := []ref.Val{}
 	iterator := m.Mapper.Iterator()
+
 	for iterator.HasNext() == types.True {
 		keys = append(keys, iterator.Next())
 	}
+
 	slices.SortFunc(keys, compareCELKeys)
 	return keys
 }

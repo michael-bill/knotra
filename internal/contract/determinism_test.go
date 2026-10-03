@@ -14,6 +14,7 @@ func TestCELMapIterationIsDeterministic(t *testing.T) {
 	object, _ := JSONValue(map[string]any{"z": 1, "a": 2, "m": 3})
 	nested, _ := JSONValue(map[string]any{"b": map[string]any{"z": 0, "a": 1}, "a": map[string]any{"y": 0, "b": 1}})
 	scope := Scope{Args: Values{"object": object, "nested": nested}}
+
 	for _, test := range []struct{ source, want string }{
 		{`{"z": 1, "a": 2, "m": 3}.map(k, k)`, `["a","m","z"]`},
 		{`args.object.map(k, k)`, `["a","m","z"]`},
@@ -28,7 +29,10 @@ func TestCELMapIterationIsDeterministic(t *testing.T) {
 		{`{"😀": 1, "ж": 1, "é": 1, "z": 1}.map(k, k)`, `["z","é","ж","😀"]`},
 		{`{-10: 1, 2: 1, 1: 1}.map(k, k)`, `[-10,1,2]`},
 		{`{true: 1, false: 1}.map(k, k)`, `[false,true]`},
-		{`{"z": 0, 2: 0, false: 0, "a": 0, true: 0, -1: 0}.map(k, string(k))`, `["false","true","-1","2","a","z"]`},
+		{
+			`{"z": 0, 2: 0, false: 0, "a": 0, true: 0, -1: 0}.map(k, string(k))`,
+			`["false","true","-1","2","a","z"]`,
+		},
 	} {
 		t.Run(test.source, func(t *testing.T) {
 			for i := 0; i < 128; i++ {
@@ -46,14 +50,17 @@ func TestCELMapIterationIsDeterministic(t *testing.T) {
 
 func TestCELOrderedRangeRetainsStandardCost(t *testing.T) {
 	var options []cel.EnvOption
+
 	for _, name := range []string{"inputs", "args", "nodes", "state", "iteration", "body"} {
 		options = append(options, cel.Variable(name, cel.DynType))
 	}
+
 	environment, err := cel.NewEnv(options...)
 	if err != nil {
 		t.Fatal(err)
 	}
 	activation := map[string]any{"args": map[string]any{"object": map[string]any{"z": int64(1), "a": int64(2), "m": int64(3)}}}
+
 	for _, source := range []string{
 		`{"z": 1, "a": 2, "m": 3}.map(k, k)`,
 		`args.object.map(k, k)`,
@@ -100,6 +107,7 @@ func TestCELCachedMapProgramConcurrentEvaluation(t *testing.T) {
 	before := string(value.JSON)
 	scope := Scope{Args: Values{"object": value}}
 	var workers sync.WaitGroup
+
 	for range 16 {
 		workers.Go(func() {
 			for range 64 {
@@ -111,6 +119,7 @@ func TestCELCachedMapProgramConcurrentEvaluation(t *testing.T) {
 			}
 		})
 	}
+
 	workers.Wait()
 	if string(scope.Args["object"].JSON) != before {
 		t.Fatal("expression mutated its input")
@@ -119,9 +128,11 @@ func TestCELCachedMapProgramConcurrentEvaluation(t *testing.T) {
 
 func TestCELMapIterationRetainsCostLimit(t *testing.T) {
 	object := map[string]any{}
+
 	for i := range 150 {
 		object[fmt.Sprintf("key_%03d", i)] = i
 	}
+
 	value, err := JSONValue(object)
 	if err != nil {
 		t.Fatal(err)
@@ -147,6 +158,7 @@ func TestCELRejectsInvalidDynamicMapKeys(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
+
 			for _, source := range []string{
 				`{args.key: 1}.map(k, true)`,
 				`{args.key: 1, "valid": 2}.map(k, true)`,

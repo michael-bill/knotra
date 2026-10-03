@@ -7,6 +7,8 @@ import (
 	"os/exec"
 )
 
-func configureProcess(c *exec.Cmd)        {}
+func configureProcess(c *exec.Cmd) {}
+
 func hasMultipleLinks(i os.FileInfo) bool { return false }
-func protectSupervisor() error            { return nil }
+
+func protectSupervisor() error { return nil }

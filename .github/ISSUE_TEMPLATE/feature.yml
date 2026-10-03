@@ -1,0 +1,17 @@
+name: Feature request
+description: Propose a concrete improvement.
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Use case
+      description: What are you trying to accomplish, and what currently prevents it?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed behavior
+      description: Include an example and any alternatives you have considered.
+    validations:
+      required: true

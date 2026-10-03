@@ -23,7 +23,10 @@ func TestPayloadCodecLargeAggregateHasNoHidden256MiBCap(t *testing.T) {
 	}
 	codec := &PayloadCodec{Store: store}
 	const size = 257 << 20
-	payload := &commonpb.Payload{Metadata: map[string][]byte{converter.MetadataEncoding: []byte("binary/plain")}, Data: bytes.Repeat([]byte("x"), size)}
+	payload := &commonpb.Payload{
+		Metadata: map[string][]byte{converter.MetadataEncoding: []byte("binary/plain")},
+		Data:     bytes.Repeat([]byte("x"), size),
+	}
 	encoded, err := codec.Encode([]*commonpb.Payload{payload})
 	if err != nil {
 		t.Fatal(err)
@@ -47,8 +50,14 @@ func TestPayloadCodecRoundTripPreservesMetadata(t *testing.T) {
 	}
 	codec := &PayloadCodec{Store: store, Threshold: 128}
 	original := []*commonpb.Payload{
-		{Metadata: map[string][]byte{converter.MetadataEncoding: []byte("json/plain")}, Data: []byte(`"small"`)},
-		{Metadata: map[string][]byte{converter.MetadataEncoding: []byte("json/plain"), "custom": {0, 255}}, Data: bytes.Repeat([]byte("value"), 100000)},
+		{
+			Metadata: map[string][]byte{converter.MetadataEncoding: []byte("json/plain")},
+			Data:     []byte(`"small"`),
+		},
+		{
+			Metadata: map[string][]byte{converter.MetadataEncoding: []byte("json/plain"), "custom": {0, 255}},
+			Data:     bytes.Repeat([]byte("value"), 100000),
+		},
 	}
 	encoded, err := codec.Encode(original)
 	if err != nil {
@@ -67,6 +76,7 @@ func TestPayloadCodecRoundTripPreservesMetadata(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+
 	for index := range original {
 		if !proto.Equal(original[index], decoded[index]) {
 			t.Fatalf("payload %d changed", index)
@@ -90,11 +100,15 @@ func TestPayloadCodecRejectsMissingAndTamperedBlobs(t *testing.T) {
 				t.Fatal(err)
 			}
 			codec := &PayloadCodec{Store: store, Threshold: 1}
-			encoded, err := codec.Encode([]*commonpb.Payload{{Metadata: map[string][]byte{converter.MetadataEncoding: []byte("json/plain")}, Data: []byte(`"value"`)}})
+			encoded, err := codec.Encode([]*commonpb.Payload{{
+				Metadata: map[string][]byte{converter.MetadataEncoding: []byte("json/plain")},
+				Data:     []byte(`"value"`),
+			}})
 			if err != nil {
 				t.Fatal(err)
 			}
 			path := filepath.Join(store.directory, string(encoded[0].Data))
+
 			switch mode {
 			case "missing":
 				err = os.Remove(path)
@@ -106,6 +120,7 @@ func TestPayloadCodecRejectsMissingAndTamperedBlobs(t *testing.T) {
 					err = os.Symlink(outside, path)
 				}
 			}
+
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -122,8 +137,12 @@ func TestPayloadCodecRejectsTraversalBeforeReading(t *testing.T) {
 		t.Fatal(err)
 	}
 	codec := &PayloadCodec{Store: store}
+
 	for _, key := range []string{"../secret", "", string(bytes.Repeat([]byte("A"), 64))} {
-		payload := &commonpb.Payload{Metadata: map[string][]byte{converter.MetadataEncoding: []byte(externalPayloadEncoding)}, Data: []byte(key)}
+		payload := &commonpb.Payload{
+			Metadata: map[string][]byte{converter.MetadataEncoding: []byte(externalPayloadEncoding)},
+			Data:     []byte(key),
+		}
 		if _, err := codec.Decode([]*commonpb.Payload{payload}); err == nil {
 			t.Fatalf("invalid key accepted: %q", key)
 		}
@@ -138,6 +157,7 @@ func TestBlobStoreConcurrentWritesAreIdempotent(t *testing.T) {
 	data := bytes.Repeat([]byte("payload"), 10000)
 	errors := make(chan error, 8)
 	var group sync.WaitGroup
+
 	for range 8 {
 		group.Go(func() {
 			key, err := store.Put(data)
@@ -151,8 +171,10 @@ func TestBlobStoreConcurrentWritesAreIdempotent(t *testing.T) {
 			errors <- err
 		})
 	}
+
 	group.Wait()
 	close(errors)
+
 	for err := range errors {
 		if err != nil {
 			t.Fatal(err)

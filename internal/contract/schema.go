@@ -14,15 +14,18 @@ import (
 	"unicode/utf8"
 
 	"github.com/dlclark/regexp2"
-	"github.com/michael-bill/knotra/schemas"
 	"github.com/santhosh-tekuri/jsonschema/v6"
+
+	"github.com/michael-bill/knotra/schemas"
 )
 
 func sortedKeys[V any](m map[string]V) []string {
 	keys := make([]string, 0, len(m))
+
 	for k := range m {
 		keys = append(keys, k)
 	}
+
 	sort.Strings(keys)
 	return keys
 }
@@ -39,6 +42,7 @@ func (r ecmaRegexp) MatchString(s string) bool {
 	ok, err := r.Regexp.MatchString(s)
 	return err == nil && ok
 }
+
 func structuralRegexp(pattern string) (jsonschema.Regexp, error) {
 	r, e := regexp2.Compile(pattern, regexp2.ECMAScript)
 	if e != nil {
@@ -49,7 +53,9 @@ func structuralRegexp(pattern string) (jsonschema.Regexp, error) {
 }
 
 var structuralOnce sync.Once
+
 var structuralSchema *jsonschema.Schema
+
 var structuralError error
 
 // ValidateStructure checks the closed, versioned YAML object grammar.
@@ -87,6 +93,7 @@ func nativeUnicode(v reflect.Value, depth int) error {
 	if depth > 4*(MaxDepth+1) {
 		return fmt.Errorf("native value exceeds recursion limit")
 	}
+
 	switch v.Kind() {
 	case reflect.String:
 		if !utf8.ValidString(v.String()) {
@@ -120,6 +127,7 @@ func nativeUnicode(v reflect.Value, depth int) error {
 			}
 		}
 	}
+
 	return nil
 }
 
@@ -176,9 +184,11 @@ func initializeStructuralSchema() error {
 
 var schemaKeys = func() map[string]bool {
 	m := map[string]bool{}
+
 	for _, s := range strings.Fields("$schema $ref $defs $comment title description type const enum default examples properties patternProperties additionalProperties propertyNames required minProperties maxProperties dependentRequired dependentSchemas items prefixItems contains minContains maxContains minItems maxItems uniqueItems minLength maxLength pattern minimum maximum exclusiveMinimum exclusiveMaximum multipleOf allOf anyOf oneOf not if then else") {
 		m[s] = true
 	}
+
 	return m
 }()
 
@@ -193,11 +203,13 @@ func validateDataProfile(value, root any, stack map[string]bool, depth int) erro
 	if !ok {
 		return fmt.Errorf("schema must be boolean or object")
 	}
+
 	for _, k := range sortedKeys(m) {
 		v := m[k]
 		if !schemaKeys[k] {
 			return fmt.Errorf("unsupported DataSchema keyword %q", k)
 		}
+
 		switch k {
 		case "$schema":
 			if v != "https://json-schema.org/draft/2020-12/schema" {
@@ -264,6 +276,7 @@ func validateDataProfile(value, root any, stack map[string]bool, depth int) erro
 			}
 		}
 	}
+
 	return nil
 }
 
@@ -271,6 +284,7 @@ func portableRegexp(s string) error {
 	if strings.Contains(strings.ReplaceAll(s, "(?:", "("), "(?") {
 		return fmt.Errorf("special regexp groups are forbidden")
 	}
+
 	for i := 0; i < len(s); i++ {
 		if s[i] == '\\' {
 			i++
@@ -282,6 +296,7 @@ func portableRegexp(s string) error {
 			}
 		}
 	}
+
 	_, err := regexp.Compile(s)
 	return err
 }
@@ -292,6 +307,7 @@ func ValidateValue(p Port, v Value) error {
 		if len(v.JSON) != 0 || v.Collection != p.Artifact.Collection || (!v.Collection && len(v.Artifacts) != 1) {
 			return fmt.Errorf("artifact shape differs from port")
 		}
+
 		for _, a := range v.Artifacts {
 			if a.ID == "" || a.Size < 0 || !regexp.MustCompile(`^[a-f0-9]{64}$`).MatchString(a.SHA256) {
 				return fmt.Errorf("invalid artifact descriptor")
@@ -300,6 +316,7 @@ func ValidateValue(p Port, v Value) error {
 				return fmt.Errorf("artifact media type %q not allowed", a.MediaType)
 			}
 		}
+
 		return nil
 	}
 	if len(v.JSON) == 0 || len(v.Artifacts) != 0 || v.Collection {
@@ -320,12 +337,15 @@ func ValidateValue(p Port, v Value) error {
 // defaults. JSON Schema annotations never mutate user values.
 func ValidatePorts(ports map[string]Port, values Values, applyDefaults bool) (Values, error) {
 	out := Values{}
+
 	for _, name := range sortedKeys(values) {
 		if _, ok := ports[name]; !ok {
 			return nil, fmt.Errorf("unknown port %q", name)
 		}
 	}
+
 	serialized := map[string]any{}
+
 	for _, name := range sortedKeys(ports) {
 		p := ports[name]
 		v, ok := values[name]
@@ -357,15 +377,18 @@ func ValidatePorts(ports map[string]Port, values Values, applyDefaults bool) (Va
 			serialized[name] = v.JSON
 		} else if v.Collection {
 			items := []any{}
+
 			for _, a := range v.Artifacts {
 				items = append(items, artifactDescriptor(a))
 			}
+
 			serialized[name] = items
 		} else {
 			serialized[name] = artifactDescriptor(v.Artifacts[0])
 		}
 		out[name] = v
 	}
+
 	encoded, err := json.Marshal(serialized)
 	if err != nil {
 		return nil, err
@@ -381,6 +404,7 @@ func ValidatePorts(ports map[string]Port, values Values, applyDefaults bool) (Va
 func PortObjectSchema(ports map[string]Port) json.RawMessage {
 	properties := map[string]any{}
 	required := []string{}
+
 	for _, name := range sortedKeys(ports) {
 		p := ports[name]
 		if p.Artifact != nil {
@@ -395,7 +419,13 @@ func PortObjectSchema(ports map[string]Port) json.RawMessage {
 			required = append(required, name)
 		}
 	}
-	raw, _ := json.Marshal(map[string]any{"type": "object", "properties": properties, "required": required, "additionalProperties": false})
+
+	raw, _ := json.Marshal(map[string]any{
+		"type":                 "object",
+		"properties":           properties,
+		"required":             required,
+		"additionalProperties": false,
+	})
 	return raw
 }
 
@@ -403,6 +433,7 @@ func PortObjectSchema(ports map[string]Port) json.RawMessage {
 func ContextEnvelope(values Values) map[string]any {
 	jsonValues := map[string]any{}
 	artifacts := map[string]any{}
+
 	for _, k := range sortedKeys(values) {
 		v := values[k]
 		if len(v.JSON) > 0 {
@@ -412,14 +443,17 @@ func ContextEnvelope(values Values) map[string]any {
 			}
 		} else if v.Collection {
 			descriptors := make([]any, 0, len(v.Artifacts))
+
 			for _, a := range v.Artifacts {
 				descriptors = append(descriptors, artifactDescriptor(a))
 			}
+
 			artifacts[k] = descriptors
 		} else if len(v.Artifacts) == 1 {
 			artifacts[k] = artifactDescriptor(v.Artifacts[0])
 		}
 	}
+
 	return map[string]any{"values": jsonValues, "artifacts": artifacts}
 }
 
@@ -437,5 +471,6 @@ func contains(list []string, s string) bool {
 			return true
 		}
 	}
+
 	return false
 }

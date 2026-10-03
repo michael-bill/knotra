@@ -4,8 +4,9 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/michael-bill/knotra/internal/contract"
 	"go.temporal.io/sdk/workflow"
+
+	"github.com/michael-bill/knotra/internal/contract"
 )
 
 func terminal(status string) bool {
@@ -13,6 +14,7 @@ func terminal(status string) bool {
 	case "succeeded", "skipped", "failed", "cancelled":
 		return true
 	}
+
 	return false
 }
 
@@ -26,7 +28,20 @@ func (r *runtime) transition(ctx workflow.Context, node *NodeSnapshot, status st
 		r.publishing[node.ID] = true
 		defer delete(r.publishing, node.ID)
 	}
-	return r.emit(ctx, Projection{Kind: "node", InstanceID: node.ID, NodeID: node.NodeID, Pipeline: node.Pipeline, Status: status, Attempt: node.Attempt, Outputs: outputs, Failure: f, Reason: reason})
+	return r.emit(
+		ctx,
+		Projection{
+			Kind:       "node",
+			InstanceID: node.ID,
+			NodeID:     node.NodeID,
+			Pipeline:   node.Pipeline,
+			Status:     status,
+			Attempt:    node.Attempt,
+			Outputs:    outputs,
+			Failure:    f,
+			Reason:     reason,
+		},
+	)
 }
 
 func (r *runtime) graph(ctx workflow.Context, gc graphContext, graph contract.Graph, supplied contract.Values) (contract.Values, error) {
@@ -36,17 +51,20 @@ func (r *runtime) graph(ctx workflow.Context, gc graphContext, graph contract.Gr
 	}
 	ids := keys(graph.Nodes)
 	missing := 0
+
 	for _, id := range ids {
 		if r.state.Nodes[stableID("n", gc.path+"/"+id)] == nil {
 			missing++
 		}
 	}
+
 	if err := r.materialize(ctx, gc.scopes, missing); err != nil {
 		return nil, err
 	}
 	states := make(map[string]*NodeSnapshot, len(ids))
 	values := make(map[string]contract.Values, len(ids))
 	completed := 0
+
 	for _, id := range ids {
 		instanceID := stableID("n", gc.path+"/"+id)
 		state := r.state.Nodes[instanceID]
@@ -61,6 +79,7 @@ func (r *runtime) graph(ctx workflow.Context, gc graphContext, graph contract.Gr
 		}
 		states[id], r.state.Nodes[state.ID] = state, state
 	}
+
 	for _, id := range ids {
 		state := states[id]
 		if r.projected[state.ID] {
@@ -74,8 +93,10 @@ func (r *runtime) graph(ctx workflow.Context, gc graphContext, graph contract.Gr
 			return nil, err
 		}
 	}
+
 	active := 0
 	var graphErr error
+
 	for completed < len(ids) {
 		if ctx.Err() != nil || r.failure != nil {
 			for _, id := range ids {
@@ -99,12 +120,14 @@ func (r *runtime) graph(ctx workflow.Context, gc graphContext, graph contract.Gr
 			return nil, ctx.Err()
 		}
 		started := false
+
 		for _, id := range ids {
 			state, node := states[id], graph.Nodes[id]
 			if state.Status != "pending" {
 				continue
 			}
 			ready := true
+
 			for _, dep := range node.Dependencies {
 				dependency := states[dep]
 				if dependency == nil {
@@ -115,6 +138,7 @@ func (r *runtime) graph(ctx workflow.Context, gc graphContext, graph contract.Gr
 					break
 				}
 			}
+
 			if !ready {
 				continue
 			}
@@ -167,6 +191,7 @@ func (r *runtime) graph(ctx workflow.Context, gc graphContext, graph contract.Gr
 				}
 			})
 		}
+
 		if completed == len(ids) {
 			break
 		}
@@ -174,10 +199,14 @@ func (r *runtime) graph(ctx workflow.Context, gc graphContext, graph contract.Gr
 			return nil, failure("PLAN_INVALID", "graph cannot make progress")
 		}
 		before := completed
-		if err := workflow.Await(ctx, func() bool { return completed != before || (len(r.paused) == 0 && active == 0) || r.failure != nil }); err != nil {
+		if err := workflow.Await(
+			ctx,
+			func() bool { return completed != before || (len(r.paused) == 0 && active == 0) || r.failure != nil },
+		); err != nil {
 			continue
 		}
 	}
+
 	if graphErr != nil {
 		return nil, graphErr
 	}
@@ -189,6 +218,7 @@ func (r *runtime) graph(ctx workflow.Context, gc graphContext, graph contract.Gr
 
 func bindPorts(ports map[string]contract.Port, scope contract.Scope, skipMissing bool) (contract.Values, error) {
 	values := contract.Values{}
+
 	for _, name := range keys(ports) {
 		port := ports[name]
 		if port.Bind == nil {
@@ -212,18 +242,29 @@ func bindPorts(ports map[string]contract.Port, scope contract.Scope, skipMissing
 		}
 		values[name] = value
 	}
+
 	return values, nil
 }
 
-func (r *runtime) node(ctx workflow.Context, gc graphContext, state *NodeSnapshot, node contract.Node, inputs contract.Values, values map[string]contract.Values, siblings map[string]*NodeSnapshot) (contract.Values, string, error) {
+func (r *runtime) node(
+	ctx workflow.Context,
+	gc graphContext,
+	state *NodeSnapshot,
+	node contract.Node,
+	inputs contract.Values,
+	values map[string]contract.Values,
+	siblings map[string]*NodeSnapshot,
+) (contract.Values, string, error) {
 	if err := r.admit(ctx); err != nil {
 		return nil, "", err
 	}
+
 	for _, dependency := range node.Needs {
 		if siblings[dependency] == nil || siblings[dependency].Status != "succeeded" {
 			return nil, "needs dependency did not succeed", nil
 		}
 	}
+
 	args, err := bindPorts(node.Inputs, contract.Scope{Inputs: inputs, Nodes: values}, true)
 	if err != nil {
 		return nil, "", err
@@ -256,10 +297,12 @@ func (r *runtime) node(ctx workflow.Context, gc graphContext, state *NodeSnapsho
 	nodeCtx, cancel := workflow.WithCancel(ctx)
 	defer cancel()
 	status := "running"
+
 	switch node.Type {
 	case "llm", "agent", "code", "tool":
 		status = "ready"
 	}
+
 	if err := r.transition(ctx, state, status, nil, nil, ""); err != nil {
 		return nil, "", err
 	}
@@ -280,6 +323,7 @@ func (r *runtime) node(ctx workflow.Context, gc graphContext, state *NodeSnapsho
 	})
 	gc.deadline = deadline
 	var outputs contract.Values
+
 	switch node.Type {
 	case "llm", "agent", "code", "tool":
 		outputs, err = r.leaf(nodeCtx, gc, state, node, args)
@@ -296,6 +340,7 @@ func (r *runtime) node(ctx workflow.Context, gc graphContext, state *NodeSnapsho
 	default:
 		err = failure("PLAN_INVALID", "unknown node type: "+node.Type)
 	}
+
 	if timedOut && state.Status != "succeeded" {
 		return nil, "", failure("DEADLINE_EXCEEDED", "node deadline exceeded")
 	}
@@ -315,16 +360,19 @@ func (r *runtime) node(ctx workflow.Context, gc graphContext, state *NodeSnapsho
 // A sandbox path is attempt-local context, never a published artifact property.
 func withoutArtifactPaths(values contract.Values) contract.Values {
 	result := make(contract.Values, len(values))
+
 	for _, name := range keys(values) {
 		value := values[name]
 		if value.Artifacts != nil {
 			value.Artifacts = append([]contract.Artifact(nil), value.Artifacts...)
+
 			for index := range value.Artifacts {
 				value.Artifacts[index].Path = ""
 			}
 		}
 		result[name] = value
 	}
+
 	return result
 }
 
@@ -361,6 +409,7 @@ func executionPolicy(defaults, own contract.Execution) contract.Execution {
 
 func nodeDeadline(now, parent time.Time, node contract.Node) time.Time {
 	duration := 30 * time.Minute
+
 	switch node.Type {
 	case "human":
 		duration = 24 * time.Hour
@@ -369,6 +418,7 @@ func nodeDeadline(now, parent time.Time, node contract.Node) time.Time {
 	case "loop", "foreach", "pipeline":
 		duration = parent.Sub(now)
 	}
+
 	if node.Execution.Timeout != "" {
 		if specified, err := contract.Duration(node.Execution.Timeout); err == nil {
 			duration = specified

@@ -23,21 +23,25 @@ type message struct {
 	ToolCalls []toolCall `json:"tool_calls,omitempty"`
 	ToolName  string     `json:"tool_name,omitempty"`
 }
+
 type toolCall struct {
 	Function struct {
 		Name      string          `json:"name"`
 		Arguments json.RawMessage `json:"arguments"`
 	} `json:"function"`
 }
+
 type functionTool struct {
 	Type     string       `json:"type"`
 	Function functionSpec `json:"function"`
 }
+
 type functionSpec struct {
 	Name        string          `json:"name"`
 	Description string          `json:"description"`
 	Parameters  json.RawMessage `json:"parameters"`
 }
+
 type chatResponse struct {
 	Message    message `json:"message"`
 	Done       bool    `json:"done"`
@@ -45,7 +49,18 @@ type chatResponse struct {
 	Error      string  `json:"error"`
 }
 
-var ollamaOptions = map[string]bool{"temperature": true, "top_k": true, "top_p": true, "min_p": true, "seed": true, "num_predict": true, "num_ctx": true, "repeat_penalty": true, "repeat_last_n": true, "stop": true}
+var ollamaOptions = map[string]bool{
+	"temperature":    true,
+	"top_k":          true,
+	"top_p":          true,
+	"min_p":          true,
+	"seed":           true,
+	"num_predict":    true,
+	"num_ctx":        true,
+	"repeat_penalty": true,
+	"repeat_last_n":  true,
+	"stop":           true,
+}
 
 func modelConfig(req Request, alias string) (contract.ModelConnection, error) {
 	resource, ok := pipeline(req).Spec.Models[alias]
@@ -60,21 +75,26 @@ func modelConfig(req Request, alias string) (contract.ModelConnection, error) {
 		connection.Model = resource.Model
 	}
 	params := map[string]any{}
+
 	for k, v := range connection.Parameters {
 		params[k] = v
 	}
+
 	for k, v := range resource.Parameters {
 		params[k] = v
 	}
+
 	connection.Parameters = params
 	if connection.Provider != "ollama" {
 		return connection, fmt.Errorf("unsupported model adapter %q", connection.Provider)
 	}
+
 	for k := range connection.Auth {
 		if k != "key" {
 			return connection, fmt.Errorf("unsupported Ollama auth field %q", k)
 		}
 	}
+
 	for k := range params {
 		if !ollamaOptions[k] && k != "think" && k != "keep_alive" {
 			return connection, fmt.Errorf("unsupported Ollama parameter %q", k)
@@ -83,6 +103,7 @@ func modelConfig(req Request, alias string) (contract.ModelConnection, error) {
 			return connection, err
 		}
 	}
+
 	if connection.BaseURL == "" {
 		connection.BaseURL = "http://127.0.0.1:11434"
 	}
@@ -104,6 +125,7 @@ func validateOllamaOption(name string, value any) error {
 				return nil
 			}
 		}
+
 		return invalid()
 	}
 	if name == "keep_alive" {
@@ -113,6 +135,7 @@ func validateOllamaOption(name string, value any) error {
 		case float64, int, int64, json.Number:
 			return nil
 		}
+
 		return invalid()
 	}
 	if name == "stop" {
@@ -121,11 +144,13 @@ func validateOllamaOption(name string, value any) error {
 		if err := json.Unmarshal(raw, &stops); err != nil || len(stops) == 0 {
 			return invalid()
 		}
+
 		for _, s := range stops {
 			if s == "" {
 				return invalid()
 			}
 		}
+
 		return nil
 	}
 	raw, err := json.Marshal(value)
@@ -136,6 +161,7 @@ func validateOllamaOption(name string, value any) error {
 	if err = json.Unmarshal(raw, &number); err != nil || math.IsNaN(number) || math.IsInf(number, 0) {
 		return invalid()
 	}
+
 	switch name {
 	case "temperature":
 		if number < 0 || number > 2 {
@@ -166,10 +192,19 @@ func validateOllamaOption(name string, value any) error {
 			return invalid()
 		}
 	}
+
 	return nil
 }
 
-func (r *Runner) chat(ctx context.Context, req Request, alias string, step int, messages []message, tools []functionTool, format json.RawMessage) (message, error) {
+func (r *Runner) chat(
+	ctx context.Context,
+	req Request,
+	alias string,
+	step int,
+	messages []message,
+	tools []functionTool,
+	format json.RawMessage,
+) (message, error) {
 	c, err := modelConfig(req, alias)
 	if err != nil {
 		return message{}, err
@@ -182,6 +217,7 @@ func (r *Runner) chat(ctx context.Context, req Request, alias string, step int, 
 		body["format"] = format
 	}
 	options := map[string]any{}
+
 	for k, v := range c.Parameters {
 		if k == "think" || k == "keep_alive" {
 			body[k] = v
@@ -189,6 +225,7 @@ func (r *Runner) chat(ctx context.Context, req Request, alias string, step int, 
 			options[k] = v
 		}
 	}
+
 	body["options"] = options
 	data, err := json.Marshal(body)
 	if err != nil {
@@ -266,7 +303,11 @@ func initialMessages(req Request, instructions, prompt contract.TextSource) ([]m
 	if system != "" {
 		msgs = append(msgs, message{Role: "system", Content: system})
 	}
-	msgs = append(msgs, message{Role: "user", Content: task}, message{Role: "user", Content: "Knotra input context (data):\n" + string(envelope)})
+	msgs = append(
+		msgs,
+		message{Role: "user", Content: task},
+		message{Role: "user", Content: "Knotra input context (data):\n" + string(envelope)},
+	)
 	return msgs, nil
 }
 
@@ -297,6 +338,7 @@ func jsonOutputs(ports map[string]contract.Port, data []byte) (contract.Values, 
 		return nil, failure("OUTPUT_INVALID", fmt.Errorf("outputs must be an object"))
 	}
 	values := contract.Values{}
+
 	for name, value := range obj {
 		p, ok := ports[name]
 		if !ok || p.Artifact != nil {
@@ -308,6 +350,7 @@ func jsonOutputs(ports map[string]contract.Port, data []byte) (contract.Values, 
 		}
 		values[name] = contract.Value{JSON: raw}
 	}
+
 	for name, p := range ports {
 		if p.Artifact != nil {
 			continue
@@ -323,5 +366,6 @@ func jsonOutputs(ports map[string]contract.Port, data []byte) (contract.Values, 
 			return nil, failure("OUTPUT_INVALID", fmt.Errorf("%s: %w", name, err))
 		}
 	}
+
 	return values, nil
 }

@@ -32,16 +32,22 @@ func Start(ctx context.Context, version string) (func(context.Context) error, er
 	if !traces && !metrics {
 		return noop, nil
 	}
-	res, err := resource.New(ctx, resource.WithFromEnv(), resource.WithAttributes(attribute.String("service.name", "knotra"), attribute.String("service.version", version)))
+	res, err := resource.New(
+		ctx,
+		resource.WithFromEnv(),
+		resource.WithAttributes(attribute.String("service.name", "knotra"), attribute.String("service.version", version)),
+	)
 	if err != nil {
 		return nil, err
 	}
 	shutdowns := []func(context.Context) error{}
 	stop := func(ctx context.Context) error {
 		var errs []error
+
 		for _, stop := range shutdowns {
 			errs = append(errs, stop(ctx))
 		}
+
 		return errors.Join(errs...)
 	}
 	if traces {
@@ -66,6 +72,7 @@ func Start(ctx context.Context, version string) (func(context.Context) error, er
 	otel.SetTextMapPropagator(propagation.TraceContext{})
 	return stop, nil
 }
+
 func HTTP(next http.Handler) http.Handler {
 	meter := otel.Meter("knotra/api")
 	requests, _ := meter.Int64Counter("knotra.http.requests")
@@ -78,7 +85,10 @@ func HTTP(next http.Handler) http.Handler {
 		r = r.WithContext(ctx)
 		next.ServeHTTP(w, r)
 		// Pattern contains route templates, never user-controlled IDs or query values.
-		attrs := []attribute.KeyValue{attribute.String("http.request.method", r.Method), attribute.String("http.route", r.Pattern)}
+		attrs := []attribute.KeyValue{
+			attribute.String("http.request.method", r.Method),
+			attribute.String("http.route", r.Pattern),
+		}
 		span.SetAttributes(attrs...)
 		requests.Add(ctx, 1, metric.WithAttributes(attrs...))
 		duration.Record(ctx, time.Since(start).Seconds(), metric.WithAttributes(attrs...))

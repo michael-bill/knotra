@@ -33,7 +33,12 @@ func TestLeaseWriterRetriesTransientErrorsOnlyWithinIssuedLease(t *testing.T) {
 		t.Fatalf("stopped after transient renewal failure: %d calls", calls.Load())
 	}
 	started := time.Now()
-	keepLease(context.Background(), time.Now().Add(50*time.Millisecond), 10*time.Millisecond, func() (time.Time, error) { return time.Time{}, errors.New("persistent I/O failure") })
+	keepLease(
+		context.Background(),
+		time.Now().Add(50*time.Millisecond),
+		10*time.Millisecond,
+		func() (time.Time, error) { return time.Time{}, errors.New("persistent I/O failure") },
+	)
 	if time.Since(started) > 500*time.Millisecond {
 		t.Fatal("writer kept trying to resurrect an expired lease")
 	}
@@ -140,7 +145,11 @@ func TestDockerWatchdogSurvivesOwnerSIGKILL(t *testing.T) {
 		}
 		defer sandbox.close()
 		go func() {
-			_, _ = sandbox.helper(ctx, "exec", map[string]any{"command": []string{"python", "-c", "import time;time.sleep(120)"}, "timeout": "2m"})
+			_, _ = sandbox.helper(
+				ctx,
+				"exec",
+				map[string]any{"command": []string{"python", "-c", "import time;time.sleep(120)"}, "timeout": "2m"},
+			)
 		}()
 		b, _ := json.Marshal(map[string]string{"id": sandbox.id, "dir": sandbox.dir, "engine": runner.EngineID})
 		fmt.Println("KNOTRA_SANDBOX_READY " + string(b))
@@ -163,6 +172,7 @@ func TestDockerWatchdogSurvivesOwnerSIGKILL(t *testing.T) {
 	defer func() { _ = cmd.Process.Kill(); _ = cmd.Wait() }()
 	var ready struct{ ID, Dir, Engine string }
 	scanner := bufio.NewScanner(stdout)
+
 	for scanner.Scan() {
 		if text, ok := strings.CutPrefix(scanner.Text(), "KNOTRA_SANDBOX_READY "); ok {
 			if err = json.Unmarshal([]byte(text), &ready); err != nil {
@@ -171,6 +181,7 @@ func TestDockerWatchdogSurvivesOwnerSIGKILL(t *testing.T) {
 			break
 		}
 	}
+
 	if ready.ID == "" {
 		t.Fatal("owner did not create sandbox", scanner.Err())
 	}
@@ -213,6 +224,7 @@ func waitContainerStopped(t *testing.T, docker *dockerClient, id string, timeout
 	defer cancel()
 	tick := time.NewTicker(200 * time.Millisecond)
 	defer tick.Stop()
+
 	for {
 		var inspect struct {
 			State struct {
@@ -227,6 +239,7 @@ func waitContainerStopped(t *testing.T, docker *dockerClient, id string, timeout
 		if err != nil {
 			t.Fatal(err)
 		}
+
 		select {
 		case <-ctx.Done():
 			t.Fatalf("container %s outlived its lease: %v", id, ctx.Err())

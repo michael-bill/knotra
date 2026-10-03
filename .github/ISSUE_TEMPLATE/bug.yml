@@ -1,0 +1,28 @@
+name: Bug report
+description: Report a reproducible problem in Knotra.
+body:
+  - type: markdown
+    attributes:
+      value:
+        For vulnerabilities, follow SECURITY.md and report privately. Redact credentials and
+        personal data.
+  - type: textarea
+    id: problem
+    attributes:
+      label: Expected and observed behavior
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Minimal reproduction
+      description: Include commands or a small pipeline package and relevant diagnostics.
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: Commit/version, OS, client (CLI/desktop/browser), and relevant service versions.
+    validations:
+      required: true

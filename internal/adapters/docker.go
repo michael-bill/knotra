@@ -75,6 +75,7 @@ func (r *Runner) docker() (*dockerClient, error) {
 	}}
 	return &dockerClient{client: &http.Client{Transport: transport}, base: "http://docker"}, nil
 }
+
 func (d *dockerClient) request(ctx context.Context, method, path string, input any) (*http.Response, error) {
 	var reader io.Reader
 	if input != nil {
@@ -99,6 +100,7 @@ func (d *dockerClient) request(ctx context.Context, method, path string, input a
 	}
 	return res, nil
 }
+
 func (d *dockerClient) json(ctx context.Context, method, path string, input, output any) error {
 	res, err := d.request(ctx, method, path, input)
 	if err != nil {
@@ -172,7 +174,11 @@ func (r *Runner) newSandbox(ctx context.Context, req Request, profile contract.S
 	if err != nil {
 		return nil, err
 	}
-	s := &sandbox{dir: dir, env: append([]string{"KNOTRA_INPUT_JSON=/knotra/input.json", "KNOTRA_OUTPUT_JSON=/knotra/output.json"}, environment...), inputs: contract.Values{}}
+	s := &sandbox{
+		dir:    dir,
+		env:    append([]string{"KNOTRA_INPUT_JSON=/knotra/input.json", "KNOTRA_OUTPUT_JSON=/knotra/output.json"}, environment...),
+		inputs: contract.Values{},
+	}
 	ok := false
 	defer func() {
 		if !ok {
@@ -211,6 +217,7 @@ func (r *Runner) newSandbox(ctx context.Context, req Request, profile contract.S
 	if err = os.Mkdir(requestDir, 0755); err != nil {
 		return nil, err
 	}
+
 	for _, file := range req.Plan.Package.Files {
 		name := filepath.Join(packageDir, filepath.FromSlash(file.Path))
 		if !strings.HasPrefix(name, packageDir+string(filepath.Separator)) {
@@ -223,7 +230,14 @@ func (r *Runner) newSandbox(ctx context.Context, req Request, profile contract.S
 			return nil, err
 		}
 	}
-	mounts := []dockerMount{{"bind", helper, "/knotra/bin/helper", true}, {"bind", packageDir, "/package", true}, {"bind", requestDir, "/knotra/requests", true}, {"bind", filepath.Join(dir, "control"), "/knotra/control", true}}
+
+	mounts := []dockerMount{
+		{"bind", helper, "/knotra/bin/helper", true},
+		{"bind", packageDir, "/package", true},
+		{"bind", requestDir, "/knotra/requests", true},
+		{"bind", filepath.Join(dir, "control"), "/knotra/control", true},
+	}
+
 	for name, value := range req.Inputs {
 		if value.JSON != nil {
 			s.inputs[name] = value
@@ -236,6 +250,7 @@ func (r *Runner) newSandbox(ctx context.Context, req Request, profile contract.S
 		if err = os.Mkdir(mountDir, 0755); err != nil {
 			return nil, err
 		}
+
 		for i, artifact := range value.Artifacts {
 			data, err := r.Hooks.GetArtifact(ctx, artifact.ID)
 			if err != nil {
@@ -251,6 +266,7 @@ func (r *Runner) newSandbox(ctx context.Context, req Request, profile contract.S
 			}
 			copied.Artifacts[i].Path = target
 		}
+
 		if value.Collection {
 			mounts = append(mounts, dockerMount{"bind", mountDir, "/workspace/" + port.Mount, true})
 		} else {
@@ -258,6 +274,7 @@ func (r *Runner) newSandbox(ctx context.Context, req Request, profile contract.S
 		}
 		s.inputs[name] = copied
 	}
+
 	input, err := json.Marshal(contract.ContextEnvelope(s.inputs))
 	if err != nil {
 		return nil, err
@@ -285,6 +302,7 @@ func (r *Runner) newSandbox(ctx context.Context, req Request, profile contract.S
 			if len(addresses) == 0 {
 				return nil, fmt.Errorf("allowlist addresses were not snapshotted")
 			}
+
 			for _, address := range addresses {
 				ip := net.ParseIP(address)
 				if ip == nil {
@@ -300,7 +318,39 @@ func (r *Runner) newSandbox(ctx context.Context, req Request, profile contract.S
 	tmpfs := func(size int64) string {
 		return fmt.Sprintf("rw,nosuid,nodev,size=%d,uid=65532,gid=65532,mode=0700", size)
 	}
-	body := map[string]any{"Image": profile.Image, "Entrypoint": []string{"/knotra/bin/helper", "init"}, "Cmd": []string{}, "User": "65532:65532", "WorkingDir": "/workspace", "Env": s.env, "Labels": map[string]string{"io.knotra.engine": r.EngineID, "io.knotra.run": req.RunID, "io.knotra.instance": req.InstanceID}, "HostConfig": map[string]any{"ReadonlyRootfs": true, "CapDrop": []string{"ALL"}, "SecurityOpt": []string{"no-new-privileges:true"}, "NetworkMode": network, "Mounts": mounts, "Tmpfs": map[string]string{"/workspace": tmpfs(workspace), "/knotra": tmpfs(small), "/tmp": tmpfs(small), "/dev/shm": tmpfs(4096)}, "ShmSize": int64(0), "Memory": profile.Resources.MemoryMiB << 20, "MemorySwap": profile.Resources.MemoryMiB << 20, "NanoCpus": int64(profile.Resources.CPU * 1e9), "PidsLimit": profile.Resources.Pids, "ExtraHosts": extraHosts, "LogConfig": map[string]any{"Type": "json-file", "Config": map[string]string{"max-size": "16k", "max-file": "1"}}}}
+	body := map[string]any{
+		"Image":      profile.Image,
+		"Entrypoint": []string{"/knotra/bin/helper", "init"},
+		"Cmd":        []string{},
+		"User":       "65532:65532",
+		"WorkingDir": "/workspace",
+		"Env":        s.env,
+		"Labels": map[string]string{
+			"io.knotra.engine":   r.EngineID,
+			"io.knotra.run":      req.RunID,
+			"io.knotra.instance": req.InstanceID,
+		},
+		"HostConfig": map[string]any{
+			"ReadonlyRootfs": true,
+			"CapDrop":        []string{"ALL"},
+			"SecurityOpt":    []string{"no-new-privileges:true"},
+			"NetworkMode":    network,
+			"Mounts":         mounts,
+			"Tmpfs": map[string]string{
+				"/workspace": tmpfs(workspace),
+				"/knotra":    tmpfs(small),
+				"/tmp":       tmpfs(small),
+				"/dev/shm":   tmpfs(4096),
+			},
+			"ShmSize":    int64(0),
+			"Memory":     profile.Resources.MemoryMiB << 20,
+			"MemorySwap": profile.Resources.MemoryMiB << 20,
+			"NanoCpus":   int64(profile.Resources.CPU * 1e9),
+			"PidsLimit":  profile.Resources.Pids,
+			"ExtraHosts": extraHosts,
+			"LogConfig":  map[string]any{"Type": "json-file", "Config": map[string]string{"max-size": "16k", "max-file": "1"}},
+		},
+	}
 	var created struct {
 		ID string `json:"Id"`
 	}
@@ -327,19 +377,36 @@ func (r *Runner) installFirewall(ctx context.Context, s *sandbox, ips []string, 
 	sort.Strings(ips)
 	ips = slices.Compact(ips)
 	script := "set -eu\niptables -P OUTPUT DROP\niptables -P FORWARD DROP\nip6tables -P OUTPUT DROP\nip6tables -P FORWARD DROP\n"
+
 	for _, tool := range []string{"iptables", "ip6tables"} {
 		script += tool + " -A OUTPUT -p udp --dport 53 -j DROP\n" + tool + " -A OUTPUT -p tcp --dport 53 -j DROP\n" + tool + " -A OUTPUT -o lo -j ACCEPT\n" + tool + " -A OUTPUT -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT\n"
 	}
+
 	for _, address := range ips {
 		tool := "iptables"
 		if strings.Contains(address, ":") {
 			tool = "ip6tables"
 		}
+
 		for _, protocol := range []string{"tcp", "udp"} {
 			script += tool + " -A OUTPUT -d " + address + " -p " + protocol + " -j ACCEPT\n"
 		}
 	}
-	body := map[string]any{"Image": image, "Entrypoint": []string{"/bin/sh", "-c", script}, "Labels": map[string]string{"io.knotra.engine": r.EngineID}, "HostConfig": map[string]any{"NetworkMode": "container:" + s.id, "ReadonlyRootfs": true, "CapDrop": []string{"ALL"}, "CapAdd": []string{"NET_ADMIN"}, "SecurityOpt": []string{"no-new-privileges:true"}, "Memory": 32 << 20, "PidsLimit": 16}}
+
+	body := map[string]any{
+		"Image":      image,
+		"Entrypoint": []string{"/bin/sh", "-c", script},
+		"Labels":     map[string]string{"io.knotra.engine": r.EngineID},
+		"HostConfig": map[string]any{
+			"NetworkMode":    "container:" + s.id,
+			"ReadonlyRootfs": true,
+			"CapDrop":        []string{"ALL"},
+			"CapAdd":         []string{"NET_ADMIN"},
+			"SecurityOpt":    []string{"no-new-privileges:true"},
+			"Memory":         32 << 20,
+			"PidsLimit":      16,
+		},
+	}
 	var created struct {
 		ID string `json:"Id"`
 	}
@@ -389,7 +456,14 @@ func (s *sandbox) helper(ctx context.Context, operation string, payload any) (js
 	var created struct {
 		ID string `json:"Id"`
 	}
-	body := map[string]any{"AttachStdout": true, "AttachStderr": true, "Cmd": cmd, "Env": s.env, "User": "65532:65532", "WorkingDir": "/workspace"}
+	body := map[string]any{
+		"AttachStdout": true,
+		"AttachStderr": true,
+		"Cmd":          cmd,
+		"Env":          s.env,
+		"User":         "65532:65532",
+		"WorkingDir":   "/workspace",
+	}
 	if err = s.docker.json(ctx, "POST", "/containers/"+s.id+"/exec", body, &created); err != nil {
 		return nil, s.diagnose(err)
 	}
@@ -421,10 +495,12 @@ func (s *sandbox) helper(ctx context.Context, operation string, payload any) (js
 	}
 	return stdout, nil
 }
+
 func demultiplex(reader io.Reader, limit int64) ([]byte, []byte, error) {
 	var stdout, stderr bytes.Buffer
 	var header [8]byte
 	var total int64
+
 	for {
 		_, err := io.ReadFull(reader, header[:])
 		if err == io.EOF {
@@ -439,6 +515,7 @@ func demultiplex(reader io.Reader, limit int64) ([]byte, []byte, error) {
 			return nil, nil, fmt.Errorf("Docker output exceeds limit")
 		}
 		var out io.Writer
+
 		switch header[0] {
 		case 1:
 			out = &stdout
@@ -447,6 +524,7 @@ func demultiplex(reader io.Reader, limit int64) ([]byte, []byte, error) {
 		default:
 			return nil, nil, fmt.Errorf("invalid Docker stream")
 		}
+
 		if _, err = io.CopyN(out, reader, size); err != nil {
 			return nil, nil, err
 		}
@@ -460,6 +538,7 @@ func (r *Runner) nodeSandbox(ctx context.Context, req Request) (*sandbox, error)
 		return nil, fmt.Errorf("sandbox profile missing")
 	}
 	environment := []string{}
+
 	for name, value := range req.Node.Env {
 		if strings.HasPrefix(name, "KNOTRA_") {
 			return nil, fmt.Errorf("reserved environment variable")
@@ -480,6 +559,7 @@ func (r *Runner) nodeSandbox(ctx context.Context, req Request) (*sandbox, error)
 		}
 		environment = append(environment, name+"="+text)
 	}
+
 	sort.Strings(environment)
 	return r.newSandbox(ctx, req, profile, environment)
 }
@@ -509,8 +589,10 @@ func (r *Runner) collect(ctx context.Context, req Request, s *sandbox, values co
 		}
 		values[name] = contract.Value{Artifacts: []contract.Artifact{artifact}}
 	}
+
 	return values, nil
 }
+
 func (r *Runner) code(ctx context.Context, req Request) (contract.Values, error) {
 	op := Operation{ID: operationID(req, "code", true), Kind: "tool", Effect: "unknown"}
 	state, err := r.Hooks.BeginOperation(ctx, op)
@@ -523,7 +605,12 @@ func (r *Runner) code(ctx context.Context, req Request) (contract.Values, error)
 		return values, err
 	}
 	if state.Started {
-		return nil, &Failure{Code: "OUTCOME_UNKNOWN", Message: "code attempt started without durable final outputs", OperationID: op.ID, Unknown: true}
+		return nil, &Failure{
+			Code:        "OUTCOME_UNKNOWN",
+			Message:     "code attempt started without durable final outputs",
+			OperationID: op.ID,
+			Unknown:     true,
+		}
 	}
 	s, err := r.nodeSandbox(ctx, req)
 	if err != nil {
@@ -571,7 +658,12 @@ func (r *Runner) code(ctx context.Context, req Request) (contract.Values, error)
 		return nil, err
 	}
 	if err = r.Hooks.CompleteOperation(ctx, op.ID, data); err != nil {
-		return nil, &Failure{Code: "OUTCOME_UNKNOWN", Message: "cannot persist code outputs", OperationID: op.ID, Unknown: true}
+		return nil, &Failure{
+			Code:        "OUTCOME_UNKNOWN",
+			Message:     "cannot persist code outputs",
+			OperationID: op.ID,
+			Unknown:     true,
+		}
 	}
 	return values, nil
 }

@@ -65,6 +65,7 @@ func (r *Runner) modelDigest(ctx context.Context, profile contract.Profile, c co
 	if err := r.modelInfo(ctx, profile, c, "/api/tags", nil, &tags); err != nil {
 		return "", err
 	}
+
 	for _, model := range tags.Models {
 		if model.Name == c.Model || model.Model == c.Model || model.Name == c.Model+":latest" {
 			if model.Digest == "" {
@@ -73,6 +74,7 @@ func (r *Runner) modelDigest(ctx context.Context, profile contract.Profile, c co
 			return model.Digest, nil
 		}
 	}
+
 	return "", fmt.Errorf("Ollama model %q is not installed", c.Model)
 }
 
@@ -80,6 +82,7 @@ func (r *Runner) prepareModels(ctx context.Context, req Request) error {
 	if req.Plan.ModelDigests == nil {
 		req.Plan.ModelDigests = map[string]string{}
 	}
+
 	for alias, resource := range pipeline(req).Spec.Models {
 		c, err := modelConfig(req, alias)
 		if err != nil {
@@ -101,14 +104,17 @@ func (r *Runner) prepareModels(ctx context.Context, req Request) error {
 		if modelNeedsTools(pipeline(req).Spec.Graph, alias) {
 			requirements = append(requirements, "toolCalling")
 		}
+
 		for _, capability := range requirements {
 			native := map[string]string{"toolCalling": "tools", "structuredOutput": "completion", "imageInput": "vision"}[capability]
 			if !slices.Contains(details.Capabilities, native) {
 				return fmt.Errorf("model %q lacks required capability %s", c.Model, capability)
 			}
 		}
+
 		req.Plan.ModelDigests[key] = digest
 	}
+
 	return nil
 }
 
@@ -117,20 +123,25 @@ func (r *Runner) prepareSandboxes(ctx context.Context, plan *contract.Plan) erro
 	usedSecrets := map[string]bool{}
 	usedModels := map[string]bool{}
 	usedMCP := map[string]bool{}
+
 	for _, p := range plan.Pipelines {
 		for _, s := range p.Spec.Sandboxes {
 			used[s.Profile] = true
 		}
+
 		for _, s := range p.Spec.Secrets {
 			usedSecrets[s.Ref] = true
 		}
+
 		for _, m := range p.Spec.Models {
 			usedModels[m.Connection] = true
 		}
+
 		for _, m := range p.Spec.MCP {
 			usedMCP[m.Connection] = true
 		}
 	}
+
 	for name := range usedModels {
 		for _, c := range plan.Profile.Spec.Models[name].Auth {
 			if c.SecretRef != "" {
@@ -138,11 +149,13 @@ func (r *Runner) prepareSandboxes(ctx context.Context, plan *contract.Plan) erro
 			}
 		}
 	}
+
 	for name := range usedMCP {
 		m := plan.Profile.Spec.MCP[name]
 		if m.Transport == "stdio" {
 			used[m.Sandbox] = true
 		}
+
 		for _, values := range []map[string]contract.Credential{m.Headers, m.Env} {
 			for _, c := range values {
 				if c.SecretRef != "" {
@@ -151,11 +164,13 @@ func (r *Runner) prepareSandboxes(ctx context.Context, plan *contract.Plan) erro
 			}
 		}
 	}
+
 	for name := range usedSecrets {
 		if _, err := r.secret(plan.Profile, name); err != nil {
 			return err
 		}
 	}
+
 	plan.Runtime.AdapterVersion = Version
 	if len(used) == 0 {
 		return nil
@@ -174,6 +189,7 @@ func (r *Runner) prepareSandboxes(ctx context.Context, plan *contract.Plan) erro
 		return err
 	}
 	defer d.client.CloseIdleConnections()
+
 	for name := range used {
 		p, ok := plan.Profile.Spec.Sandboxes[name]
 		if !ok {
@@ -200,6 +216,7 @@ func (r *Runner) prepareSandboxes(ctx context.Context, plan *contract.Plan) erro
 				plan.Runtime.FirewallImage = image.ID
 			}
 			p.ResolvedHosts = map[string][]string{}
+
 			for _, host := range p.Network.Hosts {
 				addresses := []string{host}
 				if net.ParseIP(host) == nil {
@@ -208,6 +225,7 @@ func (r *Runner) prepareSandboxes(ctx context.Context, plan *contract.Plan) erro
 						return fmt.Errorf("cannot resolve allowlisted host %q", host)
 					}
 				}
+
 				for _, address := range addresses {
 					ip := net.ParseIP(address)
 					if ip == nil {
@@ -219,8 +237,10 @@ func (r *Runner) prepareSandboxes(ctx context.Context, plan *contract.Plan) erro
 		}
 		plan.Profile.Spec.Sandboxes[name] = p
 	}
+
 	return nil
 }
+
 func modelNeedsTools(g contract.Graph, alias string) bool {
 	for _, n := range g.Nodes {
 		if n.Agent != nil && n.Agent.Model == alias {
@@ -233,5 +253,6 @@ func modelNeedsTools(g contract.Graph, alias string) bool {
 			return true
 		}
 	}
+
 	return false
 }

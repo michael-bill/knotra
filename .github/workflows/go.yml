@@ -35,7 +35,7 @@ jobs:
       COMPOSE_PROJECT_NAME: knotra-ci
       KNOTRA_TEST_DATABASE_URL: postgres://knotra:knotra-development@127.0.0.1:25432/knotra?sslmode=disable
       KNOTRA_TEST_FIREWALL_IMAGE: knotra-firewall:dev
-      KNOTRA_TEST_RECOVERY: "1"
+      KNOTRA_TEST_RECOVERY: '1'
       KNOTRA_TEST_TEMPORAL: 127.0.0.1:27233
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

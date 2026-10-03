@@ -50,6 +50,7 @@ func (c *PayloadCodec) Encode(payloads []*commonpb.Payload) ([]*commonpb.Payload
 		threshold = defaultPayloadThreshold
 	}
 	result := make([]*commonpb.Payload, len(payloads))
+
 	for index, payload := range payloads {
 		if payload == nil || string(payload.Metadata[converter.MetadataEncoding]) == externalPayloadEncoding || proto.Size(payload) < threshold {
 			result[index] = payload
@@ -66,8 +67,12 @@ func (c *PayloadCodec) Encode(payloads []*commonpb.Payload) ([]*commonpb.Payload
 		if key != blobKey(data) {
 			return nil, errors.New("blob store returned an invalid content key")
 		}
-		result[index] = &commonpb.Payload{Metadata: map[string][]byte{converter.MetadataEncoding: []byte(externalPayloadEncoding)}, Data: []byte(key)}
+		result[index] = &commonpb.Payload{
+			Metadata: map[string][]byte{converter.MetadataEncoding: []byte(externalPayloadEncoding)},
+			Data:     []byte(key),
+		}
 	}
+
 	return result, nil
 }
 
@@ -76,6 +81,7 @@ func (c *PayloadCodec) Decode(payloads []*commonpb.Payload) ([]*commonpb.Payload
 		return nil, errors.New("payload blob store is required")
 	}
 	result := make([]*commonpb.Payload, len(payloads))
+
 	for index, payload := range payloads {
 		if payload == nil || string(payload.Metadata[converter.MetadataEncoding]) != externalPayloadEncoding {
 			result[index] = payload
@@ -101,6 +107,7 @@ func (c *PayloadCodec) Decode(payloads []*commonpb.Payload) ([]*commonpb.Payload
 		}
 		result[index] = decoded
 	}
+
 	return result, nil
 }
 
@@ -110,11 +117,13 @@ func validBlobKey(key string) bool {
 	if len(key) != sha256.Size*2 {
 		return false
 	}
+
 	for _, char := range key {
 		if (char < '0' || char > '9') && (char < 'a' || char > 'f') {
 			return false
 		}
 	}
+
 	return true
 }
 

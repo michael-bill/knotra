@@ -14,8 +14,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/michael-bill/knotra/internal/contract"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+
+	"github.com/michael-bill/knotra/internal/contract"
 )
 
 type mcpSession struct {
@@ -71,9 +72,11 @@ func (b *boundedResponse) Read(data []byte) (int, error) {
 func (t headerTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	clone := req.Clone(req.Context())
 	clone.Header = req.Header.Clone()
+
 	for k, v := range t.headers {
 		clone.Header[k] = append([]string(nil), v...)
 	}
+
 	response, err := t.base.RoundTrip(clone)
 	if err != nil {
 		return nil, err
@@ -98,6 +101,7 @@ func (r *Runner) connectMCP(ctx context.Context, req Request, connection contrac
 			cancel()
 		}
 	}()
+
 	switch connection.Transport {
 	case "streamable_http":
 		headers := http.Header{}
@@ -112,8 +116,17 @@ func (r *Runner) connectMCP(ctx context.Context, req Request, connection contrac
 		if r.HTTPClient != nil && r.HTTPClient.Transport != nil {
 			base = r.HTTPClient.Transport
 		}
-		httpClient := &http.Client{Transport: headerTransport{base: base, headers: headers}, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
-		transport = &mcp.StreamableClientTransport{Endpoint: connection.URL, HTTPClient: httpClient, MaxRetries: -1, DisableStandaloneSSE: true, MaxEventSize: maxMCPResponseBytes}
+		httpClient := &http.Client{
+			Transport:     headerTransport{base: base, headers: headers},
+			CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
+		}
+		transport = &mcp.StreamableClientTransport{
+			Endpoint:             connection.URL,
+			HTTPClient:           httpClient,
+			MaxRetries:           -1,
+			DisableStandaloneSSE: true,
+			MaxEventSize:         maxMCPResponseBytes,
+		}
 	case "stdio":
 		profile, ok := req.Plan.Profile.Spec.Sandboxes[connection.Sandbox]
 		if !ok {
@@ -148,6 +161,7 @@ func (r *Runner) connectMCP(ctx context.Context, req Request, connection contrac
 	default:
 		return nil, fmt.Errorf("unsupported MCP transport %q", connection.Transport)
 	}
+
 	var err error
 	s.session, err = client.Connect(ctx, transport, nil)
 	if err != nil {
@@ -183,13 +197,21 @@ func (r *Runner) session(ctx context.Context, req Request, alias string) (*mcpSe
 	if s := cache.sessions[key]; s != nil {
 		return s, func() {}, nil
 	}
-	op := Operation{ID: operationID(Request{RunID: req.RunID, InstanceID: req.ScopeID}, "session/"+alias, false), Effect: "unknown"}
+	op := Operation{
+		ID:     operationID(Request{RunID: req.RunID, InstanceID: req.ScopeID}, "session/"+alias, false),
+		Effect: "unknown",
+	}
 	state, err := r.Hooks.BeginOperation(ctx, op)
 	if err != nil {
 		return nil, nil, err
 	}
 	if state.Started {
-		return nil, nil, &Failure{Code: "OUTCOME_UNKNOWN", Message: "run-scoped MCP session was lost; state cannot be reconstructed", OperationID: op.ID, Unknown: true}
+		return nil, nil, &Failure{
+			Code:        "OUTCOME_UNKNOWN",
+			Message:     "run-scoped MCP session was lost; state cannot be reconstructed",
+			OperationID: op.ID,
+			Unknown:     true,
+		}
 	}
 	initialization, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
@@ -263,7 +285,11 @@ func (r *Runner) callMCP(ctx context.Context, req Request, s *mcpSession, alias,
 		result, err := s.session.CallTool(ctx, &mcp.CallToolParams{Name: name, Arguments: obj})
 		if err != nil {
 			if resource.Session == "run" {
-				return nil, &Failure{Code: "OUTCOME_UNKNOWN", Message: "run-scoped MCP call failed; session state is not known", Unknown: true}
+				return nil, &Failure{
+					Code:    "OUTCOME_UNKNOWN",
+					Message: "run-scoped MCP call failed; session state is not known",
+					Unknown: true,
+				}
 			}
 			return nil, err
 		}
@@ -299,6 +325,7 @@ func verifyLiveTool(ctx context.Context, session *mcp.ClientSession, name string
 	count, size := 0, 0
 	seen := map[string]bool{}
 	found := false
+
 	for tool, err := range session.Tools(ctx, nil) {
 		if err != nil {
 			return fmt.Errorf("cannot verify live MCP tool: %w", err)
@@ -328,6 +355,7 @@ func verifyLiveTool(ctx context.Context, session *mcp.ClientSession, name string
 			return fmt.Errorf("MCP tool %q schema differs from admission snapshot", name)
 		}
 	}
+
 	if !found {
 		return fmt.Errorf("MCP tool %q is no longer available", name)
 	}
@@ -355,6 +383,7 @@ func insertIdempotency(obj map[string]any, pointer, value string) error {
 	}
 	parts := strings.Split(pointer[1:], "/")
 	current := obj
+
 	for i, raw := range parts {
 		part := strings.ReplaceAll(strings.ReplaceAll(raw, "~1", "/"), "~0", "~")
 		if i == len(parts)-1 {
@@ -377,6 +406,7 @@ func insertIdempotency(obj map[string]any, pointer, value string) error {
 		}
 		current = next
 	}
+
 	return nil
 }
 
@@ -421,11 +451,18 @@ func (r *Runner) Prepare(ctx context.Context, plan *contract.Plan) error {
 	if err := r.prepareSandboxes(ctx, plan); err != nil {
 		return err
 	}
+
 	for path, p := range plan.Pipelines {
-		req := Request{Plan: plan, Pipeline: path, Node: contract.Node{Inputs: map[string]contract.Port{}}, Inputs: contract.Values{}}
+		req := Request{
+			Plan:     plan,
+			Pipeline: path,
+			Node:     contract.Node{Inputs: map[string]contract.Port{}},
+			Inputs:   contract.Values{},
+		}
 		if err := r.prepareModels(ctx, req); err != nil {
 			return err
 		}
+
 		for _, resource := range p.Spec.MCP {
 			if _, ok := plan.MCPTools[resource.Connection]; ok {
 				continue
@@ -438,6 +475,7 @@ func (r *Runner) Prepare(ctx context.Context, plan *contract.Plan) error {
 			snapshots := map[string]contract.ToolSnapshot{}
 			seen := map[string]bool{}
 			totalBytes := 0
+
 			for tool, err := range s.session.Tools(ctx, nil) {
 				if err != nil {
 					_ = s.close()
@@ -482,15 +520,20 @@ func (r *Runner) Prepare(ctx context.Context, plan *contract.Plan) error {
 				}
 				snapshots[tool.Name] = contract.ToolSnapshot{InputSchema: input, OutputSchema: output, Description: tool.Description}
 			}
+
 			_ = s.close()
+
 			for _, name := range connection.AllowedTools {
 				if _, ok := snapshots[name]; !ok {
 					return fmt.Errorf("allowed MCP tool %q not discovered", name)
 				}
 			}
+
 			plan.MCPTools[resource.Connection] = snapshots
 		}
 	}
+
 	return nil
 }
+
 func urlPath(s string) string { return strings.ReplaceAll(s, "/", "%2F") }

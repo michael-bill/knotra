@@ -34,6 +34,7 @@ func TestCommandJournalConcurrentAndIdentity(t *testing.T) {
 	defer srv.Close()
 	c := Client{BaseURL: srv.URL, StateDir: t.TempDir()}
 	var wg sync.WaitGroup
+
 	for i := 0; i < 10; i++ {
 		wg.Add(1)
 		go func() {
@@ -44,6 +45,7 @@ func TestCommandJournalConcurrentAndIdentity(t *testing.T) {
 			}
 		}()
 	}
+
 	wg.Wait()
 	if calls.Load() != 1 {
 		t.Fatalf("sent %d calls for one local command", calls.Load())
@@ -57,6 +59,7 @@ func TestCommandJournalConcurrentAndIdentity(t *testing.T) {
 		t.Fatal("changed engine reused receipt")
 	}
 }
+
 func TestAmbiguousResponseKeepsCommandForExplicitRetry(t *testing.T) {
 	calls := 0
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -88,6 +91,7 @@ func TestAmbiguousResponseKeepsCommandForExplicitRetry(t *testing.T) {
 		t.Fatal(calls)
 	}
 }
+
 func TestRejectedReceiptIsStable(t *testing.T) {
 	var calls atomic.Int32
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -102,6 +106,7 @@ func TestRejectedReceiptIsStable(t *testing.T) {
 	defer srv.Close()
 	c := Client{BaseURL: srv.URL, StateDir: t.TempDir()}
 	var out any
+
 	for i := 0; i < 2; i++ {
 		err := c.Command(context.Background(), "/runs", json.RawMessage(`{}`), "reject", &out)
 		var he *HTTPError
@@ -109,12 +114,19 @@ func TestRejectedReceiptIsStable(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
+
 	if calls.Load() != 1 {
 		t.Fatal("reissued a definitive rejection")
 	}
 }
+
 func TestSSEChecksIdentityAndFrameBounds(t *testing.T) {
-	for _, s := range []string{"id: a\ndata: {\"id\":\"b\",\"runId\":\"r\"}\n\n", "id: a\ndata: {\"id\":\"a\",\"runId\":\"other\"}\n\n", "id: \x00\ndata: {\"id\":\"\\u0000\",\"runId\":\"r\"}\n\n", strings.Repeat("x", (256<<10)+1)} {
+	for _, s := range []string{
+		"id: a\ndata: {\"id\":\"b\",\"runId\":\"r\"}\n\n",
+		"id: a\ndata: {\"id\":\"a\",\"runId\":\"other\"}\n\n",
+		"id: \x00\ndata: {\"id\":\"\\u0000\",\"runId\":\"r\"}\n\n",
+		strings.Repeat("x", (256<<10)+1),
+	} {
 		if err := scanEvents(strings.NewReader(s), "r", func(protocol.Event) error { t.Fatal("invalid event emitted"); return nil }); err == nil {
 			t.Fatal("invalid stream accepted")
 		}
@@ -145,14 +157,45 @@ func TestInvalidReceiptRemainsPendingUntilExplicitReconciliation(t *testing.T) {
 		status                   int
 	}{
 		{"empty success", "/runs", `{}`, `{"run":{"id":"run","status":"pending"}}`, 201},
-		{"missing run identity", "/runs", `{"run":{"status":"pending"}}`, `{"run":{"id":"run","status":"pending"}}`, 201},
-		{"unknown run status", "/runs", `{"run":{"id":"run","status":"invented"}}`, `{"run":{"id":"run","status":"pending"}}`, 201},
+		{
+			"missing run identity",
+			"/runs",
+			`{"run":{"status":"pending"}}`,
+			`{"run":{"id":"run","status":"pending"}}`,
+			201,
+		},
+		{
+			"unknown run status",
+			"/runs",
+			`{"run":{"id":"run","status":"invented"}}`,
+			`{"run":{"id":"run","status":"pending"}}`,
+			201,
+		},
 		{"empty definition", "/definitions", `{"definition":{}}`, `{"definition":{"id":"definition"}}`, 201},
-		{"unaccepted action", "/runs/run/cancel", `{"accepted":false,"runId":"run"}`, `{"accepted":true,"runId":"run"}`, 202},
-		{"wrong target", "/requests/request/response", `{"accepted":true,"requestId":"other"}`, `{"accepted":true,"requestId":"request"}`, 200},
+		{
+			"unaccepted action",
+			"/runs/run/cancel",
+			`{"accepted":false,"runId":"run"}`,
+			`{"accepted":true,"runId":"run"}`,
+			202,
+		},
+		{
+			"wrong target",
+			"/requests/request/response",
+			`{"accepted":true,"requestId":"other"}`,
+			`{"accepted":true,"requestId":"request"}`,
+			200,
+		},
 		{"empty rejection", "/runs/run/cancel", `{}`, `{"accepted":true,"runId":"run"}`, 409},
-		{"malformed rejection", "/runs/run/cancel", `{"code":"CLOSED","message":"closed","diagnostics":null}`, `{"accepted":true,"runId":"run"}`, 409},
+		{
+			"malformed rejection",
+			"/runs/run/cancel",
+			`{"code":"CLOSED","message":"closed","diagnostics":null}`,
+			`{"accepted":true,"runId":"run"}`,
+			409,
+		},
 	}
+
 	for _, test := range cases {
 		t.Run(test.name, func(t *testing.T) {
 			var calls atomic.Int32
@@ -219,7 +262,11 @@ func TestWatchReconnectsInterruptedBodyFromCommittedCursor(t *testing.T) {
 			}
 			reader = strings.NewReader(frame("one") + frame("two"))
 		}
-		return &http.Response{StatusCode: 200, Header: http.Header{"Content-Type": {"text/event-stream"}}, Body: io.NopCloser(reader)}, nil
+		return &http.Response{
+			StatusCode: 200,
+			Header:     http.Header{"Content-Type": {"text/event-stream"}},
+			Body:       io.NopCloser(reader),
+		}, nil
 	})}}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
@@ -242,16 +289,35 @@ func TestWatchDoesNotReconnectProtocolOrCallbackErrors(t *testing.T) {
 		callbackErr             error
 	}{
 		{"wrong content type", "application/json", `{}`, nil},
-		{"wrong identity", "text/event-stream", "id: one\ndata: {\"id\":\"one\",\"runId\":\"other\"}\n\n", nil},
+		{
+			"wrong identity",
+			"text/event-stream",
+			"id: one\ndata: {\"id\":\"one\",\"runId\":\"other\"}\n\n",
+			nil,
+		},
 		{"oversize frame", "text/event-stream", strings.Repeat("x", 256<<10), nil},
-		{"callback EOF", "text/event-stream", "id: one\ndata: {\"id\":\"one\",\"runId\":\"run\"}\n\n", io.EOF},
-		{"callback network error", "text/event-stream", "id: one\ndata: {\"id\":\"one\",\"runId\":\"run\"}\n\n", io.ErrUnexpectedEOF},
+		{
+			"callback EOF",
+			"text/event-stream",
+			"id: one\ndata: {\"id\":\"one\",\"runId\":\"run\"}\n\n",
+			io.EOF,
+		},
+		{
+			"callback network error",
+			"text/event-stream",
+			"id: one\ndata: {\"id\":\"one\",\"runId\":\"run\"}\n\n",
+			io.ErrUnexpectedEOF,
+		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			calls := 0
 			client := &Client{BaseURL: "http://localhost", HTTP: &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
 				calls++
-				return &http.Response{StatusCode: 200, Header: http.Header{"Content-Type": {test.contentType}}, Body: io.NopCloser(strings.NewReader(test.body))}, nil
+				return &http.Response{
+					StatusCode: 200,
+					Header:     http.Header{"Content-Type": {test.contentType}},
+					Body:       io.NopCloser(strings.NewReader(test.body)),
+				}, nil
 			})}}
 			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 			defer cancel()

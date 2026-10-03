@@ -30,8 +30,10 @@ func pointer(v any, path string) (any, bool, error) {
 		return nil, false, fmt.Errorf("invalid JSON Pointer")
 	}
 	segments := []string{}
+
 	for _, part := range strings.Split(path[1:], "/") {
 		var segment strings.Builder
+
 		for i := 0; i < len(part); i++ {
 			if part[i] != '~' {
 				segment.WriteByte(part[i])
@@ -47,8 +49,10 @@ func pointer(v any, path string) (any, bool, error) {
 				segment.WriteByte('/')
 			}
 		}
+
 		segments = append(segments, segment.String())
 	}
+
 	for _, key := range segments {
 		switch x := v.(type) {
 		case map[string]any:
@@ -70,6 +74,7 @@ func pointer(v any, path string) (any, bool, error) {
 			return nil, false, fmt.Errorf("JSON Pointer traverses scalar or null")
 		}
 	}
+
 	return v, true, nil
 }
 
@@ -80,6 +85,7 @@ func lookup(source string, s Scope) (Value, bool, error) {
 	if len(p) < 2 {
 		return Value{}, false, fmt.Errorf("invalid reference %q", source)
 	}
+
 	switch p[0] {
 	case "inputs":
 		values = s.Inputs
@@ -117,6 +123,7 @@ func lookup(source string, s Scope) (Value, bool, error) {
 	default:
 		return Value{}, false, fmt.Errorf("unknown scope %q", p[0])
 	}
+
 	v, ok := values[key]
 	return v, ok, nil
 }
@@ -133,6 +140,7 @@ func EvalBinding(b Binding, s Scope) (Value, bool, error) {
 				return v, true, nil
 			}
 		}
+
 		return Value{}, false, nil
 	}
 	if b.From != "" {
@@ -204,9 +212,11 @@ func expression(source string) (*checkedExpression, error) {
 		return nil, fmt.Errorf("CEL expression exceeds 8192 bytes")
 	}
 	opts := []cel.EnvOption{cel.CustomTypeAdapter(orderedAdapter{})}
+
 	for _, name := range []string{"inputs", "args", "nodes", "state", "iteration", "body"} {
 		opts = append(opts, cel.Variable(name, cel.DynType))
 	}
+
 	env, err := cel.NewEnv(opts...)
 	if err != nil {
 		return nil, err
@@ -236,12 +246,22 @@ func expression(source string) (*checkedExpression, error) {
 	return x, nil
 }
 
-var namespaces = map[string]bool{"inputs": true, "args": true, "nodes": true, "state": true, "iteration": true, "body": true}
+var namespaces = map[string]bool{
+	"inputs":    true,
+	"args":      true,
+	"nodes":     true,
+	"state":     true,
+	"iteration": true,
+	"body":      true,
+}
+
 var allowedFunctions = func() map[string]bool {
 	m := map[string]bool{}
+
 	for _, s := range strings.Fields("_+_ _-_ _*_ _/_ _%_ _==_ _!=_ _<_ _<=_ _>_ _>=_ _&&_ _||_ !_ -_ _?_:_ _[_] @in _in_ @not_strictly_false size int double string bool type contains startsWith endsWith matches") {
 		m[s] = true
 	}
+
 	return m
 }()
 
@@ -289,11 +309,13 @@ func checkExpr(e *exprpb.Expr, refs map[string]bool, count *int) error {
 		if len(parts) < length {
 			return fmt.Errorf("whole namespace %s cannot be used as a value", root)
 		}
+
 		for _, p := range parts[:length] {
 			if p == "\x00" {
 				return fmt.Errorf("computed namespace/port name is forbidden")
 			}
 		}
+
 		if root == "nodes" && parts[1] != "outputs" || root == "body" && parts[0] != "outputs" {
 			return fmt.Errorf("expected outputs namespace")
 		}
@@ -302,14 +324,17 @@ func checkExpr(e *exprpb.Expr, refs map[string]bool, count *int) error {
 		}
 		refs[strings.Join(append([]string{root}, parts[:length]...), ".")] = true
 		*count += len(parts)
+
 		for _, d := range dynamic {
 			if err := checkExpr(d, refs, count); err != nil {
 				return err
 			}
 		}
+
 		return nil
 	}
 	visit := func(child *exprpb.Expr) error { return checkExpr(child, refs, count) }
+
 	switch x := e.ExprKind.(type) {
 	case *exprpb.Expr_ConstExpr:
 		switch x.ConstExpr.ConstantKind.(type) {
@@ -363,6 +388,7 @@ func checkExpr(e *exprpb.Expr, refs map[string]bool, count *int) error {
 			}
 		}
 	}
+
 	return nil
 }
 
@@ -385,8 +411,10 @@ func eval(source string, s Scope) (Value, bool, error) {
 			return Value{}, false, fmt.Errorf("artifacts cannot enter CEL")
 		}
 	}
+
 	values := func(v Values) (map[string]any, error) {
 		m := map[string]any{}
+
 		for _, k := range sortedKeys(v) {
 			if len(v[k].JSON) == 0 {
 				continue
@@ -397,9 +425,11 @@ func eval(source string, s Scope) (Value, bool, error) {
 			}
 			m[k] = x
 		}
+
 		return m, nil
 	}
 	activation := map[string]any{}
+
 	for key, v := range map[string]Values{"inputs": s.Inputs, "args": s.Args, "state": s.State} {
 		m, err := values(v)
 		if err != nil {
@@ -407,7 +437,9 @@ func eval(source string, s Scope) (Value, bool, error) {
 		}
 		activation[key] = m
 	}
+
 	nodes := map[string]any{}
+
 	for _, name := range sortedKeys(s.Nodes) {
 		m, err := values(s.Nodes[name])
 		if err != nil {
@@ -415,6 +447,7 @@ func eval(source string, s Scope) (Value, bool, error) {
 		}
 		nodes[name] = map[string]any{"outputs": m}
 	}
+
 	activation["nodes"] = nodes
 	body, err := values(s.Body)
 	if err != nil {
@@ -481,5 +514,6 @@ func celJSON(v ref.Val) (any, error) {
 		}
 		return out, nil
 	}
+
 	return nil, fmt.Errorf("CEL result %s is not JSON", v.Type())
 }

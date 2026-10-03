@@ -40,6 +40,7 @@ func validateReceipt(route string, data []byte) error {
 		return err
 	}
 	valid := false
+
 	switch route {
 	case "/definitions":
 		valid = receipt.Definition != nil && opaqueID(receipt.Definition.ID)
@@ -69,6 +70,7 @@ func validateReceipt(route string, data []byte) error {
 			}
 		}
 	}
+
 	if !valid {
 		return errors.New("receipt does not identify the accepted command result")
 	}
@@ -79,11 +81,13 @@ func opaqueID(value string) bool {
 	if value == "" || len(value) > 256 {
 		return false
 	}
+
 	for _, char := range value {
 		if unicode.IsControl(char) {
 			return false
 		}
 	}
+
 	return true
 }
 

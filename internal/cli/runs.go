@@ -6,8 +6,9 @@ import (
 	"net/url"
 	"time"
 
-	"github.com/michael-bill/knotra/internal/protocol"
 	"github.com/spf13/cobra"
+
+	"github.com/michael-bill/knotra/internal/protocol"
 )
 
 func (s *commandState) runCommand() *cobra.Command {
@@ -51,7 +52,13 @@ func (s *commandState) runCommand() *cobra.Command {
 		var result struct {
 			Run protocol.Run `json:"run"`
 		}
-		if err = engine.Command(cmd.Context(), "/runs", map[string]any{"definitionId": definitionID, "profile": profile, "inputs": in, "artifacts": art}, id, &result); err != nil {
+		if err = engine.Command(
+			cmd.Context(),
+			"/runs",
+			map[string]any{"definitionId": definitionID, "profile": profile, "inputs": in, "artifacts": art},
+			id,
+			&result,
+		); err != nil {
 			return err
 		}
 		if !wait && !watch {
@@ -100,9 +107,11 @@ func (s *commandState) runsCommand() *cobra.Command {
 			return s.printJSON(page)
 		}
 		rows := [][]string{}
+
 		for _, run := range page.Items {
 			rows = append(rows, []string{run.ID, run.Status, run.Profile, run.Title, run.CreatedAt.Format(time.RFC3339)})
 		}
+
 		if err = s.table([]string{"ID", "STATUS", "PROFILE", "TITLE", "CREATED"}, rows); err != nil {
 			return err
 		}
@@ -154,6 +163,7 @@ func (s *commandState) runsCommand() *cobra.Command {
 	root.AddCommand(list, get, watch, wait, s.runAction("cancel"), s.runAction("resume"), s.resolveCommand())
 	return root
 }
+
 func (s *commandState) runAction(action string) *cobra.Command {
 	var key string
 	cmd := &cobra.Command{Use: action + " RUN_ID", Short: "Request engine action: " + action, Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
@@ -162,6 +172,7 @@ func (s *commandState) runAction(action string) *cobra.Command {
 	cmd.Flags().StringVar(&key, "idempotency-key", "", "Stable operation ID for this exact command")
 	return cmd
 }
+
 func (s *commandState) resolveCommand() *cobra.Command {
 	var outcome, evidence, file, key string
 	var outputs []string
@@ -176,7 +187,12 @@ func (s *commandState) resolveCommand() *cobra.Command {
 		if err != nil {
 			return err
 		}
-		return s.mutation(cmd.Context(), "/runs/"+url.PathEscape(args[0])+"/instances/"+url.PathEscape(args[1])+"/resolve", map[string]any{"outcome": outcome, "evidence": evidence, "outputs": values}, key)
+		return s.mutation(
+			cmd.Context(),
+			"/runs/"+url.PathEscape(args[0])+"/instances/"+url.PathEscape(args[1])+"/resolve",
+			map[string]any{"outcome": outcome, "evidence": evidence, "outputs": values},
+			key,
+		)
 	}}
 	cmd.Flags().StringVar(&outcome, "outcome", "", "Verified outcome: succeeded, not_started, failed")
 	cmd.Flags().StringVar(&evidence, "evidence", "", "Evidence supporting the outcome")
@@ -185,6 +201,7 @@ func (s *commandState) resolveCommand() *cobra.Command {
 	cmd.Flags().StringVar(&key, "idempotency-key", "", "Stable operation ID")
 	return cmd
 }
+
 func (s *commandState) getRun(ctx context.Context, id string) (protocol.Run, error) {
 	var result struct {
 		Run protocol.Run `json:"run"`
@@ -192,6 +209,7 @@ func (s *commandState) getRun(ctx context.Context, id string) (protocol.Run, err
 	err := s.client().Get(ctx, "/runs/"+url.PathEscape(id), &result)
 	return result.Run, err
 }
+
 func (s *commandState) waitRun(ctx context.Context, id string) (protocol.Run, error) {
 	for {
 		run, err := s.getRun(ctx, id)
@@ -202,6 +220,7 @@ func (s *commandState) waitRun(ctx context.Context, id string) (protocol.Run, er
 			return run, nil
 		}
 		timer := time.NewTimer(time.Second)
+
 		select {
 		case <-ctx.Done():
 			timer.Stop()
@@ -210,12 +229,14 @@ func (s *commandState) waitRun(ctx context.Context, id string) (protocol.Run, er
 		}
 	}
 }
+
 func runExit(run protocol.Run) error {
 	if run.Status == "failed" || run.Status == "cancelled" {
 		return &ExitError{Code: 3, Message: "run " + run.ID + " " + run.Status}
 	}
 	return nil
 }
+
 func (s *commandState) printRun(run protocol.Run, operation string) error {
 	if s.json {
 		result := map[string]any{"run": run}
@@ -234,9 +255,11 @@ func (s *commandState) printRun(run protocol.Run, operation string) error {
 	}
 	if len(run.Instances) > 0 {
 		rows := [][]string{}
+
 		for _, item := range run.Instances {
 			rows = append(rows, []string{item.ID, item.NodeID, item.Status, item.AttemptID})
 		}
+
 		if err := s.table([]string{"INSTANCE", "NODE", "STATUS", "ATTEMPT"}, rows); err != nil {
 			return err
 		}
@@ -253,6 +276,7 @@ func (s *commandState) printRun(run protocol.Run, operation string) error {
 	}
 	return s.diagnostics(run.Diagnostics)
 }
+
 func (s *commandState) mutation(ctx context.Context, route string, payload any, key string) error {
 	id := operationKey(key)
 	result := map[string]any{}
@@ -262,9 +286,11 @@ func (s *commandState) mutation(ctx context.Context, route string, payload any, 
 	result["operationId"] = id
 	return s.printJSON(result)
 }
+
 func fetchPages[T any](ctx context.Context, s *commandState, route, cursor string, all bool) (protocol.Page[T], error) {
 	result := protocol.Page[T]{Items: []T{}}
 	seen := map[string]bool{}
+
 	for {
 		endpoint := route
 		if cursor != "" {
@@ -286,10 +312,12 @@ func fetchPages[T any](ctx context.Context, s *commandState, route, cursor strin
 		seen[cursor] = true
 	}
 }
+
 func pageFlags(cmd *cobra.Command, cursor *string, all *bool) {
 	cmd.Flags().StringVar(cursor, "cursor", "", "Opaque pagination cursor")
 	cmd.Flags().BoolVar(all, "all", false, "Read all pages")
 }
+
 func (s *commandState) nextCursor(cursor *string) error {
 	if cursor != nil {
 		_, err := fmt.Fprintln(s.options.Out, "Next cursor:", *cursor)

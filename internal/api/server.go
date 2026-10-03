@@ -17,6 +17,7 @@ import (
 	"strings"
 
 	"github.com/jackc/pgx/v5"
+
 	"github.com/michael-bill/knotra/internal/contract"
 	"github.com/michael-bill/knotra/internal/protocol"
 	"github.com/michael-bill/knotra/internal/store"
@@ -85,6 +86,7 @@ func (s *Server) Handler() http.Handler {
 		mux.ServeHTTP(w, r)
 	})
 }
+
 func (s *Server) principal() string {
 	if s.Token == "" {
 		return "local"
@@ -92,6 +94,7 @@ func (s *Server) principal() string {
 	h := sha256.Sum256([]byte(s.Token))
 	return "token-" + hex.EncodeToString(h[:16])
 }
+
 func (s *Server) write(w http.ResponseWriter, status int, value any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
@@ -99,12 +102,14 @@ func (s *Server) write(w http.ResponseWriter, status int, value any) {
 		s.Log.Debug("response write failed", "error", err)
 	}
 }
+
 func (s *Server) fail(w http.ResponseWriter, status int, code, message string, diags []contract.Diagnostic) {
 	if diags == nil {
 		diags = []contract.Diagnostic{}
 	}
 	s.write(w, status, protocol.Error{Code: code, Message: message, Diagnostics: diags})
 }
+
 func (s *Server) err(w http.ResponseWriter, e error) {
 	if errors.Is(e, store.ErrNotFound) {
 		s.fail(w, 404, "NOT_FOUND", "object not found", nil)
@@ -117,6 +122,7 @@ func (s *Server) err(w http.ResponseWriter, e error) {
 		}
 	}
 }
+
 func readBody(w http.ResponseWriter, r *http.Request, v any) ([]byte, error) {
 	b, e := io.ReadAll(http.MaxBytesReader(w, r.Body, maxRequestBytes))
 	if e != nil {
@@ -143,6 +149,7 @@ func readBody(w http.ResponseWriter, r *http.Request, v any) ([]byte, error) {
 	}
 	return json.Marshal(normalized)
 }
+
 func (s *Server) command(w http.ResponseWriter, r *http.Request, payload []byte, fn func(pgx.Tx) (int, any, error)) {
 	key := r.Header.Get("Idempotency-Key")
 	if !operationPattern.MatchString(key) {
@@ -164,6 +171,7 @@ func (s *Server) command(w http.ResponseWriter, r *http.Request, payload []byte,
 		}
 		code, message := "", ""
 		var validation *store.ValidationError
+
 		switch {
 		case errors.Is(err, store.ErrConflict):
 			status, code, message = 409, "OPERATION_CONFLICT", "operation conflicts with existing state"
@@ -174,6 +182,7 @@ func (s *Server) command(w http.ResponseWriter, r *http.Request, payload []byte,
 		default:
 			return 0, nil, err
 		}
+
 		return status, protocol.Error{Code: code, Message: message, Diagnostics: []contract.Diagnostic{}}, nil
 	})
 	if e != nil {
@@ -184,6 +193,17 @@ func (s *Server) command(w http.ResponseWriter, r *http.Request, payload []byte,
 	w.WriteHeader(status)
 	_, _ = w.Write(b)
 }
+
 func (s *Server) info(w http.ResponseWriter, r *http.Request) {
-	s.write(w, 200, map[string]any{"protocol": protocol.Version, "engineId": s.Store.EngineID, "principalId": s.principal(), "version": s.Version, "capabilities": []string{"validate", "definitions", "runs", "events", "human", "artifacts", "resolution"}})
+	s.write(
+		w,
+		200,
+		map[string]any{
+			"protocol":     protocol.Version,
+			"engineId":     s.Store.EngineID,
+			"principalId":  s.principal(),
+			"version":      s.Version,
+			"capabilities": []string{"validate", "definitions", "runs", "events", "human", "artifacts", "resolution"},
+		},
+	)
 }

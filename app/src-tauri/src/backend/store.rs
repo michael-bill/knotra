@@ -19,20 +19,24 @@ impl Store {
         }
         db.busy_timeout(std::time::Duration::from_secs(5))
             .map_err(Error::storage)?;
-        db.execute_batch("PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL;
+        db.execute_batch(
+            "PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL;
           CREATE TABLE IF NOT EXISTS local_state (id INTEGER PRIMARY KEY CHECK(id=1), json TEXT NOT NULL);
           CREATE TABLE IF NOT EXISTS cache (engine TEXT NOT NULL, key TEXT NOT NULL, json TEXT NOT NULL, PRIMARY KEY(engine,key));
           CREATE TABLE IF NOT EXISTS events (engine TEXT NOT NULL, run TEXT NOT NULL, id TEXT NOT NULL, json TEXT NOT NULL, PRIMARY KEY(engine,run,id));
           CREATE TABLE IF NOT EXISTS cursors (engine TEXT NOT NULL, run TEXT NOT NULL, id TEXT NOT NULL, PRIMARY KEY(engine,run));
           CREATE TABLE IF NOT EXISTS operations (engine TEXT NOT NULL, id TEXT NOT NULL, request TEXT NOT NULL, response TEXT, PRIMARY KEY(engine,id));
-          PRAGMA user_version=1;").map_err(Error::storage)?;
+          PRAGMA user_version=1;",
+        ).map_err(Error::storage)?;
         Ok(Self(Mutex::new(db)))
     }
+
     fn db(&self) -> Result<std::sync::MutexGuard<'_, Connection>> {
         self.0
             .lock()
             .map_err(|_| Error::new("storage", "Workspace database is unavailable."))
     }
+
     pub fn load(&self) -> Result<Option<Value>> {
         let text: Option<String> = self
             .db()?
@@ -44,6 +48,7 @@ impl Store {
         text.map(|text| serde_json::from_str(&text).map_err(Error::storage))
             .transpose()
     }
+
     pub fn save(&self, value: &Value) -> Result<()> {
         if value["version"] != 1 || !value["workspaces"].is_array() || !value["runs"].is_array() {
             return Err(Error::new("input", "Unsupported workspace backup."));
@@ -55,13 +60,21 @@ impl Store {
                 "Workspace exceeds 96 MiB. Export old runs or split packages.",
             ));
         }
-        self.db()?.execute("INSERT INTO local_state VALUES(1,?1) ON CONFLICT(id) DO UPDATE SET json=excluded.json", [text]).map_err(Error::storage)?;
+        self.db()?.execute(
+            "INSERT INTO local_state VALUES(1,?1) ON CONFLICT(id) DO UPDATE SET json=excluded.json",
+            [text],
+        ).map_err(Error::storage)?;
         Ok(())
     }
+
     pub fn cache(&self, engine: &str, key: &str, value: &Value) -> Result<()> {
-        self.db()?.execute("INSERT INTO cache VALUES(?1,?2,?3) ON CONFLICT(engine,key) DO UPDATE SET json=excluded.json", params![engine,key,value.to_string()]).map_err(Error::storage)?;
+        self.db()?.execute(
+            "INSERT INTO cache VALUES(?1,?2,?3) ON CONFLICT(engine,key) DO UPDATE SET json=excluded.json",
+            params![engine,key,value.to_string()],
+        ).map_err(Error::storage)?;
         Ok(())
     }
+
     pub fn snapshot(&self, engine: &str) -> Result<Value> {
         let db = self.db()?;
         let mut cache = serde_json::Map::new();
@@ -110,6 +123,7 @@ impl Store {
         .map_err(Error::storage)?;
         Ok(None)
     }
+
     pub fn complete(&self, engine: &str, id: &str, response: &Value) -> Result<()> {
         self.db()?
             .execute(
@@ -119,6 +133,7 @@ impl Store {
             .map_err(Error::storage)?;
         Ok(())
     }
+
     pub fn cursor(&self, engine: &str, run: &str) -> Result<Option<String>> {
         self.db()?
             .query_row(
@@ -129,6 +144,7 @@ impl Store {
             .optional()
             .map_err(Error::storage)
     }
+
     pub fn event(&self, engine: &str, run: &str, id: &str, event: &Value) -> Result<bool> {
         let mut db = self.db()?;
         let tx = db.transaction().map_err(Error::storage)?;
@@ -140,11 +156,15 @@ impl Store {
             .map_err(Error::storage)?
             > 0;
         if fresh {
-            tx.execute("INSERT INTO cursors VALUES(?1,?2,?3) ON CONFLICT(engine,run) DO UPDATE SET id=excluded.id",params![engine,run,id]).map_err(Error::storage)?;
+            tx.execute(
+                "INSERT INTO cursors VALUES(?1,?2,?3) ON CONFLICT(engine,run) DO UPDATE SET id=excluded.id",
+                params![engine,run,id],
+            ).map_err(Error::storage)?;
         }
         tx.commit().map_err(Error::storage)?;
         Ok(fresh)
     }
+
     pub fn events(&self, engine: &str, run: &str) -> Result<Vec<Value>> {
         let db = self.db()?;
         let mut statement=db.prepare("SELECT json FROM (SELECT rowid,json FROM events WHERE engine=?1 AND run=?2 ORDER BY rowid DESC LIMIT 1000) ORDER BY rowid").map_err(Error::storage)?;
@@ -156,12 +176,14 @@ impl Store {
         result
     }
 }
+
 #[cfg(test)]
 mod tests {
     use super::*;
     fn store() -> Store {
         Store::open(Path::new(":memory:")).unwrap()
     }
+
     #[test]
     fn operation_recovery_rejects_changed_payload() {
         let s = store();
@@ -175,6 +197,7 @@ mod tests {
         );
         assert!(s.prepare("b", "op1", &command).unwrap().is_none());
     }
+
     #[test]
     fn replay_never_duplicates_or_regresses_cursor() {
         let s = store();
@@ -185,6 +208,7 @@ mod tests {
         assert_eq!(s.events("a", "run").unwrap().len(), 2);
         assert!(s.events("b", "run").unwrap().is_empty());
     }
+
     #[test]
     fn survives_restart_without_touching_engine_state() {
         let path = std::env::temp_dir().join(format!(

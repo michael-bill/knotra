@@ -13,15 +13,18 @@ pub struct PackageFile {
     pub path: String,
     pub content: String,
 }
+
 #[derive(Serialize)]
 pub struct OpenedPackage {
     pub entrypoint: String,
     pub source: String,
     pub files: Vec<PackageFile>,
 }
+
 fn err(e: impl std::fmt::Display) -> String {
     e.to_string()
 }
+
 pub fn valid_path(path: &str) -> bool {
     !path.is_empty()
         && path.chars().count() <= 1024
@@ -35,6 +38,7 @@ pub fn valid_path(path: &str) -> bool {
             .all(|p| !p.is_empty() && p != "." && p != "..")
         && path.nfc().collect::<String>() == path
 }
+
 #[cfg(unix)]
 fn read_relative(root: &Path, path: &str) -> Result<Vec<u8>, String> {
     use rustix::fs::{openat, Mode, OFlags};
@@ -67,6 +71,7 @@ fn read_relative(root: &Path, path: &str) -> Result<Vec<u8>, String> {
     }
     read_limited(file)
 }
+
 #[cfg(not(unix))]
 fn read_relative(root: &Path, path: &str) -> Result<Vec<u8>, String> {
     let mut target = root.to_path_buf();
@@ -86,6 +91,7 @@ fn read_relative(root: &Path, path: &str) -> Result<Vec<u8>, String> {
     }
     read_limited(File::open(actual).map_err(err)?)
 }
+
 fn read_limited(file: File) -> Result<Vec<u8>, String> {
     let mut bytes = Vec::new();
     file.take(MAX_PACKAGE as u64 + 1)
@@ -96,28 +102,25 @@ fn read_limited(file: File) -> Result<Vec<u8>, String> {
     }
     Ok(bytes)
 }
-fn imports(value: &serde_yaml::Value, found: &mut Vec<String>) {
-    match value {
-        serde_yaml::Value::Mapping(map) => {
-            if value["type"].as_str() == Some("pipeline") {
-                if let Some(path) = value["pipeline"]["file"].as_str() {
+
+fn imports(graph: &serde_yaml::Value, found: &mut Vec<String>) {
+    let Some(nodes) = graph["nodes"].as_mapping() else {
+        return;
+    };
+
+    for node in nodes.values() {
+        match node["type"].as_str() {
+            Some("pipeline") => {
+                if let Some(path) = node["pipeline"]["file"].as_str() {
                     found.push(path.into());
                 }
             }
-            for (key, item) in map {
-                if key.as_str() != Some("value") {
-                    imports(item, found);
-                }
-            }
+            Some(kind @ ("foreach" | "loop")) => imports(&node[kind]["body"], found),
+            _ => {}
         }
-        serde_yaml::Value::Sequence(items) => {
-            for item in items {
-                imports(item, found);
-            }
-        }
-        _ => {}
     }
 }
+
 struct Loader<'a> {
     root: &'a Path,
     files: Vec<PackageFile>,
@@ -126,6 +129,7 @@ struct Loader<'a> {
     active: HashSet<String>,
     total: usize,
 }
+
 impl Loader<'_> {
     fn load(&mut self, path: &str, bytes: &[u8], depth: usize) -> Result<(), String> {
         if depth > 32 || !self.active.insert(path.into()) {
@@ -198,6 +202,7 @@ impl Loader<'_> {
         Ok(())
     }
 }
+
 pub fn read_package(selected: &Path) -> Result<OpenedPackage, String> {
     let root = selected
         .parent()
@@ -232,6 +237,7 @@ pub fn read_package(selected: &Path) -> Result<OpenedPackage, String> {
         files: loader.files,
     })
 }
+
 pub fn write_package(
     parent: &Path,
     entrypoint: &str,
@@ -294,6 +300,7 @@ pub fn write_package(
     }
     result
 }
+
 pub fn write_file(path: &Path, content: &str) -> Result<(), String> {
     let bytes = STANDARD.decode(content).map_err(err)?;
     if bytes.len() > MAX_PACKAGE {
@@ -324,6 +331,7 @@ pub fn write_file(path: &Path, content: &str) -> Result<(), String> {
         .write_all(&bytes)
         .map_err(err)
 }
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -341,6 +349,7 @@ mod tests {
         fs::create_dir(&p).unwrap();
         p
     }
+
     #[test]
     fn rejects_bad_paths() {
         for p in ["../x", "/x", "a//b", "a\\b", "C:x", "a/./b", "a\nx"] {
@@ -348,6 +357,7 @@ mod tests {
         }
         assert!(valid_path("children/writer.yaml"));
     }
+
     #[test]
     fn preserves_package_bytes() {
         let root = scratch();
@@ -362,6 +372,7 @@ mod tests {
         assert_eq!(read.files[0].content, files[0].content);
         fs::remove_dir_all(root).unwrap();
     }
+
     #[test]
     fn rejects_conflicting_exports() {
         let root = scratch();
@@ -388,5 +399,27 @@ mod tests {
         fs::hard_link(root.join("secret"), root.join("hard")).unwrap();
         assert!(read_relative(&root, "hard").is_err());
         fs::remove_dir_all(root).unwrap();
+    }
+    #[test]
+    fn imports_only_follow_graph_nodes() {
+        let graph: serde_yaml::Value = serde_yaml::from_str(
+            r#"
+inputs:
+  data:
+    default: {type: pipeline, pipeline: {file: data.yaml}}
+nodes:
+  collect:
+    type: foreach
+    foreach:
+      body:
+        nodes:
+          child: {type: pipeline, pipeline: {file: nested.yaml}}
+  child: {type: pipeline, pipeline: {file: child.yaml}}
+"#,
+        )
+        .unwrap();
+        let mut found = Vec::new();
+        imports(&graph, &mut found);
+        assert_eq!(found, ["nested.yaml", "child.yaml"]);
     }
 }

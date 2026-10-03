@@ -34,6 +34,7 @@ func (s *Server) events(w http.ResponseWriter, r *http.Request) {
 	defer ticker.Stop()
 	heartbeat := time.NewTicker(15 * time.Second)
 	defer heartbeat.Stop()
+
 	for {
 		for _, ev := range batch {
 			b, e := json.Marshal(ev)
@@ -45,7 +46,9 @@ func (s *Server) events(w http.ResponseWriter, r *http.Request) {
 			}
 			cursor = ev.ID
 		}
+
 		flusher.Flush()
+
 		select {
 		case <-r.Context().Done():
 			return
@@ -56,6 +59,7 @@ func (s *Server) events(w http.ResponseWriter, r *http.Request) {
 			flusher.Flush()
 		case <-ticker.C:
 		}
+
 		batch, e = s.Store.Events(r.Context(), id, cursor)
 		if e != nil {
 			return

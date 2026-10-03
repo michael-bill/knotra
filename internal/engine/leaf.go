@@ -6,9 +6,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/michael-bill/knotra/internal/contract"
 	"go.temporal.io/sdk/temporal"
 	"go.temporal.io/sdk/workflow"
+
+	"github.com/michael-bill/knotra/internal/contract"
 )
 
 func (r *runtime) leaf(ctx workflow.Context, gc graphContext, state *NodeSnapshot, node contract.Node, args contract.Values) (contract.Values, error) {
@@ -35,6 +36,7 @@ func (r *runtime) leaf(ctx workflow.Context, gc graphContext, state *NodeSnapsho
 		}
 		arguments = value.JSON
 	}
+
 	for attempt := 1; attempt <= node.Execution.Retry.MaxAttempts; attempt++ {
 		if err := r.acquire(ctx, gc.scopes); err != nil {
 			return nil, err
@@ -49,8 +51,29 @@ func (r *runtime) leaf(ctx workflow.Context, gc graphContext, state *NodeSnapsho
 			r.release(gc.scopes)
 			return nil, failure("DEADLINE_EXCEEDED", "node deadline exceeded")
 		}
-		activityCtx := workflow.WithActivityOptions(ctx, workflow.ActivityOptions{StartToCloseTimeout: remaining, HeartbeatTimeout: 20 * time.Second, WaitForCancellation: true, RetryPolicy: &temporal.RetryPolicy{MaximumAttempts: 1}, Summary: fmt.Sprintf("%s: %s (attempt %d)", node.Type, state.NodeID, attempt)})
-		request := ExecuteRequest{RunID: r.in.RunID, InstanceID: state.ID, NodeID: state.NodeID, Pipeline: gc.pipeline, Attempt: attempt, Node: node, Inputs: args, ToolArguments: arguments, Scopes: gc.scopes, Permissions: gc.permissions, Deadline: gc.deadline}
+		activityCtx := workflow.WithActivityOptions(
+			ctx,
+			workflow.ActivityOptions{
+				StartToCloseTimeout: remaining,
+				HeartbeatTimeout:    20 * time.Second,
+				WaitForCancellation: true,
+				RetryPolicy:         &temporal.RetryPolicy{MaximumAttempts: 1},
+				Summary:             fmt.Sprintf("%s: %s (attempt %d)", node.Type, state.NodeID, attempt),
+			},
+		)
+		request := ExecuteRequest{
+			RunID:         r.in.RunID,
+			InstanceID:    state.ID,
+			NodeID:        state.NodeID,
+			Pipeline:      gc.pipeline,
+			Attempt:       attempt,
+			Node:          node,
+			Inputs:        args,
+			ToolArguments: arguments,
+			Scopes:        gc.scopes,
+			Permissions:   gc.permissions,
+			Deadline:      gc.deadline,
+		}
 		var result ExecuteResult
 		err := workflow.ExecuteActivity(activityCtx, ExecuteActivity, request).Get(ctx, &result)
 		r.release(gc.scopes)
@@ -60,7 +83,13 @@ func (r *runtime) leaf(ctx workflow.Context, gc graphContext, state *NodeSnapsho
 		if err != nil {
 			// A worker can disappear after an external system accepted a request.
 			// Retrying the activity wholesale would replay those side effects.
-			result.Failure = &Failure{Code: "OUTCOME_UNKNOWN", Message: err.Error(), Unknown: true, OperationID: fmt.Sprintf("%s/attempt/%d", state.ID, attempt), CanRetryIfNotExecuted: node.Type != "agent"}
+			result.Failure = &Failure{
+				Code:                  "OUTCOME_UNKNOWN",
+				Message:               err.Error(),
+				Unknown:               true,
+				OperationID:           fmt.Sprintf("%s/attempt/%d", state.ID, attempt),
+				CanRetryIfNotExecuted: node.Type != "agent",
+			}
 		}
 		if result.Failure == nil {
 			return result.Outputs, nil
@@ -94,6 +123,7 @@ func (r *runtime) leaf(ctx workflow.Context, gc graphContext, state *NodeSnapsho
 			return nil, err
 		}
 	}
+
 	return nil, failure("PLAN_INVALID", "no node attempt permitted")
 }
 
@@ -113,7 +143,16 @@ func (r *runtime) human(ctx workflow.Context, gc graphContext, state *NodeSnapsh
 		return nil, failure("PLAN_INVALID", "missing human configuration")
 	}
 	id := stableID("h", state.ID+"/human")
-	request := Request{ID: id, InstanceID: state.ID, Kind: "human", Status: "open", Prompt: node.Human.Prompt.Text, Inputs: withoutArtifactPaths(args), Outputs: node.Outputs, Deadline: gc.deadline}
+	request := Request{
+		ID:         id,
+		InstanceID: state.ID,
+		Kind:       "human",
+		Status:     "open",
+		Prompt:     node.Human.Prompt.Text,
+		Inputs:     withoutArtifactPaths(args),
+		Outputs:    node.Outputs,
+		Deadline:   gc.deadline,
+	}
 	if err := r.request(ctx, request); err != nil {
 		return nil, err
 	}
@@ -131,6 +170,7 @@ func (r *runtime) human(ctx workflow.Context, gc graphContext, state *NodeSnapsh
 		}
 	}()
 	seen := map[string]bool{}
+
 	for {
 		waitErr := workflow.Await(ctx, func() bool { return len(r.humans[id]) > 0 })
 		var signal HumanSignal
@@ -140,7 +180,14 @@ func (r *runtime) human(ctx workflow.Context, gc graphContext, state *NodeSnapsh
 				status = "expired"
 			}
 			var saved *HumanSignal
-			if err := workflow.ExecuteActivity(storageSummary(ctx, "Reconcile saved human response: "+state.NodeID), AnswerActivity, AnswerRequest{RunID: r.in.RunID, RequestID: id, CloseIfAbsent: status}).Get(ctxWithoutCancel(ctx), &saved); err != nil {
+			if err := workflow.ExecuteActivity(
+				storageSummary(ctx, "Reconcile saved human response: "+state.NodeID),
+				AnswerActivity,
+				AnswerRequest{RunID: r.in.RunID, RequestID: id, CloseIfAbsent: status},
+			).Get(
+				ctxWithoutCancel(ctx),
+				&saved,
+			); err != nil {
 				return nil, err
 			}
 			if saved == nil {
@@ -160,7 +207,17 @@ func (r *runtime) human(ctx workflow.Context, gc graphContext, state *NodeSnapsh
 		seen[signal.ResponseID] = true
 		values, err := contract.ValidatePorts(node.Outputs, signal.Values, false)
 		if err != nil {
-			if err := r.emit(ctx, Projection{Kind: "request", InstanceID: state.ID, Status: "rejected", RequestID: id, ResponseID: signal.ResponseID, Failure: failure("RESPONSE_INVALID", err.Error())}); err != nil {
+			if err := r.emit(
+				ctx,
+				Projection{
+					Kind:       "request",
+					InstanceID: state.ID,
+					Status:     "rejected",
+					RequestID:  id,
+					ResponseID: signal.ResponseID,
+					Failure:    failure("RESPONSE_INVALID", err.Error()),
+				},
+			); err != nil {
 				return nil, err
 			}
 			if waitErr != nil {
@@ -196,7 +253,15 @@ func (r *runtime) resolve(ctx workflow.Context, gc graphContext, state *NodeSnap
 	id := stableID("q", state.ID+"/resolution/"+fmt.Sprint(state.Attempt))
 	r.paused[state.ID] = true
 	r.state.Status = "waiting_resolution"
-	request := Request{ID: id, InstanceID: state.ID, Kind: "resolution", Status: "open", Failure: f, Outputs: node.Outputs, Deadline: gc.deadline}
+	request := Request{
+		ID:         id,
+		InstanceID: state.ID,
+		Kind:       "resolution",
+		Status:     "open",
+		Failure:    f,
+		Outputs:    node.Outputs,
+		Deadline:   gc.deadline,
+	}
 	closed := false
 	defer func() {
 		delete(r.paused, state.ID)
@@ -222,6 +287,7 @@ func (r *runtime) resolve(ctx workflow.Context, gc graphContext, state *NodeSnap
 		return ExecuteResult{}, false, err
 	}
 	seen := map[string]bool{}
+
 	for {
 		waitErr := workflow.Await(ctx, func() bool { return len(r.resolutions[state.ID]) > 0 })
 		var signal ResolutionSignal
@@ -231,7 +297,14 @@ func (r *runtime) resolve(ctx workflow.Context, gc graphContext, state *NodeSnap
 				status = "expired"
 			}
 			var saved *ResolutionSignal
-			if err := workflow.ExecuteActivity(storageSummary(ctx, "Reconcile external outcome: "+state.NodeID), ResolutionActivity, AnswerRequest{RunID: r.in.RunID, RequestID: id, CloseIfAbsent: status}).Get(ctxWithoutCancel(ctx), &saved); err != nil {
+			if err := workflow.ExecuteActivity(
+				storageSummary(ctx, "Reconcile external outcome: "+state.NodeID),
+				ResolutionActivity,
+				AnswerRequest{RunID: r.in.RunID, RequestID: id, CloseIfAbsent: status},
+			).Get(
+				ctxWithoutCancel(ctx),
+				&saved,
+			); err != nil {
 				return ExecuteResult{}, false, err
 			}
 			if saved == nil {
@@ -254,6 +327,7 @@ func (r *runtime) resolve(ctx workflow.Context, gc graphContext, state *NodeSnap
 			invalid = fmt.Errorf("resolution must match operation and include evidence")
 		}
 		var values contract.Values
+
 		switch signal.Decision {
 		case "completed":
 			if invalid == nil {
@@ -266,8 +340,19 @@ func (r *runtime) resolve(ctx workflow.Context, gc graphContext, state *NodeSnap
 		default:
 			invalid = fmt.Errorf("unknown resolution decision")
 		}
+
 		if invalid != nil {
-			if err := r.emit(ctx, Projection{Kind: "request", InstanceID: state.ID, Status: "rejected", RequestID: id, ResponseID: signal.ResponseID, Failure: failure("RESOLUTION_INVALID", invalid.Error())}); err != nil {
+			if err := r.emit(
+				ctx,
+				Projection{
+					Kind:       "request",
+					InstanceID: state.ID,
+					Status:     "rejected",
+					RequestID:  id,
+					ResponseID: signal.ResponseID,
+					Failure:    failure("RESOLUTION_INVALID", invalid.Error()),
+				},
+			); err != nil {
 				return ExecuteResult{}, false, err
 			}
 			if waitErr != nil {
@@ -289,6 +374,7 @@ func (r *runtime) resolve(ctx workflow.Context, gc graphContext, state *NodeSnap
 			return ExecuteResult{}, false, err
 		}
 		closed = true
+
 		switch signal.Decision {
 		case "completed":
 			if err := r.transition(ctx, state, "succeeded", values, nil, "external outcome resolved"); err != nil {
@@ -296,7 +382,11 @@ func (r *runtime) resolve(ctx workflow.Context, gc graphContext, state *NodeSnap
 			}
 			return ExecuteResult{Outputs: values}, true, nil
 		case "not_executed":
-			return ExecuteResult{Failure: &Failure{Code: "NOT_EXECUTED", Message: "operator confirmed operation did not execute", Retryable: f.CanRetryIfNotExecuted}}, false, nil
+			return ExecuteResult{Failure: &Failure{
+				Code:      "NOT_EXECUTED",
+				Message:   "operator confirmed operation did not execute",
+				Retryable: f.CanRetryIfNotExecuted,
+			}}, false, nil
 		default:
 			return ExecuteResult{}, false, failure("EXTERNAL_FAILED", "operator confirmed external operation failed")
 		}

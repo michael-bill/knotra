@@ -6,10 +6,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/michael-bill/knotra/internal/contract"
 	"go.temporal.io/sdk/activity"
 	"go.temporal.io/sdk/converter"
 	"go.temporal.io/sdk/workflow"
+
+	"github.com/michael-bill/knotra/internal/contract"
 )
 
 func TestWorkflowLoadsAdmittedPlanFromIdentity(t *testing.T) {
@@ -50,6 +51,7 @@ func runWithCheckpoints(t *testing.T, p contract.Plan, leaf func(ExecuteRequest)
 	var calls []ExecuteRequest
 	var events []Projection
 	var originalDeadline time.Time
+
 	for generation := 0; generation < 10; generation++ {
 		h := newHarness(t)
 		h.leaf = leaf
@@ -86,6 +88,7 @@ func runWithCheckpoints(t *testing.T, p contract.Plan, leaf func(ExecuteRequest)
 		}
 		return result, calls, events, generation
 	}
+
 	t.Fatal("checkpoint loop did not converge")
 	return RunResult{}, nil, nil, 0
 }
@@ -102,6 +105,7 @@ func TestContinueAsNewDoesNotRepeatCompletedLeavesOrBudgets(t *testing.T) {
 	}
 	seenSequences := map[int64]bool{}
 	pending, succeeded := map[string]int{}, map[string]int{}
+
 	for _, event := range events {
 		if seenSequences[event.Sequence] {
 			t.Fatalf("duplicate projection sequence %d", event.Sequence)
@@ -116,6 +120,7 @@ func TestContinueAsNewDoesNotRepeatCompletedLeavesOrBudgets(t *testing.T) {
 			}
 		}
 	}
+
 	for _, call := range calls {
 		if pending[call.InstanceID] != 1 || succeeded[call.InstanceID] != 1 {
 			t.Fatalf("duplicated lifecycle for %s", call.InstanceID)
@@ -132,7 +137,21 @@ func TestContinueAsNewRestoresLoopCursor(t *testing.T) {
 	body.Inputs = map[string]contract.Port{"value": port(integer, nil)}
 	carry := port(integer, nil)
 	carry.Initial, carry.Next = literal(0), expression("body.outputs.result + 1")
-	node := contract.Node{Type: "loop", Loop: &contract.LoopNode{MaxIterations: 3, State: map[string]contract.Port{"value": carry}, With: map[string]contract.Binding{"value": *from("state.value")}, Body: body, Until: "body.outputs.result == 2"}, Outputs: map[string]contract.Port{"result": port(integer, nil), "iterations": port(integer, nil), "termination": port(`{"type":"string"}`, nil)}}
+	node := contract.Node{
+		Type: "loop",
+		Loop: &contract.LoopNode{
+			MaxIterations: 3,
+			State:         map[string]contract.Port{"value": carry},
+			With:          map[string]contract.Binding{"value": *from("state.value")},
+			Body:          body,
+			Until:         "body.outputs.result == 2",
+		},
+		Outputs: map[string]contract.Port{
+			"result":      port(integer, nil),
+			"iterations":  port(integer, nil),
+			"termination": port(`{"type":"string"}`, nil),
+		},
+	}
 	p := plan(outputGraph(map[string]contract.Node{"repeat": node}, "nodes.repeat.outputs.result", integer))
 	p.Profile.Spec.Limits.MaxNodeInstances = 4
 	result, calls, _, continued := runWithCheckpoints(t, p, func(req ExecuteRequest) ExecuteResult { return ExecuteResult{Outputs: req.Inputs} })
@@ -149,7 +168,17 @@ func TestContinueAsNewRestoresForeachCompletedItems(t *testing.T) {
 	bodyLeaf.Outputs = map[string]contract.Port{"value": port(integer, nil)}
 	body := outputGraph(map[string]contract.Node{"step": bodyLeaf}, "nodes.step.outputs.value", integer)
 	body.Inputs = map[string]contract.Port{"value": port(integer, nil)}
-	node := contract.Node{Type: "foreach", Inputs: map[string]contract.Port{"values": port(`{"type":"array"}`, literal([]int{3, 1, 2}))}, Foreach: &contract.ForeachNode{Over: "values", Concurrency: 1, With: map[string]contract.Binding{"value": *from("iteration.item")}, Body: body}, Outputs: map[string]contract.Port{"result": port(`{"type":"array"}`, nil)}}
+	node := contract.Node{
+		Type:   "foreach",
+		Inputs: map[string]contract.Port{"values": port(`{"type":"array"}`, literal([]int{3, 1, 2}))},
+		Foreach: &contract.ForeachNode{
+			Over:        "values",
+			Concurrency: 1,
+			With:        map[string]contract.Binding{"value": *from("iteration.item")},
+			Body:        body,
+		},
+		Outputs: map[string]contract.Port{"result": port(`{"type":"array"}`, nil)},
+	}
 	p := plan(outputGraph(map[string]contract.Node{"map": node}, "nodes.map.outputs.result", `{"type":"array"}`))
 	p.Profile.Spec.Limits.MaxNodeInstances = 4
 	result, calls, _, continued := runWithCheckpoints(t, p, func(req ExecuteRequest) ExecuteResult { return ExecuteResult{Outputs: req.Inputs} })

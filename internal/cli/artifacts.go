@@ -9,8 +9,9 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/michael-bill/knotra/internal/contract"
 	"github.com/spf13/cobra"
+
+	"github.com/michael-bill/knotra/internal/contract"
 )
 
 func (s *commandState) artifactsCommand() *cobra.Command {
@@ -26,9 +27,11 @@ func (s *commandState) artifactsCommand() *cobra.Command {
 			return s.printJSON(page)
 		}
 		rows := [][]string{}
+
 		for _, artifact := range page.Items {
 			rows = append(rows, []string{artifact.ID, artifact.Name, artifact.MediaType, fmt.Sprint(artifact.Size), artifact.SHA256})
 		}
+
 		if err = s.table([]string{"ID", "NAME", "MEDIA TYPE", "BYTES", "SHA256"}, rows); err != nil {
 			return err
 		}
@@ -83,6 +86,7 @@ func (s *commandState) artifactsCommand() *cobra.Command {
 	root.AddCommand(list, get, download, upload)
 	return root
 }
+
 func (s *commandState) getArtifact(ctx context.Context, id string) (contract.Artifact, error) {
 	var result struct {
 		Artifact contract.Artifact `json:"artifact"`
@@ -90,6 +94,7 @@ func (s *commandState) getArtifact(ctx context.Context, id string) (contract.Art
 	err := s.client().Get(ctx, "/artifacts/"+url.PathEscape(id), &result)
 	return result.Artifact, err
 }
+
 func (s *commandState) download(ctx context.Context, id, output string, force bool) error {
 	if output == "-" && s.json {
 		return fmt.Errorf("binary stdout and --json are mutually exclusive; choose an output file")

@@ -8,6 +8,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+
 	"github.com/michael-bill/knotra/internal/contract"
 	"github.com/michael-bill/knotra/internal/protocol"
 	"github.com/michael-bill/knotra/internal/store"
@@ -20,19 +21,34 @@ type ValidateRequest struct {
 	Artifacts map[string]json.RawMessage `json:"artifacts"`
 }
 
-func (s *Server) compile(ctx context.Context, query store.Querier, pkg contract.Package, profile string, input map[string]json.RawMessage, artifacts map[string]json.RawMessage) (*contract.Plan, contract.Values, []contract.Diagnostic) {
+func (s *Server) compile(
+	ctx context.Context,
+	query store.Querier,
+	pkg contract.Package,
+	profile string,
+	input map[string]json.RawMessage,
+	artifacts map[string]json.RawMessage,
+) (*contract.Plan, contract.Values, []contract.Diagnostic) {
 	p, ok := s.Profiles[profile]
 	if !ok {
-		return nil, nil, []contract.Diagnostic{{Severity: "error", Code: "REFERENCE_INVALID", Phase: "admission", Message: "unknown engine profile", Path: "/profile"}}
+		return nil, nil, []contract.Diagnostic{{
+			Severity: "error",
+			Code:     "REFERENCE_INVALID",
+			Phase:    "admission",
+			Message:  "unknown engine profile",
+			Path:     "/profile",
+		}}
 	}
 	plan, diags := contract.Compile(pkg, &p)
 	if contract.HasErrors(diags) {
 		return plan, nil, diags
 	}
 	values := contract.Values{}
+
 	for k, v := range input {
 		values[k] = contract.Value{JSON: v}
 	}
+
 	for name, b := range artifacts {
 		if _, dup := values[name]; dup {
 			diags = append(diags, diag("INPUT_INVALID", "input is supplied as both JSON and artifact", "/inputs/"+name))
@@ -46,6 +62,7 @@ func (s *Server) compile(ctx context.Context, query store.Querier, pkg contract.
 
 		values[name] = v
 	}
+
 	if !contract.HasErrors(diags) {
 		var e error
 		values, e = contract.ValidatePorts(plan.Pipelines[plan.Root].Spec.Inputs, values, true)
@@ -60,9 +77,11 @@ func (s *Server) compile(ctx context.Context, query store.Querier, pkg contract.
 	}
 	return plan, values, diags
 }
+
 func diag(code, message, path string) contract.Diagnostic {
 	return contract.Diagnostic{Severity: "error", Code: code, Phase: "admission", Message: message, Path: path}
 }
+
 func (s *Server) validate(w http.ResponseWriter, r *http.Request) {
 	var q ValidateRequest
 	if _, e := readBody(w, r, &q); e != nil {
@@ -75,6 +94,7 @@ func (s *Server) validate(w http.ResponseWriter, r *http.Request) {
 	}
 	s.write(w, 200, map[string]any{"valid": !contract.HasErrors(d), "diagnostics": d})
 }
+
 func (s *Server) define(w http.ResponseWriter, r *http.Request) {
 	var q struct {
 		Package contract.Package `json:"package"`
@@ -90,11 +110,23 @@ func (s *Server) define(w http.ResponseWriter, r *http.Request) {
 			return 422, protocol.Error{Code: "VALIDATION_FAILED", Message: "package failed validation", Diagnostics: d}, nil
 		}
 		p := plan.Pipelines[plan.Root]
-		def := protocol.Definition{ID: uuid.NewString(), Name: p.Metadata.Name, Title: p.Metadata.Title, PackageDigest: plan.Digest, CreatedAt: time.Now().UTC(), Package: q.Package}
+		title := p.Metadata.Title
+		if title == "" {
+			title = p.Metadata.Name
+		}
+		def := protocol.Definition{
+			ID:            uuid.NewString(),
+			Name:          p.Metadata.Name,
+			Title:         title,
+			PackageDigest: plan.Digest,
+			CreatedAt:     time.Now().UTC(),
+			Package:       q.Package,
+		}
 		def, e := store.PutDefinition(r.Context(), tx, def)
 		return 201, map[string]any{"definition": def}, e
 	})
 }
+
 func (s *Server) definitions(w http.ResponseWriter, r *http.Request) {
 	v, e := s.Store.Definitions(r.Context(), r.URL.Query().Get("cursor"))
 	if e != nil {
@@ -103,6 +135,7 @@ func (s *Server) definitions(w http.ResponseWriter, r *http.Request) {
 	}
 	s.write(w, 200, page(v, func(d protocol.Definition) string { return d.ID }))
 }
+
 func (s *Server) definition(w http.ResponseWriter, r *http.Request) {
 	v, e := s.Store.Definition(r.Context(), r.PathValue("id"))
 	if e != nil {
@@ -111,6 +144,7 @@ func (s *Server) definition(w http.ResponseWriter, r *http.Request) {
 	}
 	s.write(w, 200, map[string]any{"definition": v})
 }
+
 func (s *Server) start(w http.ResponseWriter, r *http.Request) {
 	var q struct {
 		DefinitionID string                     `json:"definitionId"`
@@ -132,20 +166,40 @@ func (s *Server) start(w http.ResponseWriter, r *http.Request) {
 		if contract.HasErrors(d) {
 			return 422, protocol.Error{Code: "VALIDATION_FAILED", Message: "run admission failed", Diagnostics: d}, nil
 		}
-		run := protocol.Run{ID: uuid.NewString(), DefinitionID: def.ID, Title: def.Title, Status: "pending", CreatedAt: time.Now().UTC(), UpdatedAt: time.Now().UTC(), Profile: q.Profile, Package: def.Package, Inputs: map[string]json.RawMessage{}, InputArtifacts: map[string]any{}, Outputs: map[string]json.RawMessage{}, Artifacts: []contract.Artifact{}, Instances: []protocol.Instance{}, Diagnostics: []contract.Diagnostic{}, AvailableActions: []string{"cancel"}}
+		run := protocol.Run{
+			ID:               uuid.NewString(),
+			DefinitionID:     def.ID,
+			Title:            def.Title,
+			Status:           "pending",
+			CreatedAt:        time.Now().UTC(),
+			UpdatedAt:        time.Now().UTC(),
+			Profile:          q.Profile,
+			Package:          def.Package,
+			Inputs:           map[string]json.RawMessage{},
+			InputArtifacts:   map[string]any{},
+			Outputs:          map[string]json.RawMessage{},
+			Artifacts:        []contract.Artifact{},
+			Instances:        []protocol.Instance{},
+			Diagnostics:      []contract.Diagnostic{},
+			AvailableActions: []string{"cancel"},
+		}
+
 		for k, v := range values {
 			if v.JSON != nil {
 				run.Inputs[k] = v.JSON
 			} else if v.Collection {
 				ids := []string{}
+
 				for _, a := range v.Artifacts {
 					ids = append(ids, a.ID)
 				}
+
 				run.InputArtifacts[k] = ids
 			} else if len(v.Artifacts) == 1 {
 				run.InputArtifacts[k] = v.Artifacts[0].ID
 			}
 		}
+
 		e = store.PutRun(r.Context(), tx, run, *plan, values)
 		return 201, map[string]any{"run": run}, e
 	})

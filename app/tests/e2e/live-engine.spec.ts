@@ -1,0 +1,200 @@
+import { test, expect, type Page } from '@playwright/test';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
+import { randomUUID } from 'node:crypto';
+import { zipSync } from 'fflate';
+import { parse, stringify } from 'yaml';
+
+const endpoint = process.env.KNOTRA_E2E_ENDPOINT;
+
+test.skip(!endpoint, 'Set KNOTRA_E2E_ENDPOINT to a real Go engine with the local profile.');
+
+test.setTimeout(180_000);
+
+async function navigate(page: Page, name: string) {
+  await page
+    .getByRole('navigation', { name: 'Main navigation' })
+    .getByRole('button', { name, exact: true })
+    .click();
+}
+
+async function connect(page: Page) {
+  await page.getByRole('button', { name: 'Settings', exact: true }).click();
+  await page.getByRole('textbox', { name: 'Engine base URL', exact: true }).fill(endpoint!);
+  await page.getByRole('button', { name: 'Save address' }).click();
+  await page.getByRole('button', { name: 'Connect engine' }).click();
+  await expect(page.getByText(/ · knotra.desktop\/1$/)).toBeVisible();
+  await expect(page.getByText(/\d+ profiles · \d+ resources/)).toBeVisible();
+}
+
+async function importPackage(page: Page, files: Record<string, string>, title: string) {
+  await navigate(page, 'Pipelines');
+  await page.getByLabel('Import pipeline package', { exact: true }).setInputFiles({
+    name: 'workflow.zip',
+    mimeType: 'application/zip',
+    buffer: Buffer.from(
+      zipSync(
+        Object.fromEntries(
+          Object.entries(files).map(([path, text]) => [path, new TextEncoder().encode(text)]),
+        ),
+      ),
+    ),
+  });
+  const chooser = page.getByRole('dialog').filter({ hasText: 'Choose the entrypoint.' });
+  if (Object.keys(files).filter((path) => path.endsWith('.yaml')).length > 1) {
+    await chooser.getByRole('combobox').selectOption('pipeline.yaml');
+    await chooser.getByRole('button', { name: 'Open package', exact: true }).click();
+  }
+  await expect(page.getByRole('heading', { name: title, exact: true })).toBeVisible();
+}
+
+async function start(page: Page) {
+  await page.getByRole('button', { name: 'Run', exact: true }).click();
+  await page.getByRole('combobox', { name: 'Engine profile' }).selectOption('local');
+  await page.getByRole('button', { name: 'Check with engine' }).click();
+  await expect(page.getByRole('dialog')).toContainText('Engine admission checks passed');
+  await page.getByRole('button', { name: 'Start run', exact: true }).click();
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+}
+
+test.beforeEach(async ({ page }) => {
+  await page.goto('/');
+  await connect(page);
+});
+
+test('real Ollama run publishes an artifact and replays history on a fresh client', async ({
+  page,
+}) => {
+  const errors: string[] = [];
+  page.on('pageerror', (error) => errors.push(error.message));
+  const title = `Desktop greeting ${randomUUID().slice(0, 8)}`;
+  const pipeline = parse(readFileSync(resolve('../examples/local/pipeline.yaml'), 'utf8'));
+  pipeline.metadata.title = title;
+  await importPackage(page, { 'pipeline.yaml': stringify(pipeline) }, title);
+  await start(page);
+  await expect(page.locator('.page-heading .status')).toHaveText('Completed', { timeout: 120_000 });
+  await page.getByRole('button', { name: 'Outputs', exact: true }).click();
+  await expect(page.locator('.json-view').first()).toContainText('greeting');
+  await expect(page.locator('.json-view').last()).toContainText('sha256');
+
+  // A fresh browser has neither a stored cursor nor previously displayed events.
+  await page.evaluate(() => localStorage.clear());
+  await page.reload();
+  await connect(page);
+  await navigate(page, 'Runs');
+  await page.locator('.table-row').filter({ hasText: title }).click();
+  await page.getByRole('button', { name: 'Timeline', exact: true }).click();
+  await expect.poll(() => page.locator('.timeline-event').count()).toBeGreaterThan(4);
+  await expect(page.locator('.timeline')).toContainText('succeeded');
+  expect(errors).toEqual([]);
+});
+
+test('real human review, child package and binary artifact round-trip use the same contract', async ({
+  page,
+}) => {
+  const title = `Desktop review ${randomUUID().slice(0, 8)}`;
+  const bytes = Buffer.from([0, 255, 128, 13, 10, 0]);
+  await navigate(page, 'Artifacts');
+  const name = `input-${randomUUID().slice(0, 8)}.bin`;
+  await page
+    .getByLabel('Upload engine artifact')
+    .setInputFiles({ name, mimeType: 'application/octet-stream', buffer: bytes });
+  await expect(page.getByRole('button', { name: new RegExp(name) })).toBeVisible();
+
+  await importPackage(
+    page,
+    {
+      'pipeline.yaml': `apiVersion: knotra/v1
+kind: Pipeline
+metadata: {name: desktop-review, title: ${title}}
+spec:
+  files: [children/copy.yaml]
+  inputs:
+    source: {artifact: {mediaTypes: [application/octet-stream]}}
+  nodes:
+    review:
+      type: human
+      inputs:
+        source: {artifact: {mediaTypes: [application/octet-stream]}, bind: {from: inputs.source}}
+      human: {prompt: {text: Approve the binary copy.}}
+      outputs:
+        approved: {schema: {type: boolean, const: true}}
+    copy:
+      type: pipeline
+      inputs:
+        approved: {schema: {type: boolean}, bind: {from: nodes.review.outputs.approved}}
+        source: {artifact: {mediaTypes: [application/octet-stream]}, bind: {from: inputs.source}}
+      pipeline:
+        file: children/copy.yaml
+        permissions: {models: [], mcp: {}, sandboxes: [python_box], secrets: []}
+  outputs:
+    file: {artifact: {mediaTypes: [application/octet-stream]}, bind: {from: nodes.copy.outputs.file}}
+`,
+      'children/copy.yaml': `apiVersion: knotra/v1
+kind: Pipeline
+metadata: {name: copy-binary}
+spec:
+  files: [scripts/copy.py]
+  sandboxes: {work: {profile: python_box}}
+  inputs:
+    approved: {schema: {type: boolean, const: true}}
+    source: {artifact: {mediaTypes: [application/octet-stream]}}
+  nodes:
+    write:
+      type: code
+      sandbox: work
+      inputs:
+        source: {artifact: {mediaTypes: [application/octet-stream]}, mount: source.bin, bind: {from: inputs.source}}
+      code: {command: [python3, /package/scripts/copy.py]}
+      outputs:
+        file: {artifact: {mediaTypes: [application/octet-stream]}, collect: {path: copy.bin, mediaType: application/octet-stream}}
+  outputs:
+    file: {artifact: {mediaTypes: [application/octet-stream]}, bind: {from: nodes.write.outputs.file}}
+`,
+      'scripts/copy.py': `import json, os
+from pathlib import Path
+context = json.loads(Path(os.environ['KNOTRA_INPUT_JSON']).read_text())
+Path('copy.bin').write_bytes(Path(context['artifacts']['source']['path']).read_bytes())
+Path(os.environ['KNOTRA_OUTPUT_JSON']).write_text('{}')
+`,
+    },
+    title,
+  );
+  await page.getByRole('button', { name: 'Run', exact: true }).click();
+  await page.getByRole('combobox', { name: 'Engine profile' }).selectOption('local');
+  const artifacts = page.getByRole('combobox', { name: 'Artifact handle for source' });
+  const artifactId = await artifacts
+    .locator('option')
+    .filter({ hasText: name })
+    .getAttribute('value');
+  await artifacts.selectOption(artifactId!);
+  const started = page.waitForResponse(
+    (response) =>
+      response.url() === `${endpoint}/v1/runs` && response.request().method() === 'POST',
+  );
+  await page.getByRole('button', { name: 'Start run', exact: true }).click();
+  const { run: startedRun } = await (await started).json();
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Review request', exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Review request', exact: true }).click();
+  await expect(page.getByText('Approve the binary copy.', { exact: true })).toBeVisible();
+  await expect(page.locator('.review-card .json-view').first()).toContainText('sha256');
+  await page.getByRole('textbox', { name: 'Engine review response' }).fill('{"approved":false}');
+  await page.getByRole('button', { name: 'Submit response' }).click();
+  await expect(page.getByRole('alert')).toContainText('JSON schema');
+  await page.getByRole('textbox', { name: 'Engine review response' }).fill('{"approved":true}');
+  await page.getByRole('button', { name: 'Submit response' }).click();
+  await expect(page.getByRole('heading', { name: 'No open engine requests' })).toBeVisible();
+  await navigate(page, 'Runs');
+  await page.locator('.table-row').filter({ hasText: title }).click();
+  await expect(page.locator('.page-heading .status')).toHaveText('Completed', { timeout: 30_000 });
+  const { run } = await (await page.request.get(`${endpoint}/v1/runs/${startedRun.id}`)).json();
+  await navigate(page, 'Artifacts');
+  await page.getByRole('textbox', { name: 'Search engine artifacts' }).fill(run.artifacts[0].id);
+  await page.locator('.artifact-card').click();
+  await expect(page.locator('.artifact-text')).toContainText('Binary artifact');
+  const downloaded = page.waitForEvent('download');
+  await page.getByRole('button', { name: 'Export', exact: true }).click();
+  const exported = await downloaded;
+  expect(readFileSync((await exported.path())!)).toEqual(bytes);
+});

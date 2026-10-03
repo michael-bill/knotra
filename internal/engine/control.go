@@ -5,8 +5,9 @@ import (
 	"fmt"
 	"strconv"
 
-	"github.com/michael-bill/knotra/internal/contract"
 	"go.temporal.io/sdk/workflow"
+
+	"github.com/michael-bill/knotra/internal/contract"
 )
 
 func jsonValue(value any) contract.Value {
@@ -19,6 +20,7 @@ func runSwitch(node contract.Node, args contract.Values) (contract.Values, error
 		return nil, failure("PLAN_INVALID", "missing switch configuration")
 	}
 	route := node.Switch.Default
+
 	for _, branch := range node.Switch.Cases {
 		match, present, err := contract.EvalBool(branch.When, contract.Scope{Args: args})
 		if err != nil {
@@ -32,11 +34,13 @@ func runSwitch(node contract.Node, args contract.Values) (contract.Values, error
 			break
 		}
 	}
+
 	return contract.Values{"route": jsonValue(route)}, nil
 }
 
 func bindWith(bindings map[string]contract.Binding, scope contract.Scope) (contract.Values, error) {
 	values := contract.Values{}
+
 	for _, name := range keys(bindings) {
 		value, present, err := contract.EvalBinding(bindings[name], scope)
 		if err != nil {
@@ -46,15 +50,18 @@ func bindWith(bindings map[string]contract.Binding, scope contract.Scope) (contr
 			values[name] = value
 		}
 	}
+
 	return values, nil
 }
 
 func items(value contract.Value) ([]contract.Value, error) {
 	if value.Collection {
 		result := make([]contract.Value, len(value.Artifacts))
+
 		for i, artifact := range value.Artifacts {
 			result[i] = contract.Value{Artifacts: []contract.Artifact{artifact}}
 		}
+
 		return result, nil
 	}
 	if value.Artifacts != nil {
@@ -65,9 +72,11 @@ func items(value contract.Value) ([]contract.Value, error) {
 		return nil, failure("INPUT_INVALID", "foreach requires a JSON array")
 	}
 	result := make([]contract.Value, len(raw))
+
 	for i, v := range raw {
 		result[i] = contract.Value{JSON: v}
 	}
+
 	return result, nil
 }
 
@@ -89,11 +98,14 @@ func (r *runtime) foreach(ctx workflow.Context, gc graphContext, state *NodeSnap
 	if r.foreachResults[state.ID] == nil {
 		r.foreachResults[state.ID] = map[int]contract.Values{}
 	}
+
 	for index, result := range r.foreachResults[state.ID] {
 		results[index] = result
 		completed++
 	}
+
 	var bodyErr error
+
 	for completed < len(elements) {
 		if ctx.Err() != nil || bodyErr != nil || r.failure != nil {
 			_ = workflow.Await(ctxWithoutCancel(ctx), func() bool { return active == 0 })
@@ -105,6 +117,7 @@ func (r *runtime) foreach(ctx workflow.Context, gc graphContext, state *NodeSnap
 			}
 			return nil, ctx.Err()
 		}
+
 		for next < len(elements) && active < config.Concurrency && len(r.paused) == 0 {
 			if results[next] != nil {
 				next++
@@ -132,6 +145,7 @@ func (r *runtime) foreach(ctx workflow.Context, gc graphContext, state *NodeSnap
 				}
 			})
 		}
+
 		before := completed
 		if err := workflow.Await(ctx, func() bool {
 			return completed != before || bodyErr != nil || (len(r.paused) == 0 && active < config.Concurrency && next < len(elements))
@@ -139,6 +153,7 @@ func (r *runtime) foreach(ctx workflow.Context, gc graphContext, state *NodeSnap
 			continue
 		}
 	}
+
 	if bodyErr != nil {
 		return nil, bodyErr
 	}
@@ -146,10 +161,12 @@ func (r *runtime) foreach(ctx workflow.Context, gc graphContext, state *NodeSnap
 		return nil, ctx.Err()
 	}
 	output := contract.Values{}
+
 	for _, name := range keys(config.Body.Outputs) {
 		port := config.Body.Outputs[name]
 		if port.Artifact != nil {
 			value := contract.Value{Collection: true, Artifacts: make([]contract.Artifact, 0, len(results))}
+
 			for _, result := range results {
 				v, present := result[name]
 				if !present || v.Collection || len(v.Artifacts) != 1 {
@@ -157,9 +174,11 @@ func (r *runtime) foreach(ctx workflow.Context, gc graphContext, state *NodeSnap
 				}
 				value.Artifacts = append(value.Artifacts, v.Artifacts[0])
 			}
+
 			output[name] = value
 		} else {
 			values := make([]json.RawMessage, 0, len(results))
+
 			for _, result := range results {
 				value, present := result[name]
 				if !present {
@@ -167,14 +186,17 @@ func (r *runtime) foreach(ctx workflow.Context, gc graphContext, state *NodeSnap
 				}
 				values = append(values, value.JSON)
 			}
+
 			output[name] = jsonValue(values)
 		}
 	}
+
 	return output, nil
 }
 
 func loopState(ports map[string]contract.Port, scope contract.Scope, initial bool) (contract.Values, error) {
 	result := contract.Values{}
+
 	for _, name := range keys(ports) {
 		port := ports[name]
 		binding := port.Next
@@ -196,6 +218,7 @@ func loopState(ports map[string]contract.Port, scope contract.Scope, initial boo
 		}
 		result[name] = value
 	}
+
 	return result, nil
 }
 
@@ -212,6 +235,7 @@ func (r *runtime) loop(ctx workflow.Context, gc graphContext, state *NodeSnapsho
 	if saved, ok := r.loops[state.ID]; ok {
 		firstIndex, carry = saved.Index, saved.State
 	}
+
 	for index := firstIndex; index < config.MaxIterations; index++ {
 		r.loops[state.ID] = LoopCheckpoint{Index: index, State: carry}
 		if err := r.admit(ctx); err != nil {
@@ -245,9 +269,11 @@ func (r *runtime) loop(ctx workflow.Context, gc graphContext, state *NodeSnapsho
 				termination = "limit"
 			}
 			result := contract.Values{}
+
 			for _, key := range keys(outputs) {
 				result[key] = outputs[key]
 			}
+
 			result["iterations"], result["termination"] = jsonValue(index+1), jsonValue(termination)
 			return result, nil
 		}
@@ -257,6 +283,7 @@ func (r *runtime) loop(ctx workflow.Context, gc graphContext, state *NodeSnapsho
 		}
 		r.loops[state.ID] = LoopCheckpoint{Index: index + 1, State: carry}
 	}
+
 	return nil, failure("PLAN_INVALID", "loop did not execute")
 }
 
@@ -269,7 +296,14 @@ func (r *runtime) pipeline(ctx workflow.Context, gc graphContext, state *NodeSna
 		return nil, failure("PLAN_INVALID", fmt.Sprintf("pipeline %q not in admitted package", node.Pipeline.File))
 	}
 	limits := restrictLimits(gc.scopes[len(gc.scopes)-1].Limits, document.Spec.Limits)
-	child := graphContext{pipeline: node.Pipeline.File, document: document, path: state.ID + "/pipeline", scopes: append(append([]BudgetScope(nil), gc.scopes...), BudgetScope{ID: state.ID, Limits: limits}), permissions: intersectPermissions(gc.permissions, &node.Pipeline.Permissions), deadline: gc.deadline}
+	child := graphContext{
+		pipeline:    node.Pipeline.File,
+		document:    document,
+		path:        state.ID + "/pipeline",
+		scopes:      append(append([]BudgetScope(nil), gc.scopes...), BudgetScope{ID: state.ID, Limits: limits}),
+		permissions: intersectPermissions(gc.permissions, &node.Pipeline.Permissions),
+		deadline:    gc.deadline,
+	}
 	if document.Spec.Limits.Timeout != "" {
 		duration, err := contract.Duration(document.Spec.Limits.Timeout)
 		if err != nil {
@@ -308,23 +342,34 @@ func intersectPermissions(parent, child *contract.Permissions) *contract.Permiss
 		copy := *child
 		return &copy
 	}
-	result := &contract.Permissions{Models: intersect(parent.Models, child.Models), Sandboxes: intersect(parent.Sandboxes, child.Sandboxes), Secrets: intersect(parent.Secrets, child.Secrets), MCP: map[string][]string{}}
+	result := &contract.Permissions{
+		Models:    intersect(parent.Models, child.Models),
+		Sandboxes: intersect(parent.Sandboxes, child.Sandboxes),
+		Secrets:   intersect(parent.Secrets, child.Secrets),
+		MCP:       map[string][]string{},
+	}
+
 	for _, name := range keys(child.MCP) {
 		result.MCP[name] = intersect(parent.MCP[name], child.MCP[name])
 	}
+
 	return result
 }
 
 func intersect(a, b []string) []string {
 	set := map[string]bool{}
+
 	for _, value := range a {
 		set[value] = true
 	}
+
 	result := []string{}
+
 	for _, value := range b {
 		if set[value] {
 			result = append(result, value)
 		}
 	}
+
 	return result
 }

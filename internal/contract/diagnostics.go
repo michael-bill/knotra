@@ -21,6 +21,7 @@ func sourcePositions(data []byte) map[string]sourcePosition {
 	var visit func(*yaml.Node, string)
 	visit = func(n *yaml.Node, path string) {
 		positions[path] = sourcePosition{n.Line, n.Column}
+
 		switch n.Kind {
 		case yaml.MappingNode:
 			for i := 0; i < len(n.Content); i += 2 {
@@ -40,8 +41,10 @@ func sourcePositions(data []byte) map[string]sourcePosition {
 func locateDiagnostic(d Diagnostic, data []byte) Diagnostic {
 	return locateWithPositions(d, sourcePositions(data))
 }
+
 func locateWithPositions(d Diagnostic, positions map[string]sourcePosition) Diagnostic {
 	candidate := d.Path
+
 	for {
 		if p, ok := positions[candidate]; ok {
 			d.Line = p.line
@@ -72,15 +75,18 @@ func diagnosticError(code, phase, file, path string, err error) Diagnostic {
 			if len(v.InstanceLocation) > len(deepest.InstanceLocation) {
 				deepest = v
 			}
+
 			for _, cause := range v.Causes {
 				visit(cause)
 			}
 		}
 		visit(validation)
 		segments := []string{}
+
 		for _, s := range deepest.InstanceLocation {
 			segments = append(segments, strings.ReplaceAll(strings.ReplaceAll(s, "~", "~0"), "/", "~1"))
 		}
+
 		if len(segments) > 0 {
 			d.Path = "/" + strings.Join(segments, "/")
 		}

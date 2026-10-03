@@ -13,8 +13,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/michael-bill/knotra/internal/contract"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+
+	"github.com/michael-bill/knotra/internal/contract"
 )
 
 func TestMCPRejectsSchemaDriftBeforeExternalCall(t *testing.T) {
@@ -22,7 +23,11 @@ func TestMCPRejectsSchemaDriftBeforeExternalCall(t *testing.T) {
 		t.Run(field, func(t *testing.T) {
 			var calls atomic.Int32
 			server := mcp.NewServer(&mcp.Implementation{Name: "drift", Version: "1"}, nil)
-			original := map[string]any{"type": "object", "properties": map[string]any{"value": map[string]any{"type": "integer"}}, "required": []string{"value"}}
+			original := map[string]any{
+				"type":       "object",
+				"properties": map[string]any{"value": map[string]any{"type": "integer"}},
+				"required":   []string{"value"},
+			}
 			handler := func(context.Context, *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 				calls.Add(1)
 				return &mcp.CallToolResult{StructuredContent: map[string]any{"value": 1}}, nil
@@ -33,9 +38,18 @@ func TestMCPRejectsSchemaDriftBeforeExternalCall(t *testing.T) {
 			req := testRequest("")
 			req.Plan.Pipelines[req.Pipeline].Spec.Models = nil
 			req.Plan.Pipelines[req.Pipeline].Spec.Sandboxes = nil
-			req.Plan.Profile.Spec.MCP = map[string]contract.MCPConnection{"connection": {Transport: "streamable_http", URL: httpServer.URL, AllowedTools: []string{"work"}, ToolPolicies: map[string]contract.ToolPolicy{"work": {Effect: "write"}}}}
+			req.Plan.Profile.Spec.MCP = map[string]contract.MCPConnection{"connection": {
+				Transport:    "streamable_http",
+				URL:          httpServer.URL,
+				AllowedTools: []string{"work"},
+				ToolPolicies: map[string]contract.ToolPolicy{"work": {Effect: "write"}},
+			}}
 			req.Plan.Pipelines[req.Pipeline].Spec.MCP = map[string]contract.MCPResource{"tools": {Connection: "connection"}}
-			req.Node = contract.Node{Type: "tool", Tool: &contract.ToolNode{Server: "tools", Name: "work"}, Outputs: map[string]contract.Port{"result": {Schema: json.RawMessage(`{"type":"object"}`)}}}
+			req.Node = contract.Node{
+				Type:    "tool",
+				Tool:    &contract.ToolNode{Server: "tools", Name: "work"},
+				Outputs: map[string]contract.Port{"result": {Schema: json.RawMessage(`{"type":"object"}`)}},
+			}
 			req.ToolArguments = json.RawMessage(`{"value":1}`)
 			runner := &Runner{Hooks: newHooks()}
 			defer runner.Close()
@@ -43,13 +57,19 @@ func TestMCPRejectsSchemaDriftBeforeExternalCall(t *testing.T) {
 				t.Fatal(err)
 			}
 			server.RemoveTools("work")
-			changed := map[string]any{"type": "object", "properties": map[string]any{"value": map[string]any{"type": "integer"}, "extra": map[string]any{"type": "string"}}, "required": []string{"value"}}
+			changed := map[string]any{
+				"type":       "object",
+				"properties": map[string]any{"value": map[string]any{"type": "integer"}, "extra": map[string]any{"type": "string"}},
+				"required":   []string{"value"},
+			}
+
 			switch field {
 			case "input":
 				server.AddTool(&mcp.Tool{Name: "work", InputSchema: changed, OutputSchema: original}, handler)
 			case "output":
 				server.AddTool(&mcp.Tool{Name: "work", InputSchema: original, OutputSchema: changed}, handler)
 			}
+
 			if _, err := runner.Execute(context.Background(), req); err == nil {
 				t.Fatal("changed MCP schema was accepted")
 			}
@@ -62,7 +82,10 @@ func TestMCPRejectsSchemaDriftBeforeExternalCall(t *testing.T) {
 
 func TestMCPBoundedBodyRejectsOversizeWithoutTruncatingSuccess(t *testing.T) {
 	for _, size := range []int{7, 8, 9} {
-		reader := &boundedResponse{ReadCloser: io.NopCloser(bytes.NewReader(bytes.Repeat([]byte("x"), size))), remaining: 8}
+		reader := &boundedResponse{
+			ReadCloser: io.NopCloser(bytes.NewReader(bytes.Repeat([]byte("x"), size))),
+			remaining:  8,
+		}
 		data, err := io.ReadAll(reader)
 		if size <= 8 {
 			if err != nil || len(data) != size {
@@ -113,12 +136,19 @@ func TestDockerAgentStopsAtPermissionViolation(t *testing.T) {
 	var turns atomic.Int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 		turns.Add(1)
-		fmt.Fprint(w, `{"message":{"role":"assistant","tool_calls":[{"function":{"name":"knotra_process_exec","arguments":{"command":["true"]}}}]},"done":true}`)
+		fmt.Fprint(
+			w,
+			`{"message":{"role":"assistant","tool_calls":[{"function":{"name":"knotra_process_exec","arguments":{"command":["true"]}}}]},"done":true}`,
+		)
 	}))
 	defer server.Close()
 	req := testRequest(server.URL)
 	req.Node.Type, req.Node.Sandbox, req.Node.LLM = "agent", "box", nil
-	req.Node.Agent = &contract.AgentNode{Model: "model", Prompt: contract.TextSource{Text: "Finish immediately."}, MaxSteps: 3}
+	req.Node.Agent = &contract.AgentNode{
+		Model:    "model",
+		Prompt:   contract.TextSource{Text: "Finish immediately."},
+		MaxSteps: 3,
+	}
 	req.Node.Tools = &contract.ToolGrants{Sandbox: []string{"files.read"}}
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 	defer cancel()
@@ -146,6 +176,7 @@ func TestOperationCommitFailurePreservesUnknownAndNeverReissuesWrite(t *testing.
 	runner := &Runner{Hooks: hooks}
 	operation := Operation{ID: "write", Kind: "tool", Effect: "write"}
 	calls := 0
+
 	for range 2 {
 		_, err := runner.operation(context.Background(), operation, func() (json.RawMessage, error) {
 			calls++
@@ -156,6 +187,7 @@ func TestOperationCommitFailurePreservesUnknownAndNeverReissuesWrite(t *testing.
 			t.Fatalf("journal failure lost unknown outcome: %v", err)
 		}
 	}
+
 	if calls != 1 || hooks.calls["tool"] != 1 {
 		t.Fatalf("write was reissued: calls=%d budgets=%v", calls, hooks.calls)
 	}
@@ -169,22 +201,34 @@ func TestDockerAttemptCommitFailureNeverRestartsCompletedWork(t *testing.T) {
 			var modelCalls atomic.Int32
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 				modelCalls.Add(1)
-				fmt.Fprint(w, `{"message":{"role":"assistant","tool_calls":[{"function":{"name":"knotra_finish","arguments":{"answer":42}}}]},"done":true}`)
+				fmt.Fprint(
+					w,
+					`{"message":{"role":"assistant","tool_calls":[{"function":{"name":"knotra_finish","arguments":{"answer":42}}}]},"done":true}`,
+				)
 			}))
 			defer server.Close()
 			req := testRequest(server.URL)
 			req.Node.Type, req.Node.Sandbox, req.Node.LLM = kind, "box", nil
-			req.Node.Agent = &contract.AgentNode{Model: "model", Prompt: contract.TextSource{Text: "Finish immediately."}, MaxSteps: 1}
+			req.Node.Agent = &contract.AgentNode{
+				Model:    "model",
+				Prompt:   contract.TextSource{Text: "Finish immediately."},
+				MaxSteps: 1,
+			}
 			operationName, counter := "agent-attempt", "model"
 			if kind == "code" {
 				req.Node.Agent = nil
-				req.Node.Code = &contract.CodeNode{Command: []string{"python", "-c", `import json,os;json.dump({"answer":42},open(os.environ["KNOTRA_OUTPUT_JSON"],"w"))`}}
+				req.Node.Code = &contract.CodeNode{Command: []string{
+					"python",
+					"-c",
+					`import json,os;json.dump({"answer":42},open(os.environ["KNOTRA_OUTPUT_JSON"],"w"))`,
+				}}
 				operationName, counter = "code", "tool"
 			}
 			hooks := failingCommitHooks{memoryHooks: newHooks(), id: operationID(req, operationName, true)}
 			runner.Hooks = hooks
 			ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 			defer cancel()
+
 			for range 2 {
 				_, err := runner.Execute(ctx, req)
 				var failed *Failure
@@ -192,6 +236,7 @@ func TestDockerAttemptCommitFailureNeverRestartsCompletedWork(t *testing.T) {
 					t.Fatalf("attempt commit failure lost unknown outcome: %v", err)
 				}
 			}
+
 			if hooks.calls[counter] != 1 || (kind == "agent" && modelCalls.Load() != 1) {
 				t.Fatalf("completed work restarted: budgets=%v modelCalls=%d", hooks.calls, modelCalls.Load())
 			}

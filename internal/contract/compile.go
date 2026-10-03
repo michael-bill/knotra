@@ -13,6 +13,7 @@ import (
 )
 
 const CompilerVersion = "knotra-go/v1"
+
 const CELVersion = "cel-go/v0.32.0"
 
 // HasErrors distinguishes deferred admission warnings from rejected documents.
@@ -22,6 +23,7 @@ func HasErrors(diags []Diagnostic) bool {
 			return true
 		}
 	}
+
 	return false
 }
 
@@ -42,7 +44,23 @@ func Compile(pkg Package, profile *Profile) (*Plan, []Diagnostic) {
 	if err != nil {
 		return nil, []Diagnostic{diagnostic("PACKAGE_INVALID", "package", pkg.Entrypoint, "", err)}
 	}
-	c := &compiler{plan: &Plan{Version: "knotra/v1", Digest: digest, Package: pkg, Root: pkg.Entrypoint, Pipelines: map[string]*Pipeline{}, Expressions: map[string]json.RawMessage{}, CompilerVersion: CompilerVersion, CELVersion: CELVersion}, files: files, admitted: map[string]bool{pkg.Entrypoint: true}, visiting: map[string]bool{}, finished: map[string]bool{}, positions: map[string]map[string]sourcePosition{}}
+	c := &compiler{
+		plan: &Plan{
+			Version:         "knotra/v1",
+			Digest:          digest,
+			Package:         pkg,
+			Root:            pkg.Entrypoint,
+			Pipelines:       map[string]*Pipeline{},
+			Expressions:     map[string]json.RawMessage{},
+			CompilerVersion: CompilerVersion,
+			CELVersion:      CELVersion,
+		},
+		files:     files,
+		admitted:  map[string]bool{pkg.Entrypoint: true},
+		visiting:  map[string]bool{},
+		finished:  map[string]bool{},
+		positions: map[string]map[string]sourcePosition{},
+	}
 	if profile != nil {
 		raw, marshalErr := json.Marshal(profile)
 		if marshalErr != nil {
@@ -64,11 +82,13 @@ func Compile(pkg Package, profile *Profile) (*Plan, []Diagnostic) {
 	if !HasErrors(c.diags) && c.planDepth() > 32 {
 		c.add("GRAPH_DEPTH", "semantic", pkg.Entrypoint, "/spec", fmt.Errorf("combined graph/import depth exceeds 32"))
 	}
+
 	for _, name := range sortedKeys(files) {
 		if !c.admitted[name] {
 			c.add("PACKAGE_UNDECLARED", "package", name, "", fmt.Errorf("file not included by any spec.files"))
 		}
 	}
+
 	if profile != nil && !HasErrors(c.diags) {
 		c.admit(c.plan.Root, nil, profile.Spec.Limits, 0)
 	} else if profile == nil && !HasErrors(c.diags) {
@@ -79,7 +99,16 @@ func Compile(pkg Package, profile *Profile) (*Plan, []Diagnostic) {
 		return nil, c.diags
 	}
 	if profile == nil {
-		c.diags = append(c.diags, Diagnostic{Severity: "warning", Code: "ADMISSION_PENDING", Phase: "admission", File: pkg.Entrypoint, Message: "External capabilities, profile permissions, credentials, images and tools require engine admission."})
+		c.diags = append(
+			c.diags,
+			Diagnostic{
+				Severity: "warning",
+				Code:     "ADMISSION_PENDING",
+				Phase:    "admission",
+				File:     pkg.Entrypoint,
+				Message:  "External capabilities, profile permissions, credentials, images and tools require engine admission.",
+			},
+		)
 	}
 	return c.plan, c.diags
 }
@@ -90,6 +119,7 @@ func (c *compiler) planDepth() int {
 	var graph func(Graph) int
 	graph = func(g Graph) int {
 		maximum := 0
+
 		for _, n := range g.Nodes {
 			depth := 0
 			if n.Foreach != nil {
@@ -105,6 +135,7 @@ func (c *compiler) planDepth() int {
 				maximum = depth
 			}
 		}
+
 		return maximum
 	}
 	pipeline = func(file string) int {
@@ -136,6 +167,7 @@ func (c *compiler) add(code, phase, file, p string, err error) {
 		c.diags = append(c.diags, d)
 	}
 }
+
 func (c *compiler) semantic(file, p string, err error) {
 	c.add("SEMANTIC_INVALID", "semantic", file, p, err)
 }
@@ -164,12 +196,14 @@ func (c *compiler) pipeline(file string, depth int) *Pipeline {
 	}
 	c.visiting[file] = true
 	c.plan.Pipelines[file] = &p
+
 	for _, f := range p.Spec.Files {
 		c.admitted[f] = true
 		if _, ok := c.files[f]; !ok {
 			c.add("PACKAGE_MISSING", "package", file, "/spec/files", fmt.Errorf("missing file %q", f))
 		}
 	}
+
 	for _, edge := range importEdges(p.Spec.Graph, 0) {
 		child := edge.file
 		if !c.admitted[child] {
@@ -178,7 +212,9 @@ func (c *compiler) pipeline(file string, depth int) *Pipeline {
 		}
 		c.pipeline(child, depth+edge.depth+1)
 	}
+
 	registry := map[string]json.RawMessage{}
+
 	for _, name := range sortedKeys(p.Spec.Schemas) {
 		raw := p.Spec.Schemas[name]
 		var source map[string]json.RawMessage
@@ -192,13 +228,16 @@ func (c *compiler) pipeline(file string, depth int) *Pipeline {
 		}
 		registry[name] = raw
 	}
+
 	p.Spec.Schemas = registry
+
 	for name, m := range p.Spec.MCP {
 		if m.Session == "" {
 			m.Session = "node"
 		}
 		p.Spec.MCP[name] = m
 	}
+
 	c.checkDuration(file, "/spec/limits/timeout", p.Spec.Limits.Timeout)
 	c.graph(file, &p.Spec, &p.Spec.Graph, "/spec", depth)
 	delete(c.visiting, file)
@@ -214,6 +253,7 @@ func (c *compiler) schemaFile(owner, name string) json.RawMessage {
 	}
 	var v any
 	var err error
+
 	switch strings.ToLower(path.Ext(name)) {
 	case ".json":
 		v, err = DecodeJSON(data)
@@ -222,6 +262,7 @@ func (c *compiler) schemaFile(owner, name string) json.RawMessage {
 	default:
 		err = fmt.Errorf("unsupported schema file extension")
 	}
+
 	if err != nil {
 		c.add("SCHEMA_FILE", "package", owner, name, err)
 		return nil
@@ -255,6 +296,7 @@ func (c *compiler) ports(file string, spec *Spec, ports map[string]Port, prefix 
 					c.semantic(file, where, fmt.Errorf("invalid exact MIME type %q", mt))
 				}
 			}
+
 			if p.Collect != nil && !contains(p.Artifact.MediaTypes, p.Collect.MediaType) {
 				c.semantic(file, where, fmt.Errorf("collect mediaType outside permitted types"))
 			}
@@ -280,6 +322,7 @@ func (s portScope) resolve(ref string) (Port, error) {
 	}
 	var ports map[string]Port
 	var name string
+
 	switch parts[0] {
 	case "inputs":
 		ports = s.inputs
@@ -317,6 +360,7 @@ func (s portScope) resolve(ref string) (Port, error) {
 	default:
 		return Port{}, fmt.Errorf("unknown namespace %q", parts[0])
 	}
+
 	p, ok := ports[name]
 	if !ok {
 		return Port{}, fmt.Errorf("reference %q is unavailable in this scope", ref)
@@ -332,6 +376,7 @@ func (c *compiler) binding(file, where string, b *Binding, target *Port, s portS
 		for i := range b.Coalesce {
 			c.binding(file, fmt.Sprintf("%s/coalesce/%d", where, i), &b.Coalesce[i], target, s, deps)
 		}
+
 		return
 	}
 	if b.From != "" {
@@ -380,6 +425,7 @@ func (c *compiler) expr(file, where, source string, s portScope, deps map[string
 	if boolean && !x.ast.OutputType().IsExactType(cel.BoolType) && !x.ast.OutputType().IsExactType(cel.DynType) {
 		c.semantic(file, where, fmt.Errorf("condition must produce bool"))
 	}
+
 	for _, ref := range x.refs {
 		p, err := s.resolve(ref)
 		if err != nil {
@@ -391,6 +437,7 @@ func (c *compiler) expr(file, where, source string, s portScope, deps map[string
 			deps[strings.Split(ref, ".")[1]] = true
 		}
 	}
+
 	ast, err := cel.AstToCheckedExpr(x.ast)
 	if err == nil {
 		raw, err := protojson.Marshal(ast)
@@ -409,9 +456,11 @@ func compatible(source, target Port) error {
 			return fmt.Errorf("artifact collection shape mismatch")
 		}
 		overlap := false
+
 		for _, mt := range source.Artifact.MediaTypes {
 			overlap = overlap || contains(target.Artifact.MediaTypes, mt)
 		}
+
 		if !overlap {
 			return fmt.Errorf("artifact media types are disjoint")
 		}
@@ -420,6 +469,7 @@ func compatible(source, target Port) error {
 	if string(source.Schema) == "false" || string(target.Schema) == "false" {
 		return fmt.Errorf("binding cannot satisfy a false schema")
 	}
+
 	for _, pair := range [][2]json.RawMessage{{source.Schema, target.Schema}, {target.Schema, source.Schema}} {
 		var object map[string]json.RawMessage
 		if json.Unmarshal(pair[0], &object) != nil {
@@ -435,6 +485,7 @@ func compatible(source, target Port) error {
 			schema, err := compileDataSchema(pair[1])
 			if err == nil {
 				overlap := false
+
 				for _, raw := range values {
 					value, err := DecodeJSON(raw)
 					if err == nil && schema.Validate(value) == nil {
@@ -442,12 +493,14 @@ func compatible(source, target Port) error {
 						break
 					}
 				}
+
 				if !overlap {
 					return fmt.Errorf("JSON port value domains are disjoint")
 				}
 			}
 		}
 	}
+
 	a, b := schemaTypes(source.Schema), schemaTypes(target.Schema)
 	if len(a) > 0 && len(b) > 0 {
 		for _, x := range a {
@@ -457,15 +510,18 @@ func compatible(source, target Port) error {
 				}
 			}
 		}
+
 		return fmt.Errorf("JSON port types are disjoint: %v and %v", a, b)
 	}
 	return nil
 }
+
 func schemaTypes(raw json.RawMessage) []string {
 	var m map[string]any
 	if json.Unmarshal(raw, &m) != nil {
 		return nil
 	}
+
 	switch t := m["type"].(type) {
 	case string:
 		return []string{t}
@@ -478,6 +534,7 @@ func schemaTypes(raw json.RawMessage) []string {
 		}
 		return out
 	}
+
 	return nil
 }
 
@@ -488,6 +545,7 @@ func (c *compiler) graph(file string, spec *Spec, g *Graph, prefix string, depth
 	}
 	c.ports(file, spec, g.Inputs, prefix+"/inputs")
 	c.ports(file, spec, g.Outputs, prefix+"/outputs")
+
 	for _, name := range sortedKeys(g.Nodes) {
 		n := g.Nodes[name]
 		where := prefix + "/nodes/" + name
@@ -499,6 +557,7 @@ func (c *compiler) graph(file string, spec *Spec, g *Graph, prefix string, depth
 		c.ports(file, spec, n.Inputs, where+"/inputs")
 		c.ports(file, spec, n.Outputs, where+"/outputs")
 		n.Execution = c.execution(file, where, n.Type, spec.Defaults.Execution, n.Execution)
+
 		switch n.Type {
 		case "switch":
 			routes := []string{n.Switch.Default}
@@ -550,10 +609,12 @@ func (c *compiler) graph(file string, spec *Spec, g *Graph, prefix string, depth
 		case "pipeline":
 			if child := c.plan.Pipelines[n.Pipeline.File]; child != nil {
 				n.Outputs = map[string]Port{}
+
 				for key, p := range child.Spec.Outputs {
 					p.Bind = nil
 					n.Outputs[key] = p
 				}
+
 				for key := range n.Inputs {
 					if p, ok := child.Spec.Inputs[key]; !ok {
 						c.semantic(file, where, fmt.Errorf("unknown child input %q", key))
@@ -561,6 +622,7 @@ func (c *compiler) graph(file string, spec *Spec, g *Graph, prefix string, depth
 						c.semantic(file, where, compatible(n.Inputs[key], p))
 					}
 				}
+
 				for key, p := range child.Spec.Inputs {
 					if _, ok := n.Inputs[key]; !ok && p.IsRequired() && len(p.Default) == 0 {
 						c.semantic(file, where, fmt.Errorf("missing required child input %q", key))
@@ -594,12 +656,14 @@ func (c *compiler) graph(file string, spec *Spec, g *Graph, prefix string, depth
 				n.Tool.Response = "structured"
 			}
 		}
+
 		if n.Type == "agent" || n.Type == "code" {
 			if _, ok := spec.Sandboxes[n.Sandbox]; !ok {
 				c.semantic(file, where, fmt.Errorf("unknown sandbox alias %q", n.Sandbox))
 			}
 		}
 		mounts := []string{}
+
 		for key, p := range n.Inputs {
 			if p.Artifact != nil {
 				if n.Type == "llm" {
@@ -615,10 +679,12 @@ func (c *compiler) graph(file string, spec *Spec, g *Graph, prefix string, depth
 							c.semantic(file, where, fmt.Errorf("overlapping input mounts"))
 						}
 					}
+
 					mounts = append(mounts, p.Mount)
 				}
 			}
 		}
+
 		for env, v := range n.Env {
 			if strings.HasPrefix(env, "KNOTRA_") {
 				c.semantic(file, where, fmt.Errorf("reserved environment name %s", env))
@@ -629,27 +695,33 @@ func (c *compiler) graph(file string, spec *Spec, g *Graph, prefix string, depth
 				}
 			}
 		}
+
 		g.Nodes[name] = n
 	}
+
 	for _, name := range sortedKeys(g.Nodes) {
 		n := g.Nodes[name]
 		where := prefix + "/nodes/" + name
 		deps := map[string]bool{}
 		scope := portScope{inputs: g.Inputs, nodes: g.Nodes}
+
 		for _, need := range n.Needs {
 			if _, ok := g.Nodes[need]; !ok {
 				c.semantic(file, where, fmt.Errorf("unknown dependency %q", need))
 			}
 			deps[need] = true
 		}
+
 		for key, p := range n.Inputs {
 			c.binding(file, where+"/inputs/"+key, p.Bind, &p, scope, deps)
 		}
+
 		scope.args = n.Inputs
 		if n.When != "" {
 			c.expr(file, where+"/when", n.When, scope, deps, true)
 		}
 		local := portScope{args: n.Inputs}
+
 		switch n.Type {
 		case "tool":
 			target := Port{Schema: json.RawMessage(`{"type":"object"}`)}
@@ -696,12 +768,15 @@ func (c *compiler) graph(file string, spec *Spec, g *Graph, prefix string, depth
 				c.binding(file, where+"/loop/state/"+key+"/next", p.Next, &p, local, deps)
 			}
 		}
+
 		n.Dependencies = sortedKeys(deps)
 		g.Nodes[name] = n
 	}
+
 	for key, p := range g.Outputs {
 		c.binding(file, prefix+"/outputs/"+key, p.Bind, &p, portScope{inputs: g.Inputs, nodes: g.Nodes}, map[string]bool{})
 	}
+
 	colors := map[string]int{}
 	var visit func(string)
 	visit = func(name string) {
@@ -713,11 +788,14 @@ func (c *compiler) graph(file string, spec *Spec, g *Graph, prefix string, depth
 			return
 		}
 		colors[name] = 1
+
 		for _, dep := range g.Nodes[name].Dependencies {
 			visit(dep)
 		}
+
 		colors[name] = 2
 	}
+
 	for _, name := range sortedKeys(g.Nodes) {
 		visit(name)
 	}
@@ -733,6 +811,7 @@ func (c *compiler) with(file, where string, bindings map[string]Binding, inputs 
 		b := bindings[key]
 		c.binding(file, where+"/with/"+key, &b, &p, s, deps)
 	}
+
 	for key, p := range inputs {
 		if _, ok := bindings[key]; !ok && p.IsRequired() && len(p.Default) == 0 {
 			c.semantic(file, where, fmt.Errorf("required body input %q has no binding/default", key))
@@ -756,12 +835,14 @@ func (c *compiler) text(file, where string, s *TextSource) {
 	s.Text = string(data)
 	s.File = ""
 }
+
 func (c *compiler) checkDuration(file, where, value string) {
 	if value != "" {
 		_, err := Duration(value)
 		c.semantic(file, where, err)
 	}
 }
+
 func (c *compiler) execution(file, where, kind string, defaults, value Execution) Execution {
 	if value.Timeout == "" {
 		value.Timeout = defaults.Timeout
@@ -811,24 +892,30 @@ func effectiveTools(defaults ToolGrants, local *ToolGrants) *ToolGrants {
 		for k, v := range defaults.MCP {
 			out.MCP[k] = append([]string{}, v...)
 		}
+
 		out.Sandbox = append([]string{}, defaults.Sandbox...)
 	}
 	if local != nil {
 		for k, v := range local.MCP {
 			out.MCP[k] = union(out.MCP[k], v)
 		}
+
 		out.Sandbox = union(out.Sandbox, local.Sandbox)
 	}
 	return out
 }
+
 func union(a, b []string) []string {
 	m := map[string]bool{}
+
 	for _, s := range a {
 		m[s] = true
 	}
+
 	for _, s := range b {
 		m[s] = true
 	}
+
 	return sortedKeys(m)
 }
 
@@ -843,13 +930,16 @@ func rewriteRefs(v any, prefix string) any {
 					continue
 				}
 			}
+
 			switch k {
 			case "$defs", "properties", "patternProperties", "dependentSchemas":
 				if entries, ok := v.(map[string]any); ok {
 					replaced := map[string]any{}
+
 					for name, schema := range entries {
 						replaced[name] = rewriteRefs(schema, prefix)
 					}
+
 					out[k] = replaced
 				} else {
 					out[k] = v
@@ -871,6 +961,7 @@ func rewriteRefs(v any, prefix string) any {
 		return v
 	}
 }
+
 func wrapSchema(raw json.RawMessage, key string, outer map[string]any) json.RawMessage {
 	s, _ := DecodeJSON(raw)
 	outer[key] = rewriteRefs(s, "/"+key)

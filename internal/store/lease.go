@@ -32,11 +32,13 @@ func (s *Store) AcquireLease(ctx context.Context) (*Lease, error) {
 	}
 	return &Lease{conn: conn}, nil
 }
+
 func (l *Lease) Check(ctx context.Context) error {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	return l.conn.Ping(ctx)
 }
+
 func (l *Lease) Close(ctx context.Context) error {
 	l.mu.Lock()
 	defer l.mu.Unlock()

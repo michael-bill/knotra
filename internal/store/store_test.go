@@ -16,6 +16,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+
 	"github.com/michael-bill/knotra/internal/contract"
 	"github.com/michael-bill/knotra/internal/engine"
 	"github.com/michael-bill/knotra/internal/protocol"
@@ -78,12 +79,33 @@ func setupRun(t *testing.T, s *Store) (string, contract.Plan) {
 	}
 	defer tx.Rollback(ctx)
 	id := uuid.NewString()
-	def := protocol.Definition{ID: uuid.NewString(), PackageDigest: "sha256:" + strings.Repeat("a", 64), Name: "test", CreatedAt: time.Now().UTC()}
+	def := protocol.Definition{
+		ID:            uuid.NewString(),
+		PackageDigest: "sha256:" + strings.Repeat("a", 64),
+		Name:          "test",
+		CreatedAt:     time.Now().UTC(),
+	}
 	if _, err := PutDefinition(ctx, tx, def); err != nil {
 		t.Fatal(err)
 	}
-	plan := contract.Plan{Version: "knotra/v1", CompilerVersion: contract.CompilerVersion, CELVersion: contract.CELVersion, Root: "pipeline.yaml", Pipelines: map[string]*contract.Pipeline{"pipeline.yaml": {Spec: contract.Spec{Graph: contract.Graph{Inputs: map[string]contract.Port{}, Outputs: map[string]contract.Port{}, Nodes: map[string]contract.Node{}}}}}}
-	run := protocol.Run{ID: id, DefinitionID: def.ID, Status: "pending", CreatedAt: time.Now().UTC(), UpdatedAt: time.Now().UTC()}
+	plan := contract.Plan{
+		Version:         "knotra/v1",
+		CompilerVersion: contract.CompilerVersion,
+		CELVersion:      contract.CELVersion,
+		Root:            "pipeline.yaml",
+		Pipelines: map[string]*contract.Pipeline{"pipeline.yaml": {Spec: contract.Spec{Graph: contract.Graph{
+			Inputs:  map[string]contract.Port{},
+			Outputs: map[string]contract.Port{},
+			Nodes:   map[string]contract.Node{},
+		}}}},
+	}
+	run := protocol.Run{
+		ID:           id,
+		DefinitionID: def.ID,
+		Status:       "pending",
+		CreatedAt:    time.Now().UTC(),
+		UpdatedAt:    time.Now().UTC(),
+	}
 	if err := PutRun(ctx, tx, run, plan, contract.Values{}); err != nil {
 		t.Fatal(err)
 	}
@@ -102,6 +124,7 @@ func TestCommandConcurrentIdempotency(t *testing.T) {
 	var calls atomic.Int32
 	var wg sync.WaitGroup
 	failures := make(chan error, 24)
+
 	for range 24 {
 		wg.Go(func() {
 			status, response, err := s.Command(ctx, "principal", "same", "POST /effect", []byte(`{"x":1}`), func(tx pgx.Tx) (int, any, error) {
@@ -118,16 +141,27 @@ func TestCommandConcurrentIdempotency(t *testing.T) {
 			}
 		})
 	}
+
 	wg.Wait()
 	close(failures)
+
 	for err := range failures {
 		t.Error(err)
 	}
+
 	if calls.Load() != 1 {
 		t.Fatalf("action ran %d times", calls.Load())
 	}
+
 	for _, test := range []struct{ route, body string }{{"POST /effect", `{"x":2}`}, {"POST /different", `{"x":1}`}} {
-		_, _, err := s.Command(ctx, "principal", "same", test.route, []byte(test.body), func(pgx.Tx) (int, any, error) { t.Error("conflicting command action invoked"); return 200, nil, nil })
+		_, _, err := s.Command(
+			ctx,
+			"principal",
+			"same",
+			test.route,
+			[]byte(test.body),
+			func(pgx.Tx) (int, any, error) { t.Error("conflicting command action invoked"); return 200, nil, nil },
+		)
 		if !errors.Is(err, ErrConflict) {
 			t.Fatalf("expected conflict, got %v", err)
 		}
@@ -149,6 +183,7 @@ func TestCommandRollbackIncludesEffectAndReceipt(t *testing.T) {
 	if err == nil {
 		t.Fatal("unsupported response did not fail")
 	}
+
 	for _, table := range []string{"test_effects", "knotra_commands"} {
 		var count int
 		if err := s.Pool.QueryRow(ctx, "SELECT count(*) FROM "+table).Scan(&count); err != nil {
@@ -164,13 +199,22 @@ func TestHumanFirstValidResponseWins(t *testing.T) {
 	s := testStore(t)
 	runID, _ := setupRun(t, s)
 	ctx := context.Background()
-	request := engine.Request{ID: uuid.NewString(), RunID: runID, InstanceID: runID + "/root/human", Kind: "human", Status: "open", Deadline: time.Now().Add(time.Hour), Outputs: map[string]contract.Port{"value": {Schema: json.RawMessage(`{"type":"integer"}`)}}}
+	request := engine.Request{
+		ID:         uuid.NewString(),
+		RunID:      runID,
+		InstanceID: runID + "/root/human",
+		Kind:       "human",
+		Status:     "open",
+		Deadline:   time.Now().Add(time.Hour),
+		Outputs:    map[string]contract.Port{"value": {Schema: json.RawMessage(`{"type":"integer"}`)}},
+	}
 	if err := s.SaveRequest(ctx, request); err != nil {
 		t.Fatal(err)
 	}
 	var winners atomic.Int32
 	var wg sync.WaitGroup
 	failures := make(chan error, 16)
+
 	for i := range 16 {
 		wg.Go(func() {
 			key := fmt.Sprintf("response-%d", i)
@@ -185,11 +229,14 @@ func TestHumanFirstValidResponseWins(t *testing.T) {
 			}
 		})
 	}
+
 	wg.Wait()
 	close(failures)
+
 	for err := range failures {
 		t.Error(err)
 	}
+
 	if winners.Load() != 1 {
 		t.Fatalf("expected one accepted answer, got %d", winners.Load())
 	}
@@ -225,14 +272,26 @@ func TestHumanRejectsInvalidExpiredAndWrongKind(t *testing.T) {
 	s := testStore(t)
 	runID, _ := setupRun(t, s)
 	ctx := context.Background()
+
 	for _, test := range []struct {
 		name, kind string
 		deadline   time.Time
 		value      string
 		conflict   bool
-	}{{"invalid", "human", time.Now().Add(time.Hour), `"wrong"`, false}, {"expired", "human", time.Now().Add(-time.Second), `1`, true}, {"resolution", "resolution", time.Now().Add(time.Hour), `1`, true}} {
+	}{
+		{"invalid", "human", time.Now().Add(time.Hour), `"wrong"`, false},
+		{"expired", "human", time.Now().Add(-time.Second), `1`, true},
+		{"resolution", "resolution", time.Now().Add(time.Hour), `1`, true},
+	} {
 		t.Run(test.name, func(t *testing.T) {
-			request := engine.Request{ID: uuid.NewString(), RunID: runID, Kind: test.kind, Status: "open", Deadline: test.deadline, Outputs: map[string]contract.Port{"value": {Schema: json.RawMessage(`{"type":"integer"}`)}}}
+			request := engine.Request{
+				ID:       uuid.NewString(),
+				RunID:    runID,
+				Kind:     test.kind,
+				Status:   "open",
+				Deadline: test.deadline,
+				Outputs:  map[string]contract.Port{"value": {Schema: json.RawMessage(`{"type":"integer"}`)}},
+			}
 			if err := s.SaveRequest(ctx, request); err != nil {
 				t.Fatal(err)
 			}
@@ -256,9 +315,13 @@ func TestBudgetAtomicAcrossScopes(t *testing.T) {
 	s := testStore(t)
 	runID, _ := setupRun(t, s)
 	ctx := context.Background()
-	scopes := []engine.BudgetScope{{ID: runID, Limits: contract.Limits{MaxModelCalls: 3}}, {ID: runID + "/child", Limits: contract.Limits{MaxModelCalls: 1}}}
+	scopes := []engine.BudgetScope{
+		{ID: runID, Limits: contract.Limits{MaxModelCalls: 3}},
+		{ID: runID + "/child", Limits: contract.Limits{MaxModelCalls: 1}},
+	}
 	var accepted atomic.Int32
 	var wg sync.WaitGroup
+
 	for range 12 {
 		wg.Go(func() {
 			if s.Reserve(ctx, runID, "model", scopes) == nil {
@@ -266,6 +329,7 @@ func TestBudgetAtomicAcrossScopes(t *testing.T) {
 			}
 		})
 	}
+
 	wg.Wait()
 	if accepted.Load() != 1 {
 		t.Fatalf("overspent child budget: %d", accepted.Load())
@@ -276,6 +340,7 @@ func TestBudgetAtomicAcrossScopes(t *testing.T) {
 	}
 	defer rows.Close()
 	count := 0
+
 	for rows.Next() {
 		var scope string
 		var used int
@@ -287,6 +352,7 @@ func TestBudgetAtomicAcrossScopes(t *testing.T) {
 		}
 		count++
 	}
+
 	if err := rows.Err(); err != nil {
 		t.Fatal(err)
 	}
@@ -300,12 +366,28 @@ func TestProjectionOrderingAndDeduplication(t *testing.T) {
 	runID, _ := setupRun(t, s)
 	ctx := context.Background()
 	now := time.Now().UTC()
-	events := []engine.Projection{{RunID: runID, Sequence: 1, Kind: "run", Status: "running", Time: now}, {RunID: runID, Sequence: 3, InstanceID: "node", NodeID: "node", Kind: "node", Status: "succeeded", Time: now}, {RunID: runID, Sequence: 2, Kind: "run", Status: "waiting_human", Time: now}, {RunID: runID, Sequence: 4, Kind: "run", Status: "succeeded", Time: now}, {RunID: runID, Sequence: 5, Kind: "run", Status: "running", Time: now}}
+	events := []engine.Projection{
+		{RunID: runID, Sequence: 1, Kind: "run", Status: "running", Time: now},
+		{
+			RunID:      runID,
+			Sequence:   3,
+			InstanceID: "node",
+			NodeID:     "node",
+			Kind:       "node",
+			Status:     "succeeded",
+			Time:       now,
+		},
+		{RunID: runID, Sequence: 2, Kind: "run", Status: "waiting_human", Time: now},
+		{RunID: runID, Sequence: 4, Kind: "run", Status: "succeeded", Time: now},
+		{RunID: runID, Sequence: 5, Kind: "run", Status: "running", Time: now},
+	}
+
 	for _, event := range events {
 		if err := s.Project(ctx, event); err != nil {
 			t.Fatal(err)
 		}
 	}
+
 	if err := s.Project(ctx, events[1]); err != nil {
 		t.Fatal(err)
 	}
@@ -385,7 +467,13 @@ func TestStagedArtifactsPublishWithSuccessfulNode(t *testing.T) {
 	id, _ := setupRun(t, s)
 	ctx := context.Background()
 	files := Artifacts{Root: t.TempDir(), Store: s}
-	art, err := files.Put(ctx, "report", "text/plain", []byte("validated result"), map[string]string{"runId": id, "instanceId": "producer"})
+	art, err := files.Put(
+		ctx,
+		"report",
+		"text/plain",
+		[]byte("validated result"),
+		map[string]string{"runId": id, "instanceId": "producer"},
+	)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -396,19 +484,52 @@ func TestStagedArtifactsPublishWithSuccessfulNode(t *testing.T) {
 		t.Fatal("trusted replay lost draft", err)
 	}
 	outputs := contract.Values{"file": {Artifacts: []contract.Artifact{art}}}
-	if err = s.Project(ctx, engine.Projection{RunID: id, Sequence: 1, Kind: "node", InstanceID: "producer", NodeID: "producer", Status: "running", Time: time.Now()}); err != nil {
+	if err = s.Project(
+		ctx,
+		engine.Projection{
+			RunID:      id,
+			Sequence:   1,
+			Kind:       "node",
+			InstanceID: "producer",
+			NodeID:     "producer",
+			Status:     "running",
+			Time:       time.Now(),
+		},
+	); err != nil {
 		t.Fatal(err)
 	}
 	if _, err = s.Artifact(ctx, art.ID); !errors.Is(err, ErrNotFound) {
 		t.Fatal("running node published draft")
 	}
-	if err = s.Project(ctx, engine.Projection{RunID: id, Sequence: 2, Kind: "node", InstanceID: "producer", NodeID: "producer", Status: "succeeded", Outputs: outputs, Time: time.Now()}); err != nil {
+	if err = s.Project(
+		ctx,
+		engine.Projection{
+			RunID:      id,
+			Sequence:   2,
+			Kind:       "node",
+			InstanceID: "producer",
+			NodeID:     "producer",
+			Status:     "succeeded",
+			Outputs:    outputs,
+			Time:       time.Now(),
+		},
+	); err != nil {
 		t.Fatal(err)
 	}
 	if _, err = s.Artifact(ctx, art.ID); err != nil {
 		t.Fatal("successful output not published", err)
 	}
-	if err = s.Project(ctx, engine.Projection{RunID: id, Sequence: 3, Kind: "request", InstanceID: "producer", Status: "rejected", Time: time.Now()}); err != nil {
+	if err = s.Project(
+		ctx,
+		engine.Projection{
+			RunID:      id,
+			Sequence:   3,
+			Kind:       "request",
+			InstanceID: "producer",
+			Status:     "rejected",
+			Time:       time.Now(),
+		},
+	); err != nil {
 		t.Fatal(err)
 	}
 	run, err := s.Run(ctx, id)
@@ -470,17 +591,25 @@ func TestDefinitionsRemainReachableBeyondFirstTwoHundred(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer tx.Rollback(ctx)
+
 	for i := 0; i < 205; i++ {
-		d := protocol.Definition{ID: fmt.Sprintf("def-%03d", i), PackageDigest: fmt.Sprintf("digest-%03d", i), Name: "test", CreatedAt: time.Now()}
+		d := protocol.Definition{
+			ID:            fmt.Sprintf("def-%03d", i),
+			PackageDigest: fmt.Sprintf("digest-%03d", i),
+			Name:          "test",
+			CreatedAt:     time.Now(),
+		}
 		if _, err = PutDefinition(ctx, tx, d); err != nil {
 			t.Fatal(err)
 		}
 	}
+
 	if err = tx.Commit(ctx); err != nil {
 		t.Fatal(err)
 	}
 	count := 0
 	cursor := ""
+
 	for {
 		items, err := s.Definitions(ctx, cursor)
 		if err != nil {
@@ -499,6 +628,7 @@ func TestDefinitionsRemainReachableBeyondFirstTwoHundred(t *testing.T) {
 			break
 		}
 	}
+
 	if count != 205 {
 		t.Fatalf("only %d definitions reachable", count)
 	}

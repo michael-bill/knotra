@@ -1,9 +1,9 @@
 {
   "type": "object",
   "properties": {
-    "count": {"type": "integer", "minimum": 0},
-    "sum": {"type": "integer"},
-    "mean": {"type": "number"}
+    "count": { "type": "integer", "minimum": 0 },
+    "sum": { "type": "integer" },
+    "mean": { "type": "number" }
   },
   "required": ["count", "sum", "mean"],
   "additionalProperties": false

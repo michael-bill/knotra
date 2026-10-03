@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+
 	"github.com/michael-bill/knotra/internal/contract"
 	"github.com/michael-bill/knotra/internal/engine"
 	"github.com/michael-bill/knotra/internal/protocol"
@@ -42,7 +43,12 @@ func (s *Store) Project(ctx context.Context, p engine.Projection) error {
 		if p.Status == "succeeded" {
 			for _, value := range p.Outputs {
 				for _, artifact := range value.Artifacts {
-					if _, e = tx.Exec(ctx, "UPDATE knotra_artifacts SET published=true WHERE id=$1 AND document->'origin'->>'runId'=$2", artifact.ID, p.RunID); e != nil {
+					if _, e = tx.Exec(
+						ctx,
+						"UPDATE knotra_artifacts SET published=true WHERE id=$1 AND document->'origin'->>'runId'=$2",
+						artifact.ID,
+						p.RunID,
+					); e != nil {
 						return e
 					}
 				}
@@ -60,7 +66,14 @@ func (s *Store) Project(ctx context.Context, p engine.Projection) error {
 		if e != nil {
 			return e
 		}
-		_, e = tx.Exec(ctx, "INSERT INTO knotra_instances(run_id,id,sequence,document) VALUES($1,$2,$3,$4) ON CONFLICT(run_id,id) DO UPDATE SET sequence=EXCLUDED.sequence,document=EXCLUDED.document WHERE knotra_instances.sequence<EXCLUDED.sequence", p.RunID, p.InstanceID, p.Sequence, ib)
+		_, e = tx.Exec(
+			ctx,
+			"INSERT INTO knotra_instances(run_id,id,sequence,document) VALUES($1,$2,$3,$4) ON CONFLICT(run_id,id) DO UPDATE SET sequence=EXCLUDED.sequence,document=EXCLUDED.document WHERE knotra_instances.sequence<EXCLUDED.sequence",
+			p.RunID,
+			p.InstanceID,
+			p.Sequence,
+			ib,
+		)
 		if e != nil {
 			return e
 		}
@@ -70,6 +83,7 @@ func (s *Store) Project(ctx context.Context, p engine.Projection) error {
 		if p.Outputs != nil {
 			run.Outputs = map[string]json.RawMessage{}
 			run.Artifacts = []contract.Artifact{}
+
 			for _, key := range sortedKeys(p.Outputs) {
 				v := p.Outputs[key]
 				if v.JSON != nil {
@@ -109,7 +123,14 @@ func (s *Store) Project(ctx context.Context, p engine.Projection) error {
 	if e != nil {
 		return e
 	}
-	ev := protocol.Event{RunID: p.RunID, At: p.Time, Type: p.Kind, Message: p.Status, InstanceID: p.InstanceID, Data: map[string]any{"status": p.Status, "reason": shortEventText(p.Reason)}}
+	ev := protocol.Event{
+		RunID:      p.RunID,
+		At:         p.Time,
+		Type:       p.Kind,
+		Message:    p.Status,
+		InstanceID: p.InstanceID,
+		Data:       map[string]any{"status": p.Status, "reason": shortEventText(p.Reason)},
+	}
 	if p.Failure != nil {
 		ev.Message = shortEventText(p.Failure.Message)
 	}
@@ -126,17 +147,22 @@ func (s *Store) Project(ctx context.Context, p engine.Projection) error {
 	}
 	return tx.Commit(ctx)
 }
+
 func diagnostic(f *engine.Failure) contract.Diagnostic {
 	return contract.Diagnostic{Severity: "error", Code: f.Code, Phase: "runtime", Message: f.Message, Path: ""}
 }
+
 func sortedKeys[V any](m map[string]V) []string {
 	k := make([]string, 0, len(m))
+
 	for x := range m {
 		k = append(k, x)
 	}
+
 	sort.Strings(k)
 	return k
 }
+
 func (s *Store) SaveRequest(ctx context.Context, r engine.Request) error {
 	tx, err := s.Pool.Begin(ctx)
 	if err != nil {
@@ -162,6 +188,7 @@ func (s *Store) SaveRequest(ctx context.Context, r engine.Request) error {
 	}
 	return tx.Commit(ctx)
 }
+
 func (s *Store) Request(ctx context.Context, id string) (engine.Request, error) {
 	var r engine.Request
 	var b []byte
@@ -173,14 +200,20 @@ func (s *Store) Request(ctx context.Context, id string) (engine.Request, error) 
 	}
 	return r, classify(e)
 }
+
 func (s *Store) Requests(ctx context.Context, cursor string) ([]protocol.HumanRequest, error) {
-	rows, e := s.Pool.Query(ctx, "SELECT document,status,created_at FROM knotra_requests WHERE kind='human' AND ($1='' OR id<$1) ORDER BY id DESC LIMIT 101", cursor)
+	rows, e := s.Pool.Query(
+		ctx,
+		"SELECT document,status,created_at FROM knotra_requests WHERE kind='human' AND ($1='' OR id<$1) ORDER BY id DESC LIMIT 101",
+		cursor,
+	)
 	if e != nil {
 		return nil, e
 	}
 	defer rows.Close()
 	out := []protocol.HumanRequest{}
 	size := 0
+
 	for rows.Next() {
 		var r engine.Request
 		var b []byte
@@ -209,6 +242,7 @@ func (s *Store) Requests(ctx context.Context, cursor string) ([]protocol.HumanRe
 			break
 		}
 	}
+
 	return out, rows.Err()
 }
 
@@ -225,6 +259,7 @@ func (s *Store) Reserve(ctx context.Context, runID, kind string, scopes []engine
 	if e != nil {
 		return e
 	}
+
 	for _, scope := range scopes {
 		limit := scope.Limits.MaxModelCalls
 		if kind == "tool" {
@@ -238,11 +273,18 @@ func (s *Store) Reserve(ctx context.Context, runID, kind string, scopes []engine
 		if limit <= 0 || used >= int64(limit) {
 			return fmt.Errorf("BUDGET_EXCEEDED: %s in scope %s", kind, scope.ID)
 		}
-		_, e = tx.Exec(ctx, "INSERT INTO knotra_budgets(run_id,scope,kind,used) VALUES($1,$2,$3,1) ON CONFLICT(run_id,scope,kind) DO UPDATE SET used=knotra_budgets.used+1", runID, scope.ID, kind)
+		_, e = tx.Exec(
+			ctx,
+			"INSERT INTO knotra_budgets(run_id,scope,kind,used) VALUES($1,$2,$3,1) ON CONFLICT(run_id,scope,kind) DO UPDATE SET used=knotra_budgets.used+1",
+			runID,
+			scope.ID,
+			kind,
+		)
 		if e != nil {
 			return e
 		}
 	}
+
 	return tx.Commit(ctx)
 }
 
@@ -253,7 +295,14 @@ type OperationState struct {
 }
 
 func (s *Store) BeginOperation(ctx context.Context, id, runID, kind, effect string) (OperationState, error) {
-	tag, e := s.Pool.Exec(ctx, "INSERT INTO knotra_operations(id,run_id,kind,effect) VALUES($1,$2,$3,$4) ON CONFLICT DO NOTHING", id, runID, kind, effect)
+	tag, e := s.Pool.Exec(
+		ctx,
+		"INSERT INTO knotra_operations(id,run_id,kind,effect) VALUES($1,$2,$3,$4) ON CONFLICT DO NOTHING",
+		id,
+		runID,
+		kind,
+		effect,
+	)
 	if e != nil {
 		return OperationState{}, e
 	}
@@ -262,11 +311,20 @@ func (s *Store) BeginOperation(ctx context.Context, id, runID, kind, effect stri
 	}
 	var state OperationState
 	state.Started = true
-	e = s.Pool.QueryRow(ctx, "SELECT completed,response FROM knotra_operations WHERE id=$1 AND run_id=$2", id, runID).Scan(&state.Completed, &state.Response)
+	e = s.Pool.QueryRow(ctx, "SELECT completed,response FROM knotra_operations WHERE id=$1 AND run_id=$2", id, runID).Scan(
+		&state.Completed,
+		&state.Response,
+	)
 	return state, e
 }
+
 func (s *Store) CompleteOperation(ctx context.Context, id string, response json.RawMessage) error {
-	tag, e := s.Pool.Exec(ctx, "UPDATE knotra_operations SET completed=true,response=$2 WHERE id=$1 AND NOT completed", id, []byte(response))
+	tag, e := s.Pool.Exec(
+		ctx,
+		"UPDATE knotra_operations SET completed=true,response=$2 WHERE id=$1 AND NOT completed",
+		id,
+		[]byte(response),
+	)
 	if e != nil {
 		return e
 	}
@@ -298,7 +356,17 @@ func (s *Store) Answer(ctx context.Context, q engine.AnswerRequest) (*engine.Hum
 	var responseID *string
 	var response []byte
 	var acceptedAt *time.Time
-	e = tx.QueryRow(ctx, "SELECT status,response_id,response,accepted_at FROM knotra_requests WHERE id=$1 AND run_id=$2 FOR UPDATE", q.RequestID, q.RunID).Scan(&status, &responseID, &response, &acceptedAt)
+	e = tx.QueryRow(
+		ctx,
+		"SELECT status,response_id,response,accepted_at FROM knotra_requests WHERE id=$1 AND run_id=$2 FOR UPDATE",
+		q.RequestID,
+		q.RunID,
+	).Scan(
+		&status,
+		&responseID,
+		&response,
+		&acceptedAt,
+	)
 	if e != nil {
 		return nil, classify(e)
 	}
@@ -307,13 +375,23 @@ func (s *Store) Answer(ctx context.Context, q engine.AnswerRequest) (*engine.Hum
 		if e = json.Unmarshal(response, &values); e != nil {
 			return nil, e
 		}
-		return &engine.HumanSignal{RequestID: q.RequestID, ResponseID: *responseID, Values: values, AcceptedAt: *acceptedAt}, tx.Commit(ctx)
+		return &engine.HumanSignal{
+			RequestID:  q.RequestID,
+			ResponseID: *responseID,
+			Values:     values,
+			AcceptedAt: *acceptedAt,
+		}, tx.Commit(ctx)
 	}
 	if q.CloseIfAbsent != "" {
 		if q.CloseIfAbsent != "cancelled" && q.CloseIfAbsent != "expired" {
 			return nil, ErrConflict
 		}
-		_, e = tx.Exec(ctx, "UPDATE knotra_requests SET status=$2 WHERE id=$1 AND status IN ('open','pending')", q.RequestID, q.CloseIfAbsent)
+		_, e = tx.Exec(
+			ctx,
+			"UPDATE knotra_requests SET status=$2 WHERE id=$1 AND status IN ('open','pending')",
+			q.RequestID,
+			q.CloseIfAbsent,
+		)
 		if e != nil {
 			return nil, e
 		}

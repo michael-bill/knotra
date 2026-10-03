@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+
 	"github.com/michael-bill/knotra/internal/app"
 	"github.com/michael-bill/knotra/internal/cli"
 	"github.com/michael-bill/knotra/internal/client"
@@ -50,7 +51,19 @@ func TestRealProcessRecovery(t *testing.T) {
 	profile := recoveryProfile()
 	profilePath := filepath.Join(work, "profile.json")
 	writeJSON(t, profilePath, profile)
-	options := app.Options{Listen: unusedAddress(t), DatabaseURL: databaseSchema(t, ctx), TemporalAddress: env("KNOTRA_TEST_TEMPORAL", "127.0.0.1:7233"), Namespace: env("KNOTRA_TEST_NAMESPACE", "default"), TaskQueue: "knotra-recovery-" + uuid.NewString(), DataDir: filepath.Join(work, "engine"), DockerHost: os.Getenv("DOCKER_HOST"), HelperPath: snapshotHelper(t, root, work), FirewallImage: env("KNOTRA_TEST_FIREWALL_IMAGE", "knotra-firewall:dev"), Profiles: []string{profilePath}, Version: "recovery-test"}
+	options := app.Options{
+		Listen:          unusedAddress(t),
+		DatabaseURL:     databaseSchema(t, ctx),
+		TemporalAddress: env("KNOTRA_TEST_TEMPORAL", "127.0.0.1:7233"),
+		Namespace:       env("KNOTRA_TEST_NAMESPACE", "default"),
+		TaskQueue:       "knotra-recovery-" + uuid.NewString(),
+		DataDir:         filepath.Join(work, "engine"),
+		DockerHost:      os.Getenv("DOCKER_HOST"),
+		HelperPath:      snapshotHelper(t, root, work),
+		FirewallImage:   env("KNOTRA_TEST_FIREWALL_IMAGE", "knotra-firewall:dev"),
+		Profiles:        []string{profilePath},
+		Version:         "recovery-test",
+	}
 	optionsPath := filepath.Join(work, "server.json")
 	writeJSON(t, optionsPath, options)
 	api := &client.Client{BaseURL: "http://" + options.Listen, StateDir: filepath.Join(work, "client")}
@@ -85,7 +98,14 @@ func TestRealProcessRecovery(t *testing.T) {
 	if err := json.Unmarshal(before, &document); err != nil || document.Marker != marker || document.Nonce == "" {
 		t.Fatalf("invalid checkpoint file: %s (%v)", before, err)
 	}
-	prefix := readEventsUntil(t, ctx, api, run.ID, "", func(e protocol.Event) bool { return e.InstanceID == request.InstanceID && e.Message == "waiting_human" })
+	prefix := readEventsUntil(
+		t,
+		ctx,
+		api,
+		run.ID,
+		"",
+		func(e protocol.Event) bool { return e.InstanceID == request.InstanceID && e.Message == "waiting_human" },
+	)
 	cursor := prefix[len(prefix)-1].ID
 	// Kill the process without graceful shutdown. Neither its Go heap nor worker
 	// cache survives; recovery must use durable Temporal and PostgreSQL state.
@@ -123,15 +143,18 @@ func TestRealProcessRecovery(t *testing.T) {
 	}
 	suffix := readEventsUntil(t, ctx, api, run.ID, cursor, terminalEvent)
 	seen := map[string]bool{}
+
 	for _, event := range prefix {
 		seen[event.ID] = true
 	}
+
 	for _, event := range suffix {
 		if seen[event.ID] {
 			t.Fatalf("SSE cursor replay duplicated event %s", event.ID)
 		}
 		seen[event.ID] = true
 	}
+
 	assertSinglePreparation(t, run, append(prefix, suffix...))
 
 	// A second real run is cancelled while waiting. The cancellation is durable
@@ -143,7 +166,13 @@ func TestRealProcessRecovery(t *testing.T) {
 		t.Fatal(err)
 	}
 	var ignored any
-	err = api.Command(ctx, "/requests/"+open.ID+"/response", map[string]any{"outputs": map[string]any{"approved": true}}, uuid.NewString(), &ignored)
+	err = api.Command(
+		ctx,
+		"/requests/"+open.ID+"/response",
+		map[string]any{"outputs": map[string]any{"approved": true}},
+		uuid.NewString(),
+		&ignored,
+	)
 	var httpError *client.HTTPError
 	if !errors.As(err, &httpError) || httpError.Status != 409 {
 		t.Fatalf("late answer after cancellation was not rejected with 409: %v", err)
@@ -152,11 +181,13 @@ func TestRealProcessRecovery(t *testing.T) {
 	if cancelled.Status != "cancelled" {
 		t.Fatalf("cancelled run became %s: %+v", cancelled.Status, cancelled.Diagnostics)
 	}
+
 	for _, instance := range cancelled.Instances {
 		if instance.NodeID == "verify" && instance.AttemptID != "" {
 			t.Fatal("downstream code was dispatched after cancellation")
 		}
 	}
+
 	check := readEventsUntil(t, ctx, api, cancelled.ID, "", terminalEvent)
 	assertSinglePreparation(t, cancelled, check)
 	t.Log("process recovery passed: stable identity, unchanged artifact, no repeated code, exact SSE replay, CLI response/cancellation, late answer rejected")
@@ -175,8 +206,19 @@ func TestRecoveryScenarioCompiles(t *testing.T) {
 
 func recoveryProfile() contract.Profile {
 	return contract.Profile{APIVersion: "knotra/v1", Kind: "EngineProfile", Metadata: contract.Metadata{Name: "recovery"}, Spec: contract.ProfileSpec{
-		Sandboxes: map[string]contract.SandboxProfile{"python": {Image: "python:3.13-alpine", Network: contract.Network{Mode: "none"}, AllowedTools: []string{"process.exec"}, Resources: contract.Resources{CPU: 0.5, MemoryMiB: 128, DiskMiB: 32, Pids: 32}}},
-		Limits:    contract.Limits{Timeout: "10m", MaxConcurrentNodes: 2, MaxNodeInstances: 16, MaxModelCalls: 2, MaxToolCalls: 2},
+		Sandboxes: map[string]contract.SandboxProfile{"python": {
+			Image:        "python:3.13-alpine",
+			Network:      contract.Network{Mode: "none"},
+			AllowedTools: []string{"process.exec"},
+			Resources:    contract.Resources{CPU: 0.5, MemoryMiB: 128, DiskMiB: 32, Pids: 32},
+		}},
+		Limits: contract.Limits{
+			Timeout:            "10m",
+			MaxConcurrentNodes: 2,
+			MaxNodeInstances:   16,
+			MaxModelCalls:      2,
+			MaxToolCalls:       2,
+		},
 	}}
 }
 
@@ -240,14 +282,17 @@ func startEngineProcess(t *testing.T, ctx context.Context, options, logPath stri
 
 func (p *engineProcess) kill(t *testing.T) {
 	t.Helper()
+
 	select {
 	case <-p.finished:
 		return
 	default:
 	}
+
 	if err := p.command.Process.Kill(); err != nil && !errors.Is(err, os.ErrProcessDone) {
 		t.Error(err)
 	}
+
 	select {
 	case <-p.finished:
 	case <-time.After(15 * time.Second):
@@ -300,16 +345,19 @@ func awaitHuman(t *testing.T, ctx context.Context, api *client.Client, runID str
 	t.Helper()
 	ticker := time.NewTicker(100 * time.Millisecond)
 	defer ticker.Stop()
+
 	for {
 		var page protocol.Page[protocol.HumanRequest]
 		if err := api.Get(ctx, "/requests", &page); err != nil {
 			t.Fatal(err)
 		}
+
 		for _, request := range page.Items {
 			if request.RunID == runID && request.Status == "open" {
 				return request
 			}
 		}
+
 		var response struct{ Run protocol.Run }
 		if err := api.Get(ctx, "/runs/"+runID, &response); err != nil {
 			t.Fatal(err)
@@ -317,6 +365,7 @@ func awaitHuman(t *testing.T, ctx context.Context, api *client.Client, runID str
 		if protocol.Terminal(response.Run.Status) {
 			t.Fatalf("run terminated before opening a human request: %s %+v", response.Run.Status, response.Run.Diagnostics)
 		}
+
 		select {
 		case <-ctx.Done():
 			t.Fatal(ctx.Err())
@@ -329,6 +378,7 @@ func awaitTerminal(t *testing.T, ctx context.Context, api *client.Client, runID 
 	t.Helper()
 	ticker := time.NewTicker(100 * time.Millisecond)
 	defer ticker.Stop()
+
 	for {
 		var response struct{ Run protocol.Run }
 		if err := api.Get(ctx, "/runs/"+runID, &response); err != nil {
@@ -337,6 +387,7 @@ func awaitTerminal(t *testing.T, ctx context.Context, api *client.Client, runID 
 		if protocol.Terminal(response.Run.Status) {
 			return response.Run
 		}
+
 		select {
 		case <-ctx.Done():
 			t.Fatal(ctx.Err())
@@ -373,12 +424,15 @@ func readEventsUntil(t *testing.T, ctx context.Context, api *client.Client, runI
 func assertSinglePreparation(t *testing.T, run protocol.Run, events []protocol.Event) {
 	t.Helper()
 	var id string
+
 	for _, instance := range run.Instances {
 		if instance.NodeID == "prepare" {
 			id = instance.ID
 		}
 	}
+
 	running, succeeded := 0, 0
+
 	for _, event := range events {
 		if event.InstanceID == id {
 			if event.Message == "running" {
@@ -389,6 +443,7 @@ func assertSinglePreparation(t *testing.T, run protocol.Run, events []protocol.E
 			}
 		}
 	}
+
 	if id == "" || running != 1 || succeeded != 1 {
 		t.Errorf("prepare execution duplicated or absent: running=%d succeeded=%d", running, succeeded)
 	}

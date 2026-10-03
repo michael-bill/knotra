@@ -47,6 +47,10 @@ def execute(mode, values, artifacts):
 
 
 if __name__ == "__main__":
-    context = json.loads(Path(os.environ["KNOTRA_INPUT_JSON"]).read_text(encoding="utf-8"))
+    context = json.loads(
+        Path(os.environ["KNOTRA_INPUT_JSON"]).read_text(encoding="utf-8")
+    )
     result = execute(sys.argv[1], context["values"], context["artifacts"])
-    Path(os.environ["KNOTRA_OUTPUT_JSON"]).write_text(json.dumps(result), encoding="utf-8")
+    Path(os.environ["KNOTRA_OUTPUT_JSON"]).write_text(
+        json.dumps(result), encoding="utf-8"
+    )

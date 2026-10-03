@@ -3,8 +3,9 @@ package engine
 import (
 	"time"
 
-	"github.com/michael-bill/knotra/internal/contract"
 	"go.temporal.io/sdk/workflow"
+
+	"github.com/michael-bill/knotra/internal/contract"
 )
 
 // Rotate well below Temporal's hard history limit. The remainder is available
@@ -108,6 +109,7 @@ func (r *runtime) restore(saved *Checkpoint) {
 	if r.resolutions == nil {
 		r.resolutions = map[string][]ResolutionSignal{}
 	}
+
 	for _, id := range keys(saved.NodeCounts) {
 		r.budgets[id] = &counters{nodes: saved.NodeCounts[id]}
 	}
@@ -118,15 +120,18 @@ func (r *runtime) checkpoint(ctx workflow.Context, deadline time.Time) *Checkpoi
 	// rotate history. A concurrent cancel takes precedence over continuation.
 	r.drainSignals(ctx)
 	counts := make(map[string]int, len(r.budgets))
+
 	for _, id := range keys(r.budgets) {
 		counts[id] = r.budgets[id].nodes
 	}
+
 	return &Checkpoint{State: r.state, Sequence: r.sequence, Deadline: deadline, NodeCounts: counts,
 		Projected: r.projected, Loops: r.loops, Foreach: r.foreachResults, Humans: r.humans, Resolutions: r.resolutions}
 }
 
 func (r *runtime) drainSignals(ctx workflow.Context) {
 	human, resolve, cancel := workflow.GetSignalChannel(ctx, HumanSignalName), workflow.GetSignalChannel(ctx, ResolveSignalName), workflow.GetSignalChannel(ctx, CancelSignalName)
+
 	for {
 		var signal HumanSignal
 		if !human.ReceiveAsync(&signal) {
@@ -134,6 +139,7 @@ func (r *runtime) drainSignals(ctx workflow.Context) {
 		}
 		r.humans[signal.RequestID] = append(r.humans[signal.RequestID], signal)
 	}
+
 	for {
 		var signal ResolutionSignal
 		if !resolve.ReceiveAsync(&signal) {
@@ -141,6 +147,7 @@ func (r *runtime) drainSignals(ctx workflow.Context) {
 		}
 		r.resolutions[signal.InstanceID] = append(r.resolutions[signal.InstanceID], signal)
 	}
+
 	for {
 		var signal CancelSignal
 		if !cancel.ReceiveAsync(&signal) {

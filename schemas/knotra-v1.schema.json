@@ -15,12 +15,7 @@
     "Json": {
       "oneOf": [
         {
-          "type": [
-            "null",
-            "boolean",
-            "number",
-            "string"
-          ]
+          "type": ["null", "boolean", "number", "string"]
         },
         {
           "type": "array",
@@ -91,9 +86,7 @@
         }
       },
       "additionalProperties": false,
-      "required": [
-        "name"
-      ]
+      "required": ["name"]
     },
     "DataSchema": {
       "oneOf": [
@@ -128,28 +121,12 @@
             "type": {
               "oneOf": [
                 {
-                  "enum": [
-                    "null",
-                    "boolean",
-                    "object",
-                    "array",
-                    "number",
-                    "integer",
-                    "string"
-                  ]
+                  "enum": ["null", "boolean", "object", "array", "number", "integer", "string"]
                 },
                 {
                   "type": "array",
                   "items": {
-                    "enum": [
-                      "null",
-                      "boolean",
-                      "object",
-                      "array",
-                      "number",
-                      "integer",
-                      "string"
-                    ]
+                    "enum": ["null", "boolean", "object", "array", "number", "integer", "string"]
                   },
                   "minItems": 1,
                   "uniqueItems": true
@@ -338,9 +315,7 @@
             }
           },
           "additionalProperties": false,
-          "required": [
-            "file"
-          ]
+          "required": ["file"]
         }
       ]
     },
@@ -354,9 +329,7 @@
             }
           },
           "additionalProperties": false,
-          "required": [
-            "value"
-          ]
+          "required": ["value"]
         },
         {
           "type": "object",
@@ -371,9 +344,7 @@
             }
           },
           "additionalProperties": false,
-          "required": [
-            "from"
-          ]
+          "required": ["from"]
         },
         {
           "type": "object",
@@ -384,9 +355,7 @@
             }
           },
           "additionalProperties": false,
-          "required": [
-            "expr"
-          ]
+          "required": ["expr"]
         },
         {
           "type": "object",
@@ -400,9 +369,7 @@
             }
           },
           "additionalProperties": false,
-          "required": [
-            "coalesce"
-          ]
+          "required": ["coalesce"]
         }
       ]
     },
@@ -424,9 +391,7 @@
         }
       },
       "additionalProperties": false,
-      "required": [
-        "mediaTypes"
-      ]
+      "required": ["mediaTypes"]
     },
     "InputPort": {
       "type": "object",
@@ -456,26 +421,17 @@
       "additionalProperties": false,
       "oneOf": [
         {
-          "required": [
-            "schema"
-          ]
+          "required": ["schema"]
         },
         {
-          "required": [
-            "schemaRef"
-          ]
+          "required": ["schemaRef"]
         },
         {
-          "required": [
-            "artifact"
-          ]
+          "required": ["artifact"]
         }
       ],
       "not": {
-        "required": [
-          "artifact",
-          "default"
-        ]
+        "required": ["artifact", "default"]
       }
     },
     "NodeInput": {
@@ -507,30 +463,20 @@
         }
       },
       "additionalProperties": false,
-      "required": [
-        "bind"
-      ],
+      "required": ["bind"],
       "oneOf": [
         {
-          "required": [
-            "schema"
-          ]
+          "required": ["schema"]
         },
         {
-          "required": [
-            "schemaRef"
-          ]
+          "required": ["schemaRef"]
         },
         {
-          "required": [
-            "artifact"
-          ]
+          "required": ["artifact"]
         }
       ],
       "dependentRequired": {
-        "mount": [
-          "artifact"
-        ]
+        "mount": ["artifact"]
       }
     },
     "JsonOutput": {
@@ -555,14 +501,10 @@
       "additionalProperties": false,
       "oneOf": [
         {
-          "required": [
-            "schema"
-          ]
+          "required": ["schema"]
         },
         {
-          "required": [
-            "schemaRef"
-          ]
+          "required": ["schemaRef"]
         }
       ]
     },
@@ -599,17 +541,11 @@
             }
           },
           "additionalProperties": false,
-          "required": [
-            "path",
-            "mediaType"
-          ]
+          "required": ["path", "mediaType"]
         }
       },
       "additionalProperties": false,
-      "required": [
-        "artifact",
-        "collect"
-      ]
+      "required": ["artifact", "collect"]
     },
     "NodeOutput": {
       "oneOf": [
@@ -647,24 +583,16 @@
         }
       },
       "additionalProperties": false,
-      "required": [
-        "bind"
-      ],
+      "required": ["bind"],
       "oneOf": [
         {
-          "required": [
-            "schema"
-          ]
+          "required": ["schema"]
         },
         {
-          "required": [
-            "schemaRef"
-          ]
+          "required": ["schemaRef"]
         },
         {
-          "required": [
-            "artifact"
-          ]
+          "required": ["artifact"]
         }
       ]
     },
@@ -679,9 +607,7 @@
             }
           },
           "additionalProperties": false,
-          "required": [
-            "text"
-          ]
+          "required": ["text"]
         },
         {
           "type": "object",
@@ -691,9 +617,7 @@
             }
           },
           "additionalProperties": false,
-          "required": [
-            "file"
-          ]
+          "required": ["file"]
         }
       ]
     },
@@ -712,9 +636,7 @@
         }
       },
       "additionalProperties": false,
-      "required": [
-        "maxAttempts"
-      ]
+      "required": ["maxAttempts"]
     },
     "Execution": {
       "type": "object",
@@ -727,10 +649,7 @@
           "$ref": "#/$defs/Retry"
         },
         "onUnknownOutcome": {
-          "enum": [
-            "pause",
-            "fail"
-          ],
+          "enum": ["pause", "fail"],
           "default": "pause"
         }
       },
@@ -789,11 +708,7 @@
         "sandbox": {
           "type": "array",
           "items": {
-            "enum": [
-              "files.read",
-              "files.write",
-              "process.exec"
-            ]
+            "enum": ["files.read", "files.write", "process.exec"]
           },
           "minItems": 0,
           "uniqueItems": true
@@ -828,11 +743,7 @@
         "sandbox": {
           "type": "array",
           "items": {
-            "enum": [
-              "files.read",
-              "files.write",
-              "process.exec"
-            ]
+            "enum": ["files.read", "files.write", "process.exec"]
           },
           "minItems": 0,
           "uniqueItems": true
@@ -856,9 +767,7 @@
               }
             },
             "additionalProperties": false,
-            "required": [
-              "value"
-            ]
+            "required": ["value"]
           },
           {
             "type": "object",
@@ -869,9 +778,7 @@
               }
             },
             "additionalProperties": false,
-            "required": [
-              "secret"
-            ]
+            "required": ["secret"]
           }
         ]
       }
@@ -896,20 +803,14 @@
         "requires": {
           "type": "array",
           "items": {
-            "enum": [
-              "toolCalling",
-              "structuredOutput",
-              "imageInput"
-            ]
+            "enum": ["toolCalling", "structuredOutput", "imageInput"]
           },
           "minItems": 0,
           "uniqueItems": true
         }
       },
       "additionalProperties": false,
-      "required": [
-        "connection"
-      ]
+      "required": ["connection"]
     },
     "McpResource": {
       "type": "object",
@@ -919,17 +820,12 @@
           "pattern": "^[a-z][a-z0-9_]{0,63}$(?![\\s\\S])"
         },
         "session": {
-          "enum": [
-            "node",
-            "run"
-          ],
+          "enum": ["node", "run"],
           "default": "node"
         }
       },
       "additionalProperties": false,
-      "required": [
-        "connection"
-      ]
+      "required": ["connection"]
     },
     "SandboxResource": {
       "type": "object",
@@ -940,9 +836,7 @@
         }
       },
       "additionalProperties": false,
-      "required": [
-        "profile"
-      ]
+      "required": ["profile"]
     },
     "SecretResource": {
       "type": "object",
@@ -953,9 +847,7 @@
         }
       },
       "additionalProperties": false,
-      "required": [
-        "ref"
-      ]
+      "required": ["ref"]
     },
     "Defaults": {
       "type": "object",
@@ -1007,10 +899,7 @@
         }
       },
       "additionalProperties": false,
-      "required": [
-        "outputs",
-        "nodes"
-      ]
+      "required": ["outputs", "nodes"]
     },
     "LlmNode": {
       "type": "object",
@@ -1075,18 +964,11 @@
             }
           },
           "additionalProperties": false,
-          "required": [
-            "model",
-            "prompt"
-          ]
+          "required": ["model", "prompt"]
         }
       },
       "additionalProperties": false,
-      "required": [
-        "type",
-        "outputs",
-        "llm"
-      ]
+      "required": ["type", "outputs", "llm"]
     },
     "AgentNode": {
       "type": "object",
@@ -1166,20 +1048,11 @@
             }
           },
           "additionalProperties": false,
-          "required": [
-            "model",
-            "prompt",
-            "maxSteps"
-          ]
+          "required": ["model", "prompt", "maxSteps"]
         }
       },
       "additionalProperties": false,
-      "required": [
-        "type",
-        "outputs",
-        "sandbox",
-        "agent"
-      ]
+      "required": ["type", "outputs", "sandbox", "agent"]
     },
     "CodeNode": {
       "type": "object",
@@ -1244,18 +1117,11 @@
             }
           },
           "additionalProperties": false,
-          "required": [
-            "command"
-          ]
+          "required": ["command"]
         }
       },
       "additionalProperties": false,
-      "required": [
-        "type",
-        "outputs",
-        "sandbox",
-        "code"
-      ]
+      "required": ["type", "outputs", "sandbox", "code"]
     },
     "ToolNode": {
       "type": "object",
@@ -1302,9 +1168,7 @@
             }
           },
           "additionalProperties": false,
-          "required": [
-            "result"
-          ]
+          "required": ["result"]
         },
         "tool": {
           "type": "object",
@@ -1321,27 +1185,16 @@
               "$ref": "#/$defs/Binding"
             },
             "response": {
-              "enum": [
-                "structured",
-                "content"
-              ],
+              "enum": ["structured", "content"],
               "default": "structured"
             }
           },
           "additionalProperties": false,
-          "required": [
-            "server",
-            "name",
-            "arguments"
-          ]
+          "required": ["server", "name", "arguments"]
         }
       },
       "additionalProperties": false,
-      "required": [
-        "type",
-        "outputs",
-        "tool"
-      ]
+      "required": ["type", "outputs", "tool"]
     },
     "SwitchNode": {
       "type": "object",
@@ -1398,10 +1251,7 @@
                   }
                 },
                 "additionalProperties": false,
-                "required": [
-                  "name",
-                  "when"
-                ]
+                "required": ["name", "when"]
               },
               "minItems": 1
             },
@@ -1411,17 +1261,11 @@
             }
           },
           "additionalProperties": false,
-          "required": [
-            "cases",
-            "default"
-          ]
+          "required": ["cases", "default"]
         }
       },
       "additionalProperties": false,
-      "required": [
-        "type",
-        "switch"
-      ]
+      "required": ["type", "switch"]
     },
     "HumanNode": {
       "type": "object",
@@ -1479,17 +1323,11 @@
             }
           },
           "additionalProperties": false,
-          "required": [
-            "prompt"
-          ]
+          "required": ["prompt"]
         }
       },
       "additionalProperties": false,
-      "required": [
-        "type",
-        "outputs",
-        "human"
-      ]
+      "required": ["type", "outputs", "human"]
     },
     "ForeachNode": {
       "type": "object",
@@ -1556,19 +1394,11 @@
             }
           },
           "additionalProperties": false,
-          "required": [
-            "over",
-            "concurrency",
-            "with",
-            "body"
-          ]
+          "required": ["over", "concurrency", "with", "body"]
         }
       },
       "additionalProperties": false,
-      "required": [
-        "type",
-        "foreach"
-      ]
+      "required": ["type", "foreach"]
     },
     "LoopState": {
       "type": "object",
@@ -1595,25 +1425,16 @@
         }
       },
       "additionalProperties": false,
-      "required": [
-        "initial",
-        "next"
-      ],
+      "required": ["initial", "next"],
       "oneOf": [
         {
-          "required": [
-            "schema"
-          ]
+          "required": ["schema"]
         },
         {
-          "required": [
-            "schemaRef"
-          ]
+          "required": ["schemaRef"]
         },
         {
-          "required": [
-            "artifact"
-          ]
+          "required": ["artifact"]
         }
       ]
     },
@@ -1663,10 +1484,7 @@
               "maximum": 100000
             },
             "onLimit": {
-              "enum": [
-                "fail",
-                "return_last"
-              ],
+              "enum": ["fail", "return_last"],
               "default": "fail"
             },
             "state": {
@@ -1700,19 +1518,11 @@
             }
           },
           "additionalProperties": false,
-          "required": [
-            "maxIterations",
-            "with",
-            "body",
-            "until"
-          ]
+          "required": ["maxIterations", "with", "body", "until"]
         }
       },
       "additionalProperties": false,
-      "required": [
-        "type",
-        "loop"
-      ]
+      "required": ["type", "loop"]
     },
     "CallPermissions": {
       "type": "object",
@@ -1763,12 +1573,7 @@
         }
       },
       "additionalProperties": false,
-      "required": [
-        "models",
-        "mcp",
-        "sandboxes",
-        "secrets"
-      ]
+      "required": ["models", "mcp", "sandboxes", "secrets"]
     },
     "PipelineNode": {
       "type": "object",
@@ -1818,17 +1623,11 @@
             }
           },
           "additionalProperties": false,
-          "required": [
-            "file",
-            "permissions"
-          ]
+          "required": ["file", "permissions"]
         }
       },
       "additionalProperties": false,
-      "required": [
-        "type",
-        "pipeline"
-      ]
+      "required": ["type", "pipeline"]
     },
     "Node": {
       "oneOf": [
@@ -1968,10 +1767,7 @@
         }
       },
       "additionalProperties": false,
-      "required": [
-        "outputs",
-        "nodes"
-      ]
+      "required": ["outputs", "nodes"]
     },
     "Pipeline": {
       "type": "object",
@@ -1990,12 +1786,7 @@
         }
       },
       "additionalProperties": false,
-      "required": [
-        "apiVersion",
-        "kind",
-        "metadata",
-        "spec"
-      ]
+      "required": ["apiVersion", "kind", "metadata", "spec"]
     },
     "SecretSource": {
       "type": "object",
@@ -2006,9 +1797,7 @@
         }
       },
       "additionalProperties": false,
-      "required": [
-        "env"
-      ]
+      "required": ["env"]
     },
     "CredentialValue": {
       "oneOf": [
@@ -2020,9 +1809,7 @@
             }
           },
           "additionalProperties": false,
-          "required": [
-            "value"
-          ]
+          "required": ["value"]
         },
         {
           "type": "object",
@@ -2033,9 +1820,7 @@
             }
           },
           "additionalProperties": false,
-          "required": [
-            "secretRef"
-          ]
+          "required": ["secretRef"]
         }
       ]
     },
@@ -2069,9 +1854,7 @@
               }
             },
             "additionalProperties": false,
-            "required": [
-              "secretRef"
-            ]
+            "required": ["secretRef"]
           },
           "minProperties": 0
         },
@@ -2083,20 +1866,13 @@
         }
       },
       "additionalProperties": false,
-      "required": [
-        "provider",
-        "model"
-      ]
+      "required": ["provider", "model"]
     },
     "ToolPolicy": {
       "type": "object",
       "properties": {
         "effect": {
-          "enum": [
-            "read",
-            "write",
-            "unknown"
-          ]
+          "enum": ["read", "write", "unknown"]
         },
         "idempotencyArgument": {
           "type": "string",
@@ -2104,9 +1880,7 @@
         }
       },
       "additionalProperties": false,
-      "required": [
-        "effect"
-      ]
+      "required": ["effect"]
     },
     "McpConnection": {
       "oneOf": [
@@ -2151,11 +1925,7 @@
             }
           },
           "additionalProperties": false,
-          "required": [
-            "transport",
-            "url",
-            "allowedTools"
-          ]
+          "required": ["transport", "url", "allowedTools"]
         },
         {
           "type": "object",
@@ -2205,12 +1975,7 @@
             }
           },
           "additionalProperties": false,
-          "required": [
-            "transport",
-            "sandbox",
-            "command",
-            "allowedTools"
-          ]
+          "required": ["transport", "sandbox", "command", "allowedTools"]
         }
       ]
     },
@@ -2239,12 +2004,7 @@
         }
       },
       "additionalProperties": false,
-      "required": [
-        "cpu",
-        "memoryMiB",
-        "diskMiB",
-        "pids"
-      ]
+      "required": ["cpu", "memoryMiB", "diskMiB", "pids"]
     },
     "Network": {
       "oneOf": [
@@ -2256,9 +2016,7 @@
             }
           },
           "additionalProperties": false,
-          "required": [
-            "mode"
-          ]
+          "required": ["mode"]
         },
         {
           "type": "object",
@@ -2277,10 +2035,7 @@
             }
           },
           "additionalProperties": false,
-          "required": [
-            "mode",
-            "hosts"
-          ]
+          "required": ["mode", "hosts"]
         },
         {
           "type": "object",
@@ -2290,9 +2045,7 @@
             }
           },
           "additionalProperties": false,
-          "required": [
-            "mode"
-          ]
+          "required": ["mode"]
         }
       ]
     },
@@ -2312,11 +2065,7 @@
         "allowedTools": {
           "type": "array",
           "items": {
-            "enum": [
-              "files.read",
-              "files.write",
-              "process.exec"
-            ]
+            "enum": ["files.read", "files.write", "process.exec"]
           },
           "minItems": 0,
           "uniqueItems": true
@@ -2332,12 +2081,7 @@
         }
       },
       "additionalProperties": false,
-      "required": [
-        "image",
-        "resources",
-        "network",
-        "allowedTools"
-      ]
+      "required": ["image", "resources", "network", "allowedTools"]
     },
     "ProfileLimits": {
       "type": "object",
@@ -2428,9 +2172,7 @@
         }
       },
       "additionalProperties": false,
-      "required": [
-        "limits"
-      ]
+      "required": ["limits"]
     },
     "EngineProfile": {
       "type": "object",
@@ -2449,12 +2191,7 @@
         }
       },
       "additionalProperties": false,
-      "required": [
-        "apiVersion",
-        "kind",
-        "metadata",
-        "spec"
-      ]
+      "required": ["apiVersion", "kind", "metadata", "spec"]
     }
   }
 }

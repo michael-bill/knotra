@@ -72,6 +72,7 @@ func Serve(ctx context.Context, o Options, log *slog.Logger) error {
 		return errors.New("remote listeners require bearer authentication and TLS certificate/key")
 	}
 	profiles := map[string]contract.Profile{}
+
 	for _, path := range o.Profiles {
 		b, e := os.ReadFile(path)
 		if e != nil {
@@ -86,6 +87,7 @@ func Serve(ctx context.Context, o Options, log *slog.Logger) error {
 		}
 		profiles[p.Metadata.Name] = p
 	}
+
 	if len(profiles) == 0 {
 		return errors.New("at least one --profile file is required")
 	}
@@ -110,13 +112,24 @@ func Serve(ctx context.Context, o Options, log *slog.Logger) error {
 		return err
 	}
 	dc := converter.NewCodecDataConverter(converter.GetDefaultDataConverter(), &engine.PayloadCodec{Store: blobs})
-	tc, err := temporalclient.Dial(temporalclient.Options{HostPort: o.TemporalAddress, Namespace: o.Namespace, DataConverter: dc, Logger: temporalLog{log}})
+	tc, err := temporalclient.Dial(temporalclient.Options{
+		HostPort:      o.TemporalAddress,
+		Namespace:     o.Namespace,
+		DataConverter: dc,
+		Logger:        temporalLog{log},
+	})
 	if err != nil {
 		return fmt.Errorf("connect Temporal: %w", err)
 	}
 	defer tc.Close()
 	artifacts := store.Artifacts{Root: filepath.Join(dataDir, "artifacts"), Store: db}
-	runner := &adapters.Runner{EngineID: db.EngineID, DockerHost: o.DockerHost, HelperPath: o.HelperPath, WorkDir: filepath.Join(dataDir, "work"), FirewallImage: o.FirewallImage}
+	runner := &adapters.Runner{
+		EngineID:      db.EngineID,
+		DockerHost:    o.DockerHost,
+		HelperPath:    o.HelperPath,
+		WorkDir:       filepath.Join(dataDir, "work"),
+		FirewallImage: o.FirewallImage,
+	}
 	defer runner.Close()
 	cleanupCtx, stopCleanup := context.WithTimeout(ctx, 30*time.Second)
 	cleanupErr := runner.CleanupOwned(cleanupCtx)
@@ -142,7 +155,14 @@ func Serve(ctx context.Context, o Options, log *slog.Logger) error {
 		defer cancel()
 		return runner.Prepare(ctx, p)
 	}}
-	server := &http.Server{Addr: o.Listen, Handler: telemetry.HTTP(srv.Handler()), ReadHeaderTimeout: 10 * time.Second, ReadTimeout: 2 * time.Minute, IdleTimeout: 2 * time.Minute, MaxHeaderBytes: 64 << 10}
+	server := &http.Server{
+		Addr:              o.Listen,
+		Handler:           telemetry.HTTP(srv.Handler()),
+		ReadHeaderTimeout: 10 * time.Second,
+		ReadTimeout:       2 * time.Minute,
+		IdleTimeout:       2 * time.Minute,
+		MaxHeaderBytes:    64 << 10,
+	}
 	listener, err := net.Listen("tcp", o.Listen)
 	if err != nil {
 		return err
@@ -156,12 +176,14 @@ func Serve(ctx context.Context, o Options, log *slog.Logger) error {
 	go func() {
 		ticker := time.NewTicker(5 * time.Second)
 		defer ticker.Stop()
+
 		for {
 			select {
 			case <-serviceCtx.Done():
 				return
 			case <-ticker.C:
 			}
+
 			checkCtx, stop := context.WithTimeout(serviceCtx, 5*time.Second)
 			err := lease.Check(checkCtx)
 			stop()
@@ -181,7 +203,16 @@ func Serve(ctx context.Context, o Options, log *slog.Logger) error {
 			failures <- server.Serve(listener)
 		}
 	}()
-	log.Info("Knotra engine listening", "address", listener.Addr().String(), "engineId", db.EngineID, "taskQueue", o.TaskQueue)
+	log.Info(
+		"Knotra engine listening",
+		"address",
+		listener.Addr().String(),
+		"engineId",
+		db.EngineID,
+		"taskQueue",
+		o.TaskQueue,
+	)
+
 	select {
 	case <-ctx.Done():
 	case err = <-leaseFailed:
@@ -191,6 +222,7 @@ func Serve(ctx context.Context, o Options, log *slog.Logger) error {
 			return err
 		}
 	}
+
 	shutdownCtx, stop := context.WithTimeout(context.Background(), 10*time.Second)
 	defer stop()
 	shutdownErr := server.Shutdown(shutdownCtx)
@@ -201,15 +233,18 @@ func Serve(ctx context.Context, o Options, log *slog.Logger) error {
 	}
 	return shutdownErr
 }
+
 func deliver(ctx context.Context, db *store.Store, tc temporalclient.Client, queue string, log *slog.Logger) {
 	ticker := time.NewTicker(200 * time.Millisecond)
 	defer ticker.Stop()
+
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
 		}
+
 		callCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
 		err := db.Deliver(callCtx, func(ctx context.Context, query store.Querier, runID, kind string, payload []byte) error {
 			switch kind {
@@ -222,7 +257,18 @@ func deliver(ctx context.Context, db *store.Store, tc temporalclient.Client, que
 				if e != nil {
 					return e
 				}
-				_, e = tc.ExecuteWorkflow(ctx, temporalclient.StartWorkflowOptions{ID: runID, TaskQueue: queue, WorkflowIDReusePolicy: enums.WORKFLOW_ID_REUSE_POLICY_REJECT_DUPLICATE, StaticSummary: "Knotra · " + name, StaticDetails: "Pipeline: " + name + "\n\nKnotra run: " + runID}, engine.WorkflowName, input)
+				_, e = tc.ExecuteWorkflow(
+					ctx,
+					temporalclient.StartWorkflowOptions{
+						ID:                    runID,
+						TaskQueue:             queue,
+						WorkflowIDReusePolicy: enums.WORKFLOW_ID_REUSE_POLICY_REJECT_DUPLICATE,
+						StaticSummary:         "Knotra · " + name,
+						StaticDetails:         "Pipeline: " + name + "\n\nKnotra run: " + runID,
+					},
+					engine.WorkflowName,
+					input,
+				)
 				var exists *serviceerror.WorkflowExecutionAlreadyStarted
 				if errors.As(e, &exists) {
 					return nil
@@ -273,16 +319,22 @@ func (a *activities) project(ctx context.Context, p engine.Projection) error {
 	}
 	return nil
 }
+
 func (a *activities) execute(ctx context.Context, q engine.ExecuteRequest) (engine.ExecuteResult, error) {
 	ctx, span := otel.Tracer("knotra/engine").Start(ctx, "node."+q.Node.Type)
 	defer span.End()
-	span.SetAttributes(attribute.String("knotra.run.id", q.RunID), attribute.String("knotra.instance.id", q.InstanceID), attribute.Int("knotra.attempt", q.Attempt))
+	span.SetAttributes(
+		attribute.String("knotra.run.id", q.RunID),
+		attribute.String("knotra.instance.id", q.InstanceID),
+		attribute.Int("knotra.attempt", q.Attempt),
+	)
 
 	done := make(chan struct{})
 	defer close(done)
 	go func() {
 		tick := time.NewTicker(5 * time.Second)
 		defer tick.Stop()
+
 		for {
 			select {
 			case <-done:
@@ -304,13 +356,33 @@ func (a *activities) execute(ctx context.Context, q engine.ExecuteRequest) (engi
 	if len(q.Scopes) > 0 {
 		scopeID = q.Scopes[len(q.Scopes)-1].ID
 	}
-	outputs, e := a.runner.WithHooks(h).Execute(ctx, adapters.Request{RunID: q.RunID, InstanceID: q.InstanceID, Attempt: q.Attempt, Pipeline: q.Pipeline, ScopeID: scopeID, Plan: &q.Plan, Node: q.Node, Inputs: q.Inputs, ToolArguments: q.ToolArguments})
+	outputs, e := a.runner.WithHooks(h).Execute(
+		ctx,
+		adapters.Request{
+			RunID:         q.RunID,
+			InstanceID:    q.InstanceID,
+			Attempt:       q.Attempt,
+			Pipeline:      q.Pipeline,
+			ScopeID:       scopeID,
+			Plan:          &q.Plan,
+			Node:          q.Node,
+			Inputs:        q.Inputs,
+			ToolArguments: q.ToolArguments,
+		},
+	)
 	if e == nil {
 		return engine.ExecuteResult{Outputs: outputs}, nil
 	}
 	var f *adapters.Failure
 	if errors.As(e, &f) {
-		return engine.ExecuteResult{Failure: &engine.Failure{Code: f.Code, Message: f.Message, Retryable: f.Retryable, Unknown: f.Unknown, OperationID: f.OperationID, CanRetryIfNotExecuted: q.Node.Type != "agent"}}, nil
+		return engine.ExecuteResult{Failure: &engine.Failure{
+			Code:                  f.Code,
+			Message:               f.Message,
+			Retryable:             f.Retryable,
+			Unknown:               f.Unknown,
+			OperationID:           f.OperationID,
+			CanRetryIfNotExecuted: q.Node.Type != "agent",
+		}}, nil
 	}
 	code := "EXECUTION_FAILED"
 	if strings.Contains(e.Error(), "BUDGET_EXCEEDED") {
@@ -334,16 +406,30 @@ type executionHooks struct {
 func (h *executionHooks) Reserve(ctx context.Context, kind string) error {
 	return h.store.Reserve(ctx, h.request.RunID, kind, h.request.Scopes)
 }
+
 func (h *executionHooks) PutArtifact(ctx context.Context, name, mime string, b []byte) (contract.Artifact, error) {
-	return h.artifacts.Put(ctx, name, mime, b, map[string]string{"runId": h.request.RunID, "instanceId": h.request.InstanceID, "attemptId": fmt.Sprintf("%s.a%d", h.request.InstanceID, h.request.Attempt)})
+	return h.artifacts.Put(
+		ctx,
+		name,
+		mime,
+		b,
+		map[string]string{
+			"runId":      h.request.RunID,
+			"instanceId": h.request.InstanceID,
+			"attemptId":  fmt.Sprintf("%s.a%d", h.request.InstanceID, h.request.Attempt),
+		},
+	)
 }
+
 func (h *executionHooks) GetArtifact(ctx context.Context, id string) ([]byte, error) {
 	return h.artifacts.Get(ctx, id)
 }
+
 func (h *executionHooks) BeginOperation(ctx context.Context, op adapters.Operation) (adapters.OperationState, error) {
 	s, e := h.store.BeginOperation(ctx, op.ID, h.request.RunID, op.Kind, op.Effect)
 	return adapters.OperationState{Started: s.Started, Completed: s.Completed, Response: s.Response}, e
 }
+
 func (h *executionHooks) CompleteOperation(ctx context.Context, id string, b json.RawMessage) error {
 	return h.store.CompleteOperation(ctx, id, b)
 }
@@ -351,8 +437,11 @@ func (h *executionHooks) CompleteOperation(ctx context.Context, id string, b jso
 type temporalLog struct{ log *slog.Logger }
 
 func (l temporalLog) Debug(msg string, keyvals ...any) { l.log.Debug(msg, keyvals...) }
-func (l temporalLog) Info(msg string, keyvals ...any)  { l.log.Info(msg, keyvals...) }
-func (l temporalLog) Warn(msg string, keyvals ...any)  { l.log.Warn(msg, keyvals...) }
+
+func (l temporalLog) Info(msg string, keyvals ...any) { l.log.Info(msg, keyvals...) }
+
+func (l temporalLog) Warn(msg string, keyvals ...any) { l.log.Warn(msg, keyvals...) }
+
 func (l temporalLog) Error(msg string, keyvals ...any) { l.log.Error(msg, keyvals...) }
 
 func closedSignal(ctx context.Context, query store.Querier, runID string, err error) error {

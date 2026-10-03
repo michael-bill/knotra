@@ -7,9 +7,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/michael-bill/knotra/internal/contract"
 	"github.com/stretchr/testify/mock"
 	"go.temporal.io/sdk/temporal"
+
+	"github.com/michael-bill/knotra/internal/contract"
 )
 
 func TestProjectionSurvivesDatabaseOutageLongerThanFiveMinutes(t *testing.T) {
@@ -20,16 +21,30 @@ func TestProjectionSurvivesDatabaseOutageLongerThanFiveMinutes(t *testing.T) {
 		if p.Kind == "node" && p.NodeID == "first" && p.Status == "succeeded" && attempts.Add(1) == 1 {
 			// The SDK test environment caps unlimited policies to 10 attempts.
 			// A server-directed retry delay exercises a >5m outage in two attempts.
-			return temporal.NewApplicationErrorWithOptions("database is temporarily unavailable", "DB_OUTAGE", temporal.ApplicationErrorOptions{NextRetryDelay: 6 * time.Minute})
+			return temporal.NewApplicationErrorWithOptions(
+				"database is temporarily unavailable",
+				"DB_OUTAGE",
+				temporal.ApplicationErrorOptions{NextRetryDelay: 6 * time.Minute},
+			)
 		}
 		return nil
 	})
 	first, next := llm(), llm()
 	first.Execution.Timeout = "20m"
 	next.Dependencies, next.Needs = []string{"first"}, []string{"first"}
-	result := h.run(t, plan(outputGraph(map[string]contract.Node{"first": first, "next": next}, "nodes.next.outputs.value", `{"type":"string"}`)), nil)
+	result := h.run(
+		t,
+		plan(outputGraph(map[string]contract.Node{"first": first, "next": next}, "nodes.next.outputs.value", `{"type":"string"}`)),
+		nil,
+	)
 	if result.Status != "succeeded" || attempts.Load() != 2 || h.env.Now().Sub(start) <= 5*time.Minute || len(h.calls) != 2 {
-		t.Fatalf("durable publication lost: result=%+v attempts=%d elapsed=%s calls=%d", result, attempts.Load(), h.env.Now().Sub(start), len(h.calls))
+		t.Fatalf(
+			"durable publication lost: result=%+v attempts=%d elapsed=%s calls=%d",
+			result,
+			attempts.Load(),
+			h.env.Now().Sub(start),
+			len(h.calls),
+		)
 	}
 }
 
@@ -52,9 +67,11 @@ func TestNodeTimersFollowDurableAdmission(t *testing.T) {
 		}
 	})
 	nodes := map[string]contract.Node{}
+
 	for i := range 100 {
 		nodes[fmt.Sprintf("node_%03d", i)] = llm()
 	}
+
 	result := h.run(t, plan(outputGraph(nodes, "nodes.node_099.outputs.value", `{"type":"string"}`)), nil)
 	if result.Status != "succeeded" || timers != 100 {
 		t.Fatalf("result=%+v nodeTimers=%d", result, timers)
@@ -66,8 +83,20 @@ func TestLoopLimitModes(t *testing.T) {
 		t.Run(mode, func(t *testing.T) {
 			h := newHarness(t)
 			body := outputGraph(map[string]contract.Node{"work": llm()}, "nodes.work.outputs.value", `{"type":"string"}`)
-			node := contract.Node{Type: "loop", Loop: &contract.LoopNode{MaxIterations: 2, OnLimit: mode, Body: body, Until: "false"}, Outputs: map[string]contract.Port{"result": port(`{"type":"string"}`, nil), "iterations": port(`{"type":"integer"}`, nil), "termination": port(`{"type":"string"}`, nil)}}
-			result := h.run(t, plan(outputGraph(map[string]contract.Node{"repeat": node}, "nodes.repeat.outputs.termination", `{"type":"string"}`)), nil)
+			node := contract.Node{
+				Type: "loop",
+				Loop: &contract.LoopNode{MaxIterations: 2, OnLimit: mode, Body: body, Until: "false"},
+				Outputs: map[string]contract.Port{
+					"result":      port(`{"type":"string"}`, nil),
+					"iterations":  port(`{"type":"integer"}`, nil),
+					"termination": port(`{"type":"string"}`, nil),
+				},
+			}
+			result := h.run(
+				t,
+				plan(outputGraph(map[string]contract.Node{"repeat": node}, "nodes.repeat.outputs.termination", `{"type":"string"}`)),
+				nil,
+			)
 			if len(h.calls) != 2 {
 				t.Fatalf("wrong body count: %d", len(h.calls))
 			}
@@ -115,8 +144,17 @@ func TestDirectToolReceivesEvaluatedArguments(t *testing.T) {
 		assertJSON(t, contract.Value{JSON: request.ToolArguments}, `{"query":"hello"}`)
 		return ExecuteResult{Outputs: contract.Values{"result": jsonValue(7)}}
 	}
-	node := contract.Node{Type: "tool", Inputs: map[string]contract.Port{"query": port(`{"type":"string"}`, literal("hello"))}, Tool: &contract.ToolNode{Server: "search", Name: "search", Arguments: *expression(`{"query": args.query}`)}, Outputs: map[string]contract.Port{"result": port(`{"type":"integer"}`, nil)}}
-	result := h.run(t, plan(outputGraph(map[string]contract.Node{"search": node}, "nodes.search.outputs.result", `{"type":"integer"}`)), nil)
+	node := contract.Node{
+		Type:    "tool",
+		Inputs:  map[string]contract.Port{"query": port(`{"type":"string"}`, literal("hello"))},
+		Tool:    &contract.ToolNode{Server: "search", Name: "search", Arguments: *expression(`{"query": args.query}`)},
+		Outputs: map[string]contract.Port{"result": port(`{"type":"integer"}`, nil)},
+	}
+	result := h.run(
+		t,
+		plan(outputGraph(map[string]contract.Node{"search": node}, "nodes.search.outputs.result", `{"type":"integer"}`)),
+		nil,
+	)
 	if result.Status != "succeeded" {
 		t.Fatalf("%+v", result)
 	}
@@ -138,7 +176,10 @@ func TestInvalidOutputStopsDependentBeforeEffects(t *testing.T) {
 
 func TestConcurrencyLimitQueuesLeafAttempts(t *testing.T) {
 	h := newHarness(t)
-	h.env.OnActivity(ExecuteActivity, mock.Anything, mock.Anything).Return(ExecuteResult{Outputs: contract.Values{"value": jsonValue("ok")}}, nil).After(time.Second).Times(3)
+	h.env.OnActivity(ExecuteActivity, mock.Anything, mock.Anything).Return(
+		ExecuteResult{Outputs: contract.Values{"value": jsonValue("ok")}},
+		nil,
+	).After(time.Second).Times(3)
 	p := plan(outputGraph(map[string]contract.Node{"a": llm(), "b": llm(), "c": llm()}, "nodes.c.outputs.value", `{"type":"string"}`))
 	p.Profile.Spec.Limits.MaxConcurrentNodes = 1
 	result := h.run(t, p, nil)
@@ -146,14 +187,17 @@ func TestConcurrencyLimitQueuesLeafAttempts(t *testing.T) {
 		t.Fatalf("%+v", result)
 	}
 	var starts []time.Time
+
 	for _, event := range h.events {
 		if event.Kind == "node" && event.Status == "running" && event.Attempt == 1 {
 			starts = append(starts, event.Time)
 		}
 	}
+
 	if len(starts) != 3 {
 		t.Fatalf("starts=%d", len(starts))
 	}
+
 	for i := 1; i < len(starts); i++ {
 		if starts[i].Sub(starts[i-1]) < time.Second {
 			t.Fatal("leaf concurrency budget was exceeded")
@@ -173,12 +217,23 @@ func TestUnknownOutcomeBlocksQueuedLeaf(t *testing.T) {
 	p.Profile.Spec.Limits.MaxConcurrentNodes = 1
 	resumeAt := h.env.Now().Add(2 * time.Second)
 	h.env.RegisterDelayedCallback(func() {
-		h.env.SignalWorkflow(ResolveSignalName, ResolutionSignal{InstanceID: rootID("a"), OperationID: "op", Decision: "completed", ResponseID: "evidence", Evidence: "confirmed", Outputs: contract.Values{"value": jsonValue("ok")}})
+		h.env.SignalWorkflow(
+			ResolveSignalName,
+			ResolutionSignal{
+				InstanceID:  rootID("a"),
+				OperationID: "op",
+				Decision:    "completed",
+				ResponseID:  "evidence",
+				Evidence:    "confirmed",
+				Outputs:     contract.Values{"value": jsonValue("ok")},
+			},
+		)
 	}, 2*time.Second)
 	result := h.run(t, p, nil)
 	if result.Status != "succeeded" {
 		t.Fatalf("%+v", result)
 	}
+
 	for _, event := range h.events {
 		if event.NodeID == "b" && event.Status == "running" && event.Attempt == 1 && event.Time.Before(resumeAt) {
 			t.Fatal("new external work started while resolution was pending")
@@ -188,31 +243,58 @@ func TestUnknownOutcomeBlocksQueuedLeaf(t *testing.T) {
 
 func TestHumanWaitDoesNotHoldExecutionSlot(t *testing.T) {
 	h := newHarness(t)
-	human := contract.Node{Type: "human", Human: &contract.HumanNode{}, Outputs: map[string]contract.Port{"value": port(`{"type":"string"}`, nil)}}
-	p := plan(outputGraph(map[string]contract.Node{"a_human": human, "b_work": llm()}, "nodes.a_human.outputs.value", `{"type":"string"}`))
+	human := contract.Node{
+		Type:    "human",
+		Human:   &contract.HumanNode{},
+		Outputs: map[string]contract.Port{"value": port(`{"type":"string"}`, nil)},
+	}
+	p := plan(outputGraph(
+		map[string]contract.Node{"a_human": human, "b_work": llm()},
+		"nodes.a_human.outputs.value",
+		`{"type":"string"}`,
+	))
 	p.Profile.Spec.Limits.MaxConcurrentNodes = 1
 	answerAt := h.env.Now().Add(time.Second)
 	h.env.RegisterDelayedCallback(func() {
-		h.env.SignalWorkflow(HumanSignalName, HumanSignal{RequestID: stableID("h", rootID("a_human")+"/human"), ResponseID: "answer", Values: contract.Values{"value": jsonValue("ok")}})
+		h.env.SignalWorkflow(
+			HumanSignalName,
+			HumanSignal{
+				RequestID:  stableID("h", rootID("a_human")+"/human"),
+				ResponseID: "answer",
+				Values:     contract.Values{"value": jsonValue("ok")},
+			},
+		)
 	}, time.Second)
 	result := h.run(t, p, nil)
 	if result.Status != "succeeded" {
 		t.Fatalf("%+v", result)
 	}
 	ran := false
+
 	for _, event := range h.events {
 		if event.NodeID == "b_work" && event.Status == "succeeded" && event.Time.Before(answerAt) {
 			ran = true
 		}
 	}
+
 	if !ran {
 		t.Fatal("human held the leaf execution slot")
 	}
 }
 
 func TestPermissionIntersectionCannotEscalate(t *testing.T) {
-	parent := &contract.Permissions{Models: []string{"allowed"}, MCP: map[string][]string{"server": {"read"}}, Sandboxes: []string{"local"}, Secrets: []string{"safe"}}
-	child := &contract.Permissions{Models: []string{"allowed", "forbidden"}, MCP: map[string][]string{"server": {"read", "write"}, "extra": {"all"}}, Sandboxes: []string{"local", "host"}, Secrets: []string{"safe", "root"}}
+	parent := &contract.Permissions{
+		Models:    []string{"allowed"},
+		MCP:       map[string][]string{"server": {"read"}},
+		Sandboxes: []string{"local"},
+		Secrets:   []string{"safe"},
+	}
+	child := &contract.Permissions{
+		Models:    []string{"allowed", "forbidden"},
+		MCP:       map[string][]string{"server": {"read", "write"}, "extra": {"all"}},
+		Sandboxes: []string{"local", "host"},
+		Secrets:   []string{"safe", "root"},
+	}
 	actual := intersectPermissions(parent, child)
 	if len(actual.Models) != 1 || len(actual.MCP["server"]) != 1 || len(actual.MCP["extra"]) != 0 || len(actual.Sandboxes) != 1 || len(actual.Secrets) != 1 {
 		t.Fatalf("escalated permissions: %+v", actual)

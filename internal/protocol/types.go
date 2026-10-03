@@ -15,6 +15,7 @@ type Error struct {
 	Message     string                `json:"message"`
 	Diagnostics []contract.Diagnostic `json:"diagnostics"`
 }
+
 type Definition struct {
 	ID            string           `json:"id"`
 	Name          string           `json:"name"`
@@ -23,6 +24,7 @@ type Definition struct {
 	CreatedAt     time.Time        `json:"createdAt"`
 	Package       contract.Package `json:"package"`
 }
+
 type Instance struct {
 	ID        string               `json:"id"`
 	NodeID    string               `json:"nodeId"`
@@ -31,6 +33,7 @@ type Instance struct {
 	AttemptID string               `json:"attemptId,omitempty"`
 	Error     *contract.Diagnostic `json:"error,omitempty"`
 }
+
 type Run struct {
 	ID               string                     `json:"id"`
 	DefinitionID     string                     `json:"definitionId"`
@@ -48,6 +51,7 @@ type Run struct {
 	Diagnostics      []contract.Diagnostic      `json:"diagnostics"`
 	AvailableActions []string                   `json:"availableActions"`
 }
+
 type Event struct {
 	ID          string    `json:"id"`
 	RunID       string    `json:"runId"`
@@ -59,6 +63,7 @@ type Event struct {
 	OperationID string    `json:"operationId,omitempty"`
 	Data        any       `json:"data,omitempty"`
 }
+
 type HumanRequest struct {
 	ID             string          `json:"id"`
 	RunID          string          `json:"runId"`
@@ -71,6 +76,7 @@ type HumanRequest struct {
 	Inputs         any             `json:"inputs"`
 	ResponseSchema json.RawMessage `json:"responseSchema"`
 }
+
 type Page[T any] struct {
 	Items      []T     `json:"items"`
 	NextCursor *string `json:"nextCursor"`

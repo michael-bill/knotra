@@ -14,6 +14,7 @@ func configureProcess(c *exec.Cmd) {
 	c.Cancel = func() error { return syscall.Kill(-c.Process.Pid, syscall.SIGKILL) }
 	c.WaitDelay = time.Second
 }
+
 func protectSupervisor() error {
 	// A workload shares the unprivileged UID, but must not attach to its parent
 	// supervisor or modify its memory to defeat the lease watchdog.
@@ -23,6 +24,7 @@ func protectSupervisor() error {
 	}
 	return nil
 }
+
 func hasMultipleLinks(i os.FileInfo) bool {
 	s, ok := i.Sys().(*syscall.Stat_t)
 	return !ok || s.Nlink != 1

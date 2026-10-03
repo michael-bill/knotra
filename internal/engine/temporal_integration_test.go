@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/michael-bill/knotra/internal/contract"
 	commonpb "go.temporal.io/api/common/v1"
 	enumspb "go.temporal.io/api/enums/v1"
 	historypb "go.temporal.io/api/history/v1"
@@ -21,6 +20,8 @@ import (
 	"go.temporal.io/sdk/worker"
 	"go.temporal.io/sdk/workflow"
 	"google.golang.org/protobuf/proto"
+
+	"github.com/michael-bill/knotra/internal/contract"
 )
 
 // Replay uses retained histories and the same payload store without running any
@@ -54,9 +55,11 @@ func TestTemporalReplayRetainedHistory(t *testing.T) {
 	defer c.Close()
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
 	defer cancel()
+
 	for runID := firstRun; runID != ""; {
 		history, next := &historypb.History{}, ""
 		iter := c.GetWorkflowHistory(ctx, id, runID, false, enumspb.HISTORY_EVENT_FILTER_TYPE_ALL_EVENT)
+
 		for iter.HasNext() {
 			event, err := iter.Next()
 			if err != nil {
@@ -67,6 +70,7 @@ func TestTemporalReplayRetainedHistory(t *testing.T) {
 				next = continued.NewExecutionRunId
 			}
 		}
+
 		replayer, err := worker.NewWorkflowReplayerWithOptions(worker.WorkflowReplayerOptions{DataConverter: dc})
 		if err != nil {
 			t.Fatal(err)
@@ -113,19 +117,34 @@ func TestTemporalLargePlanAndHistoryContinuation(t *testing.T) {
 	}
 	defer c.Close()
 	nodes := map[string]contract.Node{}
+
 	for i := range 1000 {
-		nodes[fmt.Sprintf("switch_%04d", i)] = contract.Node{Type: "switch", Switch: &contract.SwitchNode{Default: "done"}, Outputs: map[string]contract.Port{"route": port(`{"type":"string"}`, nil)}}
+		nodes[fmt.Sprintf("switch_%04d", i)] = contract.Node{
+			Type:    "switch",
+			Switch:  &contract.SwitchNode{Default: "done"},
+			Outputs: map[string]contract.Port{"route": port(`{"type":"string"}`, nil)},
+		}
 	}
+
 	for i := range 4 {
 		node := llm()
 		node.LLM.Prompt.Text = strings.Repeat(fmt.Sprintf("Prompt %d data. ", i), 60000)
 		nodes[fmt.Sprintf("model_%d", i)] = node
 	}
+
 	p := plan(outputGraph(nodes, "nodes.switch_0999.outputs.route", `{"type":"string"}`))
 	p.Profile.Spec.Limits.MaxNodeInstances = len(nodes)
+
 	for i := range 4 {
-		p.Package.Files = append(p.Package.Files, contract.File{Path: fmt.Sprintf("prompts/%d.txt", i), Content: []byte(nodes[fmt.Sprintf("model_%d", i)].LLM.Prompt.Text)})
+		p.Package.Files = append(
+			p.Package.Files,
+			contract.File{
+				Path:    fmt.Sprintf("prompts/%d.txt", i),
+				Content: []byte(nodes[fmt.Sprintf("model_%d", i)].LLM.Prompt.Text),
+			},
+		)
 	}
+
 	var mu sync.Mutex
 	leafCalls := map[string]int{}
 	successes := map[string]int{}
@@ -159,7 +178,16 @@ func TestTemporalLargePlanAndHistoryContinuation(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer w.Stop()
-	run, err := c.ExecuteWorkflow(ctx, client.StartWorkflowOptions{ID: id, TaskQueue: id, StaticSummary: "Knotra · 1004 nodes and large prompts"}, WorkflowName, RunInput{RunID: id, AcceptedAt: time.Now().UTC()})
+	run, err := c.ExecuteWorkflow(
+		ctx,
+		client.StartWorkflowOptions{
+			ID:            id,
+			TaskQueue:     id,
+			StaticSummary: "Knotra · 1004 nodes and large prompts",
+		},
+		WorkflowName,
+		RunInput{RunID: id, AcceptedAt: time.Now().UTC()},
+	)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -185,25 +213,30 @@ func TestTemporalLargePlanAndHistoryContinuation(t *testing.T) {
 		mu.Unlock()
 		t.Fatalf("nodes=%d leaves=%d planLoads=%d", nodeCount, leafCount, loads)
 	}
+
 	for node, count := range successes {
 		if count != 1 {
 			t.Errorf("node %s published %d successes", node, count)
 		}
 	}
+
 	for node, count := range leafCalls {
 		if count != 1 {
 			t.Errorf("leaf %s executed %d times", node, count)
 		}
 	}
+
 	mu.Unlock()
 	chains, references, summaries := 0, 0, 0
 	planKeys := map[string]bool{}
+
 	for runID := firstRunID; runID != ""; {
 		chains++
 		next, events, historyBytes := "", 0, 0
 		activityTypes := map[int64]string{}
 		taskBytes := map[int64]int{}
 		iter := c.GetWorkflowHistory(ctx, id, runID, false, enumspb.HISTORY_EVENT_FILTER_TYPE_ALL_EVENT)
+
 		for iter.HasNext() {
 			event, err := iter.Next()
 			if err != nil {
@@ -268,23 +301,39 @@ func TestTemporalLargePlanAndHistoryContinuation(t *testing.T) {
 				}
 			}
 		}
+
 		if events >= 12000 || historyBytes >= 16<<20 {
 			t.Fatalf("unbounded history: %d events, %d bytes", events, historyBytes)
 		}
 		maxTaskBytes := 0
+
 		for _, bytes := range taskBytes {
 			if bytes > maxTaskBytes {
 				maxTaskBytes = bytes
 			}
 		}
+
 		if maxTaskBytes >= 2<<20 {
 			t.Fatalf("command event batch has insufficient transaction margin: %d bytes", maxTaskBytes)
 		}
-		t.Logf("history %s: %d events, %d bytes, largest command event batch %d bytes", runID, events, historyBytes, maxTaskBytes)
+		t.Logf(
+			"history %s: %d events, %d bytes, largest command event batch %d bytes",
+			runID,
+			events,
+			historyBytes,
+			maxTaskBytes,
+		)
 		runID = next
 	}
+
 	if chains < 2 || references < 6 || len(planKeys) != 1 || summaries != 4 {
 		t.Fatalf("chains=%d refs=%d planBlobs=%d summaries=%d", chains, references, len(planKeys), summaries)
 	}
-	t.Logf("workflow %s: %d histories, %d external refs, one immutable plan blob; retained payloads at %s", id, chains, references, root)
+	t.Logf(
+		"workflow %s: %d histories, %d external refs, one immutable plan blob; retained payloads at %s",
+		id,
+		chains,
+		references,
+		root,
+	)
 }

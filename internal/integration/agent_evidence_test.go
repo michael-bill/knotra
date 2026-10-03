@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"github.com/jackc/pgx/v5"
+
 	"github.com/michael-bill/knotra/internal/contract"
 	"github.com/michael-bill/knotra/internal/protocol"
 )
@@ -52,6 +53,7 @@ func assertAgentEvidence(t *testing.T, ctx context.Context, dsn string, run prot
 	}
 	maxSteps := root.Spec.Nodes["write_report"].Agent.MaxSteps
 	var agent protocol.Instance
+
 	for _, instance := range run.Instances {
 		if instance.NodeID == "write_report" {
 			if agent.ID != "" {
@@ -60,6 +62,7 @@ func assertAgentEvidence(t *testing.T, ctx context.Context, dsn string, run prot
 			agent = instance
 		}
 	}
+
 	if agent.ID == "" || agent.Status != "succeeded" {
 		t.Fatalf("report agent did not succeed: %+v", agent)
 	}
@@ -76,6 +79,7 @@ func assertAgentEvidence(t *testing.T, ctx context.Context, dsn string, run prot
 		t.Fatal(err)
 	}
 	operations := map[string]journalOperation{}
+
 	for rows.Next() {
 		var id string
 		var operation journalOperation
@@ -85,6 +89,7 @@ func assertAgentEvidence(t *testing.T, ctx context.Context, dsn string, run prot
 		}
 		operations[id] = operation
 	}
+
 	rows.Close()
 	if err = rows.Err(); err != nil {
 		t.Fatal(err)
@@ -99,6 +104,7 @@ func assertAgentEvidence(t *testing.T, ctx context.Context, dsn string, run prot
 	completed := map[string]int{}
 	turns, additionalRequests, lastFinish := 0, 0, false
 	var finishArguments json.RawMessage
+
 	for step := 0; step < maxSteps; step++ {
 		operation, exists := operations[id(fmt.Sprintf("model/%d", step))]
 		if !exists {
@@ -127,6 +133,7 @@ func assertAgentEvidence(t *testing.T, ctx context.Context, dsn string, run prot
 		if lastFinish {
 			finishArguments = response.Message.ToolCalls[0].Function.Arguments
 		}
+
 		for index, call := range response.Message.ToolCalls {
 			name := call.Function.Name
 			if name == "knotra_finish" {
@@ -148,14 +155,17 @@ func assertAgentEvidence(t *testing.T, ctx context.Context, dsn string, run prot
 			completed[name]++
 		}
 	}
+
 	if turns < 2 || !lastFinish {
 		t.Errorf("agent did not perform multiple turns ending in solitary finish: turns=%d finish=%v", turns, lastFinish)
 	}
+
 	for _, name := range []string{"knotra_files_read", "knotra_files_write", "knotra_process_exec", "dataset.stats"} {
 		if completed[name] == 0 {
 			t.Errorf("agent %s has no successful journal-correlated %s execution", agent.ID, name)
 		}
 	}
+
 	attemptRecord := operations[id("agent-attempt")]
 	var outputs contract.Values
 	if !attemptRecord.completed || json.Unmarshal(attemptRecord.response, &outputs) != nil || len(outputs["report"].Artifacts) != 1 {
@@ -172,7 +182,19 @@ func assertAgentEvidence(t *testing.T, ctx context.Context, dsn string, run prot
 	if report.Origin["runId"] != run.ID || report.Origin["instanceId"] != agent.ID || report.Origin["attemptId"] != agent.AttemptID {
 		t.Error("agent artifact origin does not match the verified attempt")
 	}
-	t.Logf("real agent evidence: run=%s instance=%s modelTurns=%d files.read=%d files.write=%d process.exec=%d MCP dataset.stats=%d additionalToolRequests=%d solitaryFinish=%v committedArtifacts=%d", run.ID, agent.ID, turns, completed["knotra_files_read"], completed["knotra_files_write"], completed["knotra_process_exec"], completed["dataset.stats"], additionalRequests, lastFinish, len(outputs["report"].Artifacts))
+	t.Logf(
+		"real agent evidence: run=%s instance=%s modelTurns=%d files.read=%d files.write=%d process.exec=%d MCP dataset.stats=%d additionalToolRequests=%d solitaryFinish=%v committedArtifacts=%d",
+		run.ID,
+		agent.ID,
+		turns,
+		completed["knotra_files_read"],
+		completed["knotra_files_write"],
+		completed["knotra_process_exec"],
+		completed["dataset.stats"],
+		additionalRequests,
+		lastFinish,
+		len(outputs["report"].Artifacts),
+	)
 }
 
 func successfulAgentTool(name string, arguments, response json.RawMessage, marker string) bool {
@@ -197,6 +219,7 @@ func successfulAgentTool(name string, arguments, response json.RawMessage, marke
 	if json.Unmarshal(response, &result) != nil || result.IsError || result.Error != "" {
 		return false
 	}
+
 	switch name {
 	case "knotra_files_read":
 		if result.Encoding == "base64" {

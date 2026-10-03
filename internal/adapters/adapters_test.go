@@ -16,8 +16,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/michael-bill/knotra/internal/contract"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+
+	"github.com/michael-bill/knotra/internal/contract"
 )
 
 type memoryHooks struct {
@@ -30,12 +31,14 @@ type memoryHooks struct {
 func newHooks() *memoryHooks {
 	return &memoryHooks{ops: map[string]OperationState{}, calls: map[string]int{}, files: map[string][]byte{}}
 }
+
 func (h *memoryHooks) Reserve(_ context.Context, k string) error {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	h.calls[k]++
 	return nil
 }
+
 func (h *memoryHooks) BeginOperation(_ context.Context, o Operation) (OperationState, error) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
@@ -45,12 +48,14 @@ func (h *memoryHooks) BeginOperation(_ context.Context, o Operation) (OperationS
 	h.ops[o.ID] = OperationState{Started: true}
 	return OperationState{}, nil
 }
+
 func (h *memoryHooks) CompleteOperation(_ context.Context, id string, data json.RawMessage) error {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	h.ops[id] = OperationState{Started: true, Completed: true, Response: append(json.RawMessage(nil), data...)}
 	return nil
 }
+
 func (h *memoryHooks) PutArtifact(_ context.Context, name, media string, b []byte) (contract.Artifact, error) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
@@ -59,6 +64,7 @@ func (h *memoryHooks) PutArtifact(_ context.Context, name, media string, b []byt
 	h.files[id] = append([]byte(nil), b...)
 	return contract.Artifact{ID: id, Name: name, MediaType: media, Size: int64(len(b)), SHA256: id}, nil
 }
+
 func (h *memoryHooks) GetArtifact(_ context.Context, id string) ([]byte, error) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
@@ -85,9 +91,17 @@ func testRequest(endpoint string) Request {
 	}}
 	return Request{
 		RunID: "run", InstanceID: "node", Attempt: 1, Pipeline: "main.yaml", ScopeID: "root",
-		Plan:   &contract.Plan{Root: "main.yaml", Pipelines: map[string]*contract.Pipeline{"main.yaml": p}, Profile: profile},
+		Plan: &contract.Plan{
+			Root:      "main.yaml",
+			Pipelines: map[string]*contract.Pipeline{"main.yaml": p},
+			Profile:   profile,
+		},
 		Inputs: contract.Values{},
-		Node:   contract.Node{Type: "llm", Outputs: map[string]contract.Port{"answer": {Schema: json.RawMessage(`{"type":"integer"}`)}}, LLM: &contract.LLMNode{Model: "model", Prompt: contract.TextSource{Text: "Return answer 42."}}},
+		Node: contract.Node{
+			Type:    "llm",
+			Outputs: map[string]contract.Port{"answer": {Schema: json.RawMessage(`{"type":"integer"}`)}},
+			LLM:     &contract.LLMNode{Model: "model", Prompt: contract.TextSource{Text: "Return answer 42."}},
+		},
 	}
 }
 
@@ -108,6 +122,7 @@ func TestLLMStrictOutputAndReplay(t *testing.T) {
 	hooks := newHooks()
 	runner := &Runner{Hooks: hooks}
 	req := testRequest(server.URL)
+
 	for i := 0; i < 2; i++ {
 		values, err := runner.Execute(context.Background(), req)
 		if err != nil {
@@ -117,12 +132,20 @@ func TestLLMStrictOutputAndReplay(t *testing.T) {
 			t.Fatalf("unexpected value: %s", values["answer"].JSON)
 		}
 	}
+
 	if requests != 1 || hooks.calls["model"] != 1 {
 		t.Fatal("durable replay repeated model request")
 	}
 }
+
 func TestOutputRejectsMarkdownUnknownAndMissing(t *testing.T) {
-	for _, data := range []string{"```json\n{\"answer\":42}\n```", `{"answer":42,"extra":1}`, `{}`, `{"answer":"42"}`, `{"answer":42}{}`} {
+	for _, data := range []string{
+		"```json\n{\"answer\":42}\n```",
+		`{"answer":42,"extra":1}`,
+		`{}`,
+		`{"answer":"42"}`,
+		`{"answer":42}{}`,
+	} {
 		t.Run(data, func(t *testing.T) {
 			if _, err := jsonOutputs(testRequest("").Node.Outputs, []byte(data)); err == nil {
 				t.Fatal("invalid output accepted")
@@ -130,6 +153,7 @@ func TestOutputRejectsMarkdownUnknownAndMissing(t *testing.T) {
 		})
 	}
 }
+
 func TestJournalPreventsDuplicateEffects(t *testing.T) {
 	hooks := newHooks()
 	r := &Runner{Hooks: hooks}
@@ -142,6 +166,7 @@ func TestJournalPreventsDuplicateEffects(t *testing.T) {
 		t.Fatal("started write was reissued")
 	}
 }
+
 func TestIdempotencyProjection(t *testing.T) {
 	schema := json.RawMessage(`{"type":"object","properties":{"meta":{"type":"object","properties":{"key":{"type":"string"},"name":{"type":"string"}},"required":["key","name"]}},"required":["meta"]}`)
 	projected, err := projectIdempotency(schema, "/meta/key")
@@ -176,14 +201,24 @@ func TestMCPDiscoveryCallAndReplay(t *testing.T) {
 	req.Plan.Profile.Spec.Sandboxes = nil
 	req.Plan.Pipelines["main.yaml"].Spec.Sandboxes = nil
 	req.Plan.Pipelines["main.yaml"].Spec.Models = nil
-	req.Plan.Profile.Spec.MCP = map[string]contract.MCPConnection{"local": {Transport: "streamable_http", URL: httpServer.URL, AllowedTools: []string{"sum"}, ToolPolicies: map[string]contract.ToolPolicy{"sum": {Effect: "read"}}}}
+	req.Plan.Profile.Spec.MCP = map[string]contract.MCPConnection{"local": {
+		Transport:    "streamable_http",
+		URL:          httpServer.URL,
+		AllowedTools: []string{"sum"},
+		ToolPolicies: map[string]contract.ToolPolicy{"sum": {Effect: "read"}},
+	}}
 	req.Plan.Pipelines["main.yaml"].Spec.MCP = map[string]contract.MCPResource{"tools": {Connection: "local"}}
-	req.Node = contract.Node{Type: "tool", Tool: &contract.ToolNode{Server: "tools", Name: "sum"}, Outputs: map[string]contract.Port{"result": {Schema: json.RawMessage(`{"type":"object","properties":{"sum":{"const":7}},"required":["sum"]}`)}}}
+	req.Node = contract.Node{
+		Type:    "tool",
+		Tool:    &contract.ToolNode{Server: "tools", Name: "sum"},
+		Outputs: map[string]contract.Port{"result": {Schema: json.RawMessage(`{"type":"object","properties":{"sum":{"const":7}},"required":["sum"]}`)}},
+	}
 	req.ToolArguments = json.RawMessage(`{"a":3,"b":4}`)
 	r := &Runner{Hooks: newHooks()}
 	if err := r.Prepare(context.Background(), req.Plan); err != nil {
 		t.Fatal(err)
 	}
+
 	for i := 0; i < 2; i++ {
 		values, err := r.Execute(context.Background(), req)
 		if err != nil {
@@ -194,6 +229,7 @@ func TestMCPDiscoveryCallAndReplay(t *testing.T) {
 		}
 		httpServer.Close()
 	}
+
 	if calls != 1 {
 		t.Fatal("MCP replay duplicated call")
 	}
@@ -212,9 +248,19 @@ func TestRunSessionSharedAndLostStateIsExplicit(t *testing.T) {
 	req.Plan.Profile.Spec.Sandboxes = nil
 	req.Plan.Pipelines["main.yaml"].Spec.Sandboxes = nil
 	req.Plan.Pipelines["main.yaml"].Spec.Models = nil
-	req.Plan.Profile.Spec.MCP = map[string]contract.MCPConnection{"local": {Transport: "streamable_http", URL: httpServer.URL, AllowedTools: []string{"read"}, AllowRunSession: true, ToolPolicies: map[string]contract.ToolPolicy{"read": {Effect: "read"}}}}
+	req.Plan.Profile.Spec.MCP = map[string]contract.MCPConnection{"local": {
+		Transport:       "streamable_http",
+		URL:             httpServer.URL,
+		AllowedTools:    []string{"read"},
+		AllowRunSession: true,
+		ToolPolicies:    map[string]contract.ToolPolicy{"read": {Effect: "read"}},
+	}}
 	req.Plan.Pipelines["main.yaml"].Spec.MCP = map[string]contract.MCPResource{"tools": {Connection: "local", Session: "run"}}
-	req.Node = contract.Node{Type: "tool", Tool: &contract.ToolNode{Server: "tools", Name: "read"}, Outputs: map[string]contract.Port{"result": {Schema: json.RawMessage(`{"type":"object"}`)}}}
+	req.Node = contract.Node{
+		Type:    "tool",
+		Tool:    &contract.ToolNode{Server: "tools", Name: "read"},
+		Outputs: map[string]contract.Port{"result": {Schema: json.RawMessage(`{"type":"object"}`)}},
+	}
 	req.ToolArguments = json.RawMessage(`{}`)
 	hooks := newHooks()
 	base := &Runner{}
@@ -223,12 +269,14 @@ func TestRunSessionSharedAndLostStateIsExplicit(t *testing.T) {
 	if err := runner.Prepare(context.Background(), req.Plan); err != nil {
 		t.Fatal(err)
 	}
+
 	for i := 0; i < 2; i++ {
 		req.InstanceID = fmt.Sprint(i)
 		if _, err := base.WithHooks(hooks).Execute(context.Background(), req); err != nil {
 			t.Fatal(err)
 		}
 	}
+
 	if calls != 2 || len(base.cache().sessions) != 1 {
 		t.Fatal("run session was not shared")
 	}
@@ -258,14 +306,37 @@ func integrationRunner(t *testing.T) *Runner {
 	if root == "" {
 		root = "../../.knotra/test-work"
 	}
-	return &Runner{Hooks: newHooks(), HelperPath: helper, WorkDir: root, DockerHost: os.Getenv("DOCKER_HOST"), FirewallImage: os.Getenv("KNOTRA_TEST_FIREWALL_IMAGE")}
+	return &Runner{
+		Hooks:         newHooks(),
+		HelperPath:    helper,
+		WorkDir:       root,
+		DockerHost:    os.Getenv("DOCKER_HOST"),
+		FirewallImage: os.Getenv("KNOTRA_TEST_FIREWALL_IMAGE"),
+	}
 }
+
 func TestDockerCodeAndArtifacts(t *testing.T) {
 	r := integrationRunner(t)
 	req := testRequest("")
-	req.Node = contract.Node{Type: "code", Sandbox: "box", Code: &contract.CodeNode{Command: []string{"python", "-c", `import json,os;json.dump({"answer":42},open(os.environ["KNOTRA_OUTPUT_JSON"],"w"));open("report.txt","w").write("done")`}}, Outputs: map[string]contract.Port{"answer": {Schema: json.RawMessage(`{"const":42}`)}, "report": {Artifact: &contract.ArtifactPort{MediaTypes: []string{"text/plain"}}, Collect: &contract.Collect{Path: "report.txt", MediaType: "text/plain"}}}}
+	req.Node = contract.Node{
+		Type:    "code",
+		Sandbox: "box",
+		Code: &contract.CodeNode{Command: []string{
+			"python",
+			"-c",
+			`import json,os;json.dump({"answer":42},open(os.environ["KNOTRA_OUTPUT_JSON"],"w"));open("report.txt","w").write("done")`,
+		}},
+		Outputs: map[string]contract.Port{
+			"answer": {Schema: json.RawMessage(`{"const":42}`)},
+			"report": {
+				Artifact: &contract.ArtifactPort{MediaTypes: []string{"text/plain"}},
+				Collect:  &contract.Collect{Path: "report.txt", MediaType: "text/plain"},
+			},
+		},
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 	defer cancel()
+
 	for i := 0; i < 2; i++ {
 		values, err := r.Execute(ctx, req)
 		if err != nil {
@@ -276,15 +347,22 @@ func TestDockerCodeAndArtifacts(t *testing.T) {
 		}
 	}
 }
+
 func TestDockerAgentFileFinish(t *testing.T) {
 	r := integrationRunner(t)
 	turn := 0
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 		turn++
 		if turn == 1 {
-			fmt.Fprint(w, `{"message":{"role":"assistant","tool_calls":[{"function":{"name":"knotra_files_write","arguments":{"path":"report.txt","content":"hello"}}}]},"done":true}`)
+			fmt.Fprint(
+				w,
+				`{"message":{"role":"assistant","tool_calls":[{"function":{"name":"knotra_files_write","arguments":{"path":"report.txt","content":"hello"}}}]},"done":true}`,
+			)
 		} else {
-			fmt.Fprint(w, `{"message":{"role":"assistant","tool_calls":[{"function":{"name":"knotra_finish","arguments":{"answer":42}}}]},"done":true}`)
+			fmt.Fprint(
+				w,
+				`{"message":{"role":"assistant","tool_calls":[{"function":{"name":"knotra_finish","arguments":{"answer":42}}}]},"done":true}`,
+			)
 		}
 	}))
 	defer server.Close()
@@ -294,14 +372,19 @@ func TestDockerAgentFileFinish(t *testing.T) {
 	req.Node.Sandbox = "box"
 	req.Node.Agent = &contract.AgentNode{Model: "model", Prompt: contract.TextSource{Text: "Write report."}, MaxSteps: 3}
 	req.Node.Tools = &contract.ToolGrants{Sandbox: []string{"files.write"}}
-	req.Node.Outputs["report"] = contract.Port{Artifact: &contract.ArtifactPort{MediaTypes: []string{"text/plain"}}, Collect: &contract.Collect{Path: "report.txt", MediaType: "text/plain"}}
+	req.Node.Outputs["report"] = contract.Port{
+		Artifact: &contract.ArtifactPort{MediaTypes: []string{"text/plain"}},
+		Collect:  &contract.Collect{Path: "report.txt", MediaType: "text/plain"},
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 	defer cancel()
+
 	for i := 0; i < 2; i++ {
 		if _, err := r.Execute(ctx, req); err != nil {
 			t.Fatal(err)
 		}
 	}
+
 	if turn != 2 {
 		t.Fatal("agent result was not replayed")
 	}

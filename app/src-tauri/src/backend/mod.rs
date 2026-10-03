@@ -25,6 +25,7 @@ pub struct Error {
     pub status: Option<u16>,
     pub diagnostics: Vec<Value>,
 }
+
 impl Error {
     fn new(code: &str, message: &str) -> Self {
         Self {
@@ -34,21 +35,28 @@ impl Error {
             diagnostics: vec![],
         }
     }
+
     fn storage(_: impl std::fmt::Display) -> Self {
         Self::new(
             "storage",
             "Workspace database operation failed. Your data has not been replaced.",
         )
     }
+
     fn transport(_: impl std::fmt::Display) -> Self {
-        Self::new("transport","Engine request failed. Its outcome may be unknown; reconcile the saved operation before sending a new command.")
+        Self::new(
+            "transport",
+            "Engine request failed. Its outcome may be unknown; reconcile the saved operation before sending a new command.",
+        )
     }
 }
+
 impl std::fmt::Display for Error {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.message)
     }
 }
+
 impl std::error::Error for Error {}
 #[derive(Clone)]
 struct Session {
@@ -57,12 +65,14 @@ struct Session {
     token: Option<String>,
     client: Client,
 }
+
 pub struct Backend {
     store: Arc<store::Store>,
     session: Mutex<Option<Session>>,
     revision: AtomicU64,
     watches: Mutex<HashMap<String, tauri::async_runtime::JoinHandle<()>>>,
 }
+
 impl Backend {
     pub fn new(app: &tauri::App) -> Result<Self> {
         let dir = app.path().app_data_dir().map_err(Error::storage)?;
@@ -80,6 +90,7 @@ impl Backend {
             watches: Mutex::new(HashMap::new()),
         })
     }
+
     fn session(&self) -> Result<Session> {
         self.session
             .lock()
@@ -87,6 +98,7 @@ impl Backend {
             .clone()
             .ok_or_else(|| Error::new("disconnected", "Connect to an engine in Settings first."))
     }
+
     fn stop(&self) -> Result<()> {
         for (_, task) in self.watches.lock().map_err(Error::storage)?.drain() {
             task.abort();
@@ -94,6 +106,7 @@ impl Backend {
         Ok(())
     }
 }
+
 fn endpoint(base: &str, token: Option<&str>) -> Result<Url> {
     let mut url = Url::parse(base).map_err(|_| Error::new("input", "Invalid engine URL."))?;
     if !matches!(url.scheme(), "http" | "https")
@@ -130,6 +143,7 @@ fn endpoint(base: &str, token: Option<&str>) -> Result<Url> {
     url.set_path(&path);
     Ok(url)
 }
+
 impl Session {
     fn url(&self, path: &[&str]) -> Result<Url> {
         let mut url = self.base.clone();
@@ -151,6 +165,7 @@ impl Session {
         drop(segments);
         Ok(url)
     }
+
     fn request(&self, method: Method, path: &[&str]) -> Result<reqwest::RequestBuilder> {
         let request = self.client.request(method, self.url(path)?);
         Ok(if let Some(token) = &self.token {
@@ -159,6 +174,7 @@ impl Session {
             request
         })
     }
+
     async fn json(
         &self,
         method: Method,
@@ -201,6 +217,7 @@ impl Session {
         Ok(value)
     }
 }
+
 async fn limited(response: reqwest::Response, max: usize) -> Result<Vec<u8>> {
     if response
         .content_length()
@@ -225,6 +242,7 @@ async fn limited(response: reqwest::Response, max: usize) -> Result<Vec<u8>> {
     }
     Ok(data)
 }
+
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct Package {
@@ -232,25 +250,41 @@ pub struct Package {
     source: String,
     files: Vec<PackageFile>,
 }
+
 impl Package {
     fn validate(&self) -> Result<()> {
         let mut paths = HashSet::new();
         if !valid_path(&self.entrypoint) {
             return Err(Error::new("input", "Invalid package entrypoint."));
         }
-        paths.insert(self.entrypoint.to_lowercase());
-        if self.files.len() > 511 {
+        if self.files.len() > 512 {
             return Err(Error::new("limit", "Package exceeds 512 files."));
         }
-        let mut size = self.source.len();
+        let mut size = 0;
+        let mut entrypoint_found = false;
         for file in &self.files {
-            if !valid_path(&file.path) || !paths.insert(file.path.to_lowercase()) {
+            if !valid_path(&file.path) || !paths.insert(file.path.to_ascii_lowercase()) {
                 return Err(Error::new("input", "Invalid or duplicate package path."));
             }
-            size += STANDARD
+            let bytes = STANDARD
                 .decode(&file.content)
-                .map_err(|_| Error::new("input", "Invalid package file encoding."))?
-                .len();
+                .map_err(|_| Error::new("input", "Invalid package file encoding."))?;
+            size += bytes.len();
+            if file.path == self.entrypoint {
+                entrypoint_found = true;
+                if !self.source.is_empty() && bytes != self.source.as_bytes() {
+                    return Err(Error::new(
+                        "input",
+                        "Entrypoint bytes must match the package source.",
+                    ));
+                }
+            }
+        }
+        if !entrypoint_found {
+            return Err(Error::new(
+                "input",
+                "Package manifest must include its entrypoint.",
+            ));
         }
         if size > 64 * 1024 * 1024 {
             return Err(Error::new("limit", "Package exceeds 64 MiB."));
@@ -258,6 +292,7 @@ impl Package {
         Ok(())
     }
 }
+
 /// Closed command vocabulary. The webview cannot choose arbitrary HTTP methods or URLs.
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(
@@ -331,6 +366,7 @@ pub enum Call {
         artifact_id: String,
     },
 }
+
 impl Call {
     fn operation(&self) -> Option<&str> {
         match self {
@@ -344,6 +380,7 @@ impl Call {
             _ => None,
         }
     }
+
     fn route(&self) -> (Method, Vec<&str>, Option<Value>, Option<&str>) {
         match self {
             Self::Info => (Method::GET, vec!["info"], None, None),
@@ -437,6 +474,7 @@ impl Call {
         }
     }
 }
+
 #[tauri::command]
 pub async fn workspace_load(backend: State<'_, Backend>) -> Result<Option<Value>> {
     let store = backend.store.clone();
@@ -444,6 +482,7 @@ pub async fn workspace_load(backend: State<'_, Backend>) -> Result<Option<Value>
         .await
         .map_err(Error::storage)?
 }
+
 #[tauri::command]
 pub async fn workspace_save(backend: State<'_, Backend>, value: Value) -> Result<()> {
     let store = backend.store.clone();
@@ -451,6 +490,7 @@ pub async fn workspace_save(backend: State<'_, Backend>, value: Value) -> Result
         .await
         .map_err(Error::storage)?
 }
+
 #[tauri::command]
 pub async fn engine_connect(
     backend: State<'_, Backend>,
@@ -479,7 +519,7 @@ pub async fn engine_connect(
     {
         return Err(Error::new(
             "incompatible",
-            "Engine does not implement the proposed knotra.desktop/1 contract.",
+            "Engine does not implement the knotra.desktop/1 contract.",
         ));
     }
     let valid_id = |value: &Value| {
@@ -518,6 +558,7 @@ pub async fn engine_connect(
     *active = Some(session);
     Ok(info)
 }
+
 #[tauri::command]
 pub fn engine_disconnect(backend: State<'_, Backend>) -> Result<()> {
     backend.revision.fetch_add(1, Ordering::SeqCst);
@@ -525,15 +566,18 @@ pub fn engine_disconnect(backend: State<'_, Backend>) -> Result<()> {
     *backend.session.lock().map_err(Error::storage)? = None;
     Ok(())
 }
+
 #[tauri::command]
 pub fn engine_cache(backend: State<'_, Backend>) -> Result<Value> {
     backend.store.snapshot(&backend.session()?.key)
 }
+
 #[tauri::command]
 pub async fn engine_call(backend: State<'_, Backend>, call: Call) -> Result<Value> {
     let session = backend.session()?;
     execute(&backend.store, &session, &call).await
 }
+
 async fn execute(store: &store::Store, session: &Session, call: &Call) -> Result<Value> {
     match call {
         Call::Publish { package, .. } | Call::Validate { package, .. } => package.validate()?,
@@ -634,6 +678,7 @@ async fn execute(store: &store::Store, session: &Session, call: &Call) -> Result
     }
     Ok(value)
 }
+
 fn check_response(call: &Call, value: &Value) -> Result<()> {
     let identifier = |value: &Value| {
         value.as_str().is_some_and(|id| {
@@ -672,6 +717,7 @@ fn check_response(call: &Call, value: &Value) -> Result<()> {
             "Engine returned an incompatible response. The command receipt was not confirmed.",
         ));
     }
+
     fn safe(value: &Value) -> bool {
         match value {
             Value::Number(number) => {
@@ -688,15 +734,20 @@ fn check_response(call: &Call, value: &Value) -> Result<()> {
         }
     }
     if !safe(value) {
-        return Err(Error::new("precision","Engine returned an integer outside JavaScript's safe range. The value was not rounded or accepted by the app."));
+        return Err(Error::new(
+            "precision",
+            "Engine returned an integer outside JavaScript's safe range. The value was not rounded or accepted by the app.",
+        ));
     }
     Ok(())
 }
+
 #[tauri::command]
 pub async fn engine_download(backend: State<'_, Backend>, artifact_id: String) -> Result<Value> {
     let session = backend.session()?;
     download(&session, &artifact_id).await
 }
+
 async fn download(session: &Session, artifact_id: &str) -> Result<Value> {
     let metadata = session
         .json(Method::GET, &["artifacts", artifact_id], None, None)
@@ -727,10 +778,12 @@ async fn download(session: &Session, artifact_id: &str) -> Result<Value> {
     }
     Ok(json!({"artifact":descriptor,"content":STANDARD.encode(bytes)}))
 }
+
 #[tauri::command]
 pub fn engine_events(backend: State<'_, Backend>, run_id: String) -> Result<Vec<Value>> {
     backend.store.events(&backend.session()?.key, &run_id)
 }
+
 #[tauri::command]
 pub fn engine_unwatch(backend: State<'_, Backend>, run_id: String) -> Result<()> {
     if let Some(task) = backend
@@ -743,6 +796,7 @@ pub fn engine_unwatch(backend: State<'_, Backend>, run_id: String) -> Result<()>
     }
     Ok(())
 }
+
 #[tauri::command]
 pub fn engine_watch(
     backend: State<'_, Backend>,
@@ -779,6 +833,7 @@ pub fn engine_watch(
     }
     Ok(())
 }
+
 async fn stream(
     session: &Session,
     store: &store::Store,
@@ -836,314 +891,12 @@ async fn stream(
     }
     Ok(())
 }
-#[cfg(test)]
-mod tests {
-    use super::*;
-    #[test]
-    fn secure_endpoint_rules() {
-        assert!(endpoint("http://127.0.0.1:8080", None).is_ok());
-        assert!(endpoint("http://[::1]:8080", None).is_ok());
-        assert!(endpoint("http://engine.example", Some("secret")).is_err());
-        assert!(endpoint("https://engine.example", None).is_err());
-        assert!(endpoint("https://engine.example/base", Some("secret")).is_ok());
-        for url in [
-            "file:///etc/passwd",
-            "http://user:pass@localhost",
-            "http://localhost/?token=x",
-            "http://localhost/#secret",
-        ] {
-            assert!(endpoint(url, None).is_err());
-        }
-    }
-    #[test]
-    fn packages_preserve_bytes_and_reject_traversal_duplicates() {
-        let mut package = Package {
-            entrypoint: "pipeline.yaml".into(),
-            source: "kind: Pipeline".into(),
-            files: vec![PackageFile {
-                path: "data.bin".into(),
-                content: STANDARD.encode([0, 255, 128]),
-            }],
-        };
-        assert!(package.validate().is_ok());
-        package.files.push(PackageFile {
-            path: "DATA.bin".into(),
-            content: "AA==".into(),
-        });
-        assert!(package.validate().is_err());
-        package.files.truncate(1);
-        package.files[0].path = "../secret".into();
-        assert!(package.validate().is_err());
-    }
-    #[test]
-    fn identifiers_cannot_change_api_routes() {
-        let session = Session {
-            base: Url::parse("http://localhost:8080/base/").unwrap(),
-            token: None,
-            key: "x".into(),
-            client: Client::new(),
-        };
-        assert_eq!(
-            session.url(&["runs", "a/b?x#y"]).unwrap().as_str(),
-            "http://localhost:8080/base/v1/runs/a%2Fb%3Fx%23y"
-        );
-        assert!(session.url(&["runs", ".."]).is_err());
-    }
-}
 
 #[cfg(test)]
-mod integration {
-    use super::*;
-    use std::{
-        io::{Read, Write},
-        net::TcpListener,
-    };
-    use tauri::ipc::InvokeResponseBody;
-    fn runtime() -> tokio::runtime::Runtime {
-        tokio::runtime::Builder::new_current_thread()
-            .enable_all()
-            .build()
-            .unwrap()
-    }
-    fn fixture<F>(count: usize, handle: F) -> (Session, std::thread::JoinHandle<()>)
-    where
-        F: Fn(usize, String) -> (u16, &'static str, Vec<u8>) + Send + 'static,
-    {
-        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-        let address = listener.local_addr().unwrap();
-        let task = std::thread::spawn(move || {
-            for index in 0..count {
-                let (mut socket, _) = listener.accept().unwrap();
-                socket
-                    .set_read_timeout(Some(Duration::from_secs(10)))
-                    .unwrap();
-                let mut bytes = Vec::new();
-                let mut length = None;
-                loop {
-                    let mut buffer = [0; 4096];
-                    let size = socket.read(&mut buffer).unwrap();
-                    if size == 0 {
-                        break;
-                    }
-                    bytes.extend_from_slice(&buffer[..size]);
-                    if let Some(end) = bytes.windows(4).position(|part| part == b"\r\n\r\n") {
-                        let headers = String::from_utf8_lossy(&bytes[..end]).to_lowercase();
-                        length = Some(
-                            end + 4
-                                + headers
-                                    .lines()
-                                    .find_map(|line| {
-                                        line.strip_prefix("content-length: ")
-                                            .and_then(|value| value.parse::<usize>().ok())
-                                    })
-                                    .unwrap_or(0),
-                        );
-                    }
-                    if length.is_some_and(|length| bytes.len() >= length) {
-                        break;
-                    }
-                }
-                let (status, kind, body) = handle(index, String::from_utf8(bytes).unwrap());
-                let headers=format!("HTTP/1.1 {status} Test\r\nContent-Type: {kind}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",body.len());
-                socket.write_all(headers.as_bytes()).unwrap();
-                socket.write_all(&body).unwrap();
-            }
-        });
-        (
-            Session {
-                base: Url::parse(&format!("http://{address}/")).unwrap(),
-                key: "fixture".into(),
-                token: Some("memory-only".into()),
-                client: Client::builder()
-                    .redirect(reqwest::redirect::Policy::none())
-                    .build()
-                    .unwrap(),
-            },
-            task,
-        )
-    }
-    #[test]
-    fn lost_receipt_reuses_exact_key_payload_and_only_one_logical_operation() {
-        runtime().block_on(async {
-            let deliveries = Arc::new(Mutex::new(Vec::<String>::new()));
-            let recorded = deliveries.clone();
-            let (session, task) = fixture(2, move |index, request| {
-                recorded.lock().unwrap().push(request);
-                (
-                    200,
-                    "application/json",
-                    if index == 0 {
-                        b"{".to_vec()
-                    } else {
-                        br#"{"run":{"id":"r1"}}"#.to_vec()
-                    },
-                )
-            });
-            let store = store::Store::open(std::path::Path::new(":memory:")).unwrap();
-            let call = Call::Start {
-                definition_id: "d1".into(),
-                profile: "p1".into(),
-                inputs: json!({"a":null}),
-                artifacts: json!({}),
-                operation_id: "stable-operation".into(),
-            };
-            assert!(execute(&store, &session, &call).await.is_err());
-            assert_eq!(
-                store.snapshot("fixture").unwrap()["pending"]
-                    .as_array()
-                    .unwrap()
-                    .len(),
-                1
-            );
-            assert_eq!(
-                execute(&store, &session, &call).await.unwrap()["run"]["id"],
-                "r1"
-            );
-            assert_eq!(
-                execute(&store, &session, &call).await.unwrap()["run"]["id"],
-                "r1"
-            );
-            assert!(store.snapshot("fixture").unwrap()["pending"]
-                .as_array()
-                .unwrap()
-                .is_empty());
-            task.join().unwrap();
-            let sent = deliveries.lock().unwrap();
-            assert_eq!(sent[0], sent[1]);
-            assert!(sent[0]
-                .to_lowercase()
-                .contains("idempotency-key: stable-operation"));
-            assert!(sent[0]
-                .to_lowercase()
-                .contains("authorization: bearer memory-only"));
-            assert!(!store
-                .snapshot("fixture")
-                .unwrap()
-                .to_string()
-                .contains("memory-only"));
-        });
-    }
-    #[test]
-    fn definitive_schema_rejection_keeps_request_retriable_with_new_operation() {
-        runtime().block_on(async {
-            let (session, task) = fixture(1, |_, request| {
-                assert!(request.starts_with("POST /v1/requests/request-A/response"));
-                (
-                    422,
-                    "application/json",
-                    br#"{"code":"OUTPUT_INVALID","message":"Invalid response","diagnostics":[]}"#
-                        .to_vec(),
-                )
-            });
-            let store = store::Store::open(std::path::Path::new(":memory:")).unwrap();
-            let call = Call::Respond {
-                request_id: "request-A".into(),
-                outputs: json!({"feedback":false}),
-                operation_id: "response-1".into(),
-            };
-            assert_eq!(
-                execute(&store, &session, &call).await.unwrap_err().status,
-                Some(422)
-            );
-            assert_eq!(
-                execute(&store, &session, &call).await.unwrap_err().status,
-                Some(422)
-            );
-            assert!(store.snapshot("fixture").unwrap()["pending"]
-                .as_array()
-                .unwrap()
-                .is_empty());
-            task.join().unwrap();
-            assert!(store
-                .prepare(
-                    "fixture",
-                    "response-2",
-                    &json!({"op":"respond","requestId":"request-A","outputs":{"feedback":"valid"}})
-                )
-                .unwrap()
-                .is_none());
-        });
-    }
-    #[test]
-    fn sse_resume_persists_before_delivery_and_deduplicates_replay() {
-        runtime().block_on(async {
-            let (session, task) = fixture(2, |index, request| {
-                if index == 1 {
-                    assert!(request.to_lowercase().contains("last-event-id: e1"));
-                }
-                let one = "id: e1\ndata: {\"id\":\"e1\",\"runId\":\"r1\",\"message\":\"one\"}\n\n";
-                let two = "id: e2\ndata: {\"id\":\"e2\",\"runId\":\"r1\",\"message\":\"two\"}\n\n";
-                (
-                    200,
-                    "text/event-stream",
-                    if index == 0 {
-                        format!("{one}{one}")
-                    } else {
-                        format!("{one}{two}")
-                    }
-                    .into_bytes(),
-                )
-            });
-            let store = Arc::new(store::Store::open(std::path::Path::new(":memory:")).unwrap());
-            let received = Arc::new(Mutex::new(Vec::new()));
-            let recorded = received.clone();
-            let committed = store.clone();
-            let channel = Channel::new(move |body| {
-                if let InvokeResponseBody::Json(text) = body {
-                    let value: Value = serde_json::from_str(&text).unwrap();
-                    if value["type"] == "event" {
-                        assert_eq!(
-                            committed.cursor("fixture", "r1").unwrap().as_deref(),
-                            value["event"]["id"].as_str()
-                        );
-                        recorded.lock().unwrap().push(value["event"].clone());
-                    }
-                }
-                Ok(())
-            });
-            stream(&session, &store, "r1", &channel).await.unwrap();
-            stream(&session, &store, "r1", &channel).await.unwrap();
-            task.join().unwrap();
-            assert_eq!(received.lock().unwrap().len(), 2);
-            assert_eq!(store.events("fixture", "r1").unwrap().len(), 2);
-        });
-    }
-    #[test]
-    fn downloaded_binary_is_hash_checked_before_leaving_native_backend() {
-        runtime().block_on(async {
-            for corrupt in [false, true] {
-                let bytes = vec![0, 255, 128, 10];
-                let hash = if corrupt {
-                    "0".repeat(64)
-                } else {
-                    format!("{:x}", Sha256::digest(&bytes))
-                };
-                let (session, task) = fixture(2, move |index, _| {
-                    if index == 0 {
-                        (
-                            200,
-                            "application/json",
-                            json!({"artifact":{"id":"a1","size":4,"sha256":hash}})
-                                .to_string()
-                                .into_bytes(),
-                        )
-                    } else {
-                        (200, "application/octet-stream", bytes.clone())
-                    }
-                });
-                let result = download(&session, "a1").await;
-                task.join().unwrap();
-                if corrupt {
-                    assert_eq!(result.unwrap_err().code, "integrity");
-                } else {
-                    assert_eq!(
-                        STANDARD
-                            .decode(result.unwrap()["content"].as_str().unwrap())
-                            .unwrap(),
-                        [0, 255, 128, 10]
-                    );
-                }
-            }
-        });
-    }
-}
+mod tests;
+
+#[cfg(test)]
+mod integration;
+
+#[cfg(test)]
+mod live;

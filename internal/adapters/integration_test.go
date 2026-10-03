@@ -74,7 +74,23 @@ func TestDockerNetworkAllowlist(t *testing.T) {
 	var peer struct {
 		ID string `json:"Id"`
 	}
-	if err = d.json(ctx, "POST", "/containers/create", map[string]any{"Image": "python:3.13-alpine", "Entrypoint": []string{"python", "-m", "http.server", "8000"}, "HostConfig": map[string]any{"NetworkMode": "bridge", "ReadonlyRootfs": true, "CapDrop": []string{"ALL"}, "Memory": 64 << 20, "PidsLimit": 16}}, &peer); err != nil {
+	if err = d.json(
+		ctx,
+		"POST",
+		"/containers/create",
+		map[string]any{
+			"Image":      "python:3.13-alpine",
+			"Entrypoint": []string{"python", "-m", "http.server", "8000"},
+			"HostConfig": map[string]any{
+				"NetworkMode":    "bridge",
+				"ReadonlyRootfs": true,
+				"CapDrop":        []string{"ALL"},
+				"Memory":         64 << 20,
+				"PidsLimit":      16,
+			},
+		},
+		&peer,
+	); err != nil {
 		t.Fatal(err)
 	}
 	defer func() { _ = d.json(context.Background(), "DELETE", "/containers/"+peer.ID+"?force=true", nil, nil) }()
@@ -140,9 +156,19 @@ for line in sys.stdin:
   print(json.dumps({"jsonrpc":"2.0","id":q["id"],"error":{"code":-32601,"message":"unknown"}}),flush=True);continue
  print(json.dumps({"jsonrpc":"2.0","id":q["id"],"result":result}),flush=True)
 `)}}
-	req.Plan.Profile.Spec.MCP = map[string]contract.MCPConnection{"local": {Transport: "stdio", Sandbox: "local", Command: []string{"python", "/package/server.py"}, AllowedTools: []string{"sum"}, ToolPolicies: map[string]contract.ToolPolicy{"sum": {Effect: "read"}}}}
+	req.Plan.Profile.Spec.MCP = map[string]contract.MCPConnection{"local": {
+		Transport:    "stdio",
+		Sandbox:      "local",
+		Command:      []string{"python", "/package/server.py"},
+		AllowedTools: []string{"sum"},
+		ToolPolicies: map[string]contract.ToolPolicy{"sum": {Effect: "read"}},
+	}}
 	req.Plan.Pipelines["main.yaml"].Spec.MCP = map[string]contract.MCPResource{"tools": {Connection: "local"}}
-	req.Node = contract.Node{Type: "tool", Tool: &contract.ToolNode{Server: "tools", Name: "sum"}, Outputs: map[string]contract.Port{"result": {Schema: json.RawMessage(`{"type":"object","properties":{"sum":{"const":7}},"required":["sum"]}`)}}}
+	req.Node = contract.Node{
+		Type:    "tool",
+		Tool:    &contract.ToolNode{Server: "tools", Name: "sum"},
+		Outputs: map[string]contract.Port{"result": {Schema: json.RawMessage(`{"type":"object","properties":{"sum":{"const":7}},"required":["sum"]}`)}},
+	}
 	req.ToolArguments = json.RawMessage(`{"a":3,"b":4}`)
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 	defer cancel()
@@ -163,7 +189,12 @@ func TestOllamaRealStructuredAndAgent(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
 	req := testRequest(endpoint)
-	req.Plan.Profile.Spec.Models["local"] = contract.ModelConnection{Provider: "ollama", Model: "qwen3.5:9b", BaseURL: endpoint, Parameters: map[string]any{"think": false, "temperature": 0, "num_predict": 256}}
+	req.Plan.Profile.Spec.Models["local"] = contract.ModelConnection{
+		Provider:   "ollama",
+		Model:      "qwen3.5:9b",
+		BaseURL:    endpoint,
+		Parameters: map[string]any{"think": false, "temperature": 0, "num_predict": 256},
+	}
 	if err := r.Prepare(ctx, req.Plan); err != nil {
 		t.Fatal(err)
 	}
@@ -178,7 +209,11 @@ func TestOllamaRealStructuredAndAgent(t *testing.T) {
 	req.Node.Type = "agent"
 	req.Node.LLM = nil
 	req.Node.Sandbox = "box"
-	req.Node.Agent = &contract.AgentNode{Model: "model", Prompt: contract.TextSource{Text: "Immediately call knotra_finish with the JSON argument {\"answer\":42}."}, MaxSteps: 3}
+	req.Node.Agent = &contract.AgentNode{
+		Model:    "model",
+		Prompt:   contract.TextSource{Text: "Immediately call knotra_finish with the JSON argument {\"answer\":42}."},
+		MaxSteps: 3,
+	}
 	if _, err = r.Execute(ctx, req); err != nil {
 		t.Fatal(err)
 	}

@@ -5,6 +5,7 @@ import (
 	"net/http"
 
 	"github.com/jackc/pgx/v5"
+
 	"github.com/michael-bill/knotra/internal/contract"
 	"github.com/michael-bill/knotra/internal/protocol"
 	"github.com/michael-bill/knotra/internal/store"
@@ -18,9 +19,11 @@ func (s *Server) run(w http.ResponseWriter, r *http.Request) {
 	}
 	s.write(w, 200, map[string]any{"run": v})
 }
+
 func page[T any](items []T, id func(T) string) protocol.Page[T] {
 	p := protocol.Page[T]{Items: items}
 	size := 0
+
 	for i, item := range items {
 		b, _ := json.Marshal(item)
 		if i > 0 && (i >= 100 || size+len(b) > store.MaxListPageBytes) {
@@ -31,8 +34,10 @@ func page[T any](items []T, id func(T) string) protocol.Page[T] {
 		}
 		size += len(b)
 	}
+
 	return p
 }
+
 func (s *Server) runs(w http.ResponseWriter, r *http.Request) {
 	v, e := s.Store.Runs(r.Context(), r.URL.Query().Get("cursor"))
 	if e != nil {
@@ -41,6 +46,7 @@ func (s *Server) runs(w http.ResponseWriter, r *http.Request) {
 	}
 	s.write(w, 200, page(v, func(x protocol.Run) string { return x.ID }))
 }
+
 func (s *Server) requests(w http.ResponseWriter, r *http.Request) {
 	v, e := s.Store.Requests(r.Context(), r.URL.Query().Get("cursor"))
 	if e != nil {
@@ -49,6 +55,7 @@ func (s *Server) requests(w http.ResponseWriter, r *http.Request) {
 	}
 	s.write(w, 200, page(v, func(x protocol.HumanRequest) string { return x.ID }))
 }
+
 func (s *Server) cancel(w http.ResponseWriter, r *http.Request) {
 	var q struct{}
 	b, e := readBody(w, r, &q)
@@ -62,6 +69,7 @@ func (s *Server) cancel(w http.ResponseWriter, r *http.Request) {
 		return 202, map[string]any{"accepted": true, "runId": id}, e
 	})
 }
+
 func (s *Server) resume(w http.ResponseWriter, r *http.Request) {
 	var q struct{}
 	b, e := readBody(w, r, &q)
@@ -70,9 +78,14 @@ func (s *Server) resume(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.command(w, r, b, func(tx pgx.Tx) (int, any, error) {
-		return 409, protocol.Error{Code: "UNSAFE_ACTION", Message: "no suspended checkpoint is available; use the advertised resolution action", Diagnostics: []contract.Diagnostic{}}, nil
+		return 409, protocol.Error{
+			Code:        "UNSAFE_ACTION",
+			Message:     "no suspended checkpoint is available; use the advertised resolution action",
+			Diagnostics: []contract.Diagnostic{},
+		}, nil
 	})
 }
+
 func (s *Server) respond(w http.ResponseWriter, r *http.Request) {
 	var q struct {
 		Outputs map[string]json.RawMessage `json:"outputs"`
@@ -85,9 +98,11 @@ func (s *Server) respond(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	s.command(w, r, b, func(tx pgx.Tx) (int, any, error) {
 		values := contract.Values{}
+
 		for k, v := range q.Outputs {
 			values[k] = contract.Value{JSON: v}
 		}
+
 		e := store.Respond(r.Context(), tx, id, r.Header.Get("Idempotency-Key"), values)
 		if e != nil {
 			return 0, nil, e
@@ -95,6 +110,7 @@ func (s *Server) respond(w http.ResponseWriter, r *http.Request) {
 		return 200, map[string]any{"accepted": true, "requestId": id}, nil
 	})
 }
+
 func (s *Server) resolve(w http.ResponseWriter, r *http.Request) {
 	var q struct {
 		Outcome  string                     `json:"outcome"`
@@ -111,12 +127,18 @@ func (s *Server) resolve(w http.ResponseWriter, r *http.Request) {
 		decisions := map[string]string{"succeeded": "completed", "not_started": "not_executed", "failed": "failed"}
 		decision, ok := decisions[q.Outcome]
 		if !ok {
-			return 422, protocol.Error{Code: "INPUT_INVALID", Message: "invalid resolution outcome", Diagnostics: []contract.Diagnostic{}}, nil
+			return 422, protocol.Error{
+				Code:        "INPUT_INVALID",
+				Message:     "invalid resolution outcome",
+				Diagnostics: []contract.Diagnostic{},
+			}, nil
 		}
 		outputs := contract.Values{}
+
 		for k, v := range q.Outputs {
 			outputs[k] = contract.Value{JSON: v}
 		}
+
 		e = store.Resolve(r.Context(), tx, id, instance, r.Header.Get("Idempotency-Key"), decision, q.Evidence, outputs)
 		return 202, map[string]any{"accepted": true, "runId": id}, e
 	})

@@ -4,40 +4,40 @@ metadata:
   name: bundle-report
 spec:
   sandboxes:
-    python: {profile: python}
+    python: { profile: python }
   inputs:
-    marker: {schema: {type: string}}
-    report: {artifact: {mediaTypes: [text/markdown]}}
-    doubled: {schema: {type: array, items: {type: integer}}}
-    iterations: {schema: {type: integer}}
-    approved: {schema: {type: boolean}}
+    marker: { schema: { type: string } }
+    report: { artifact: { mediaTypes: [text/markdown] } }
+    doubled: { schema: { type: array, items: { type: integer } } }
+    iterations: { schema: { type: integer } }
+    approved: { schema: { type: boolean } }
   nodes:
     assemble:
       type: code
       sandbox: python
       inputs:
-        marker: {schema: {type: string}, bind: {from: inputs.marker}}
+        marker: { schema: { type: string }, bind: { from: inputs.marker } }
         report:
-          artifact: {mediaTypes: [text/markdown]}
+          artifact: { mediaTypes: [text/markdown] }
           mount: incoming/report.md
-          bind: {from: inputs.report}
+          bind: { from: inputs.report }
         doubled:
-          schema: {type: array, items: {type: integer}}
-          bind: {from: inputs.doubled}
+          schema: { type: array, items: { type: integer } }
+          bind: { from: inputs.doubled }
         iterations:
-          schema: {type: integer}
-          bind: {from: inputs.iterations}
+          schema: { type: integer }
+          bind: { from: inputs.iterations }
         approved:
-          schema: {type: boolean}
-          bind: {from: inputs.approved}
-      code: {command: [python, /package/worker.py, bundle]}
+          schema: { type: boolean }
+          bind: { from: inputs.approved }
+      code: { command: [python, /package/worker.py, bundle] }
       outputs:
-        total: {schema: {type: integer}}
+        total: { schema: { type: integer } }
         report:
-          artifact: {mediaTypes: [text/markdown]}
-          collect: {path: final.md, mediaType: text/markdown}
+          artifact: { mediaTypes: [text/markdown] }
+          collect: { path: final.md, mediaType: text/markdown }
   outputs:
-    total: {schema: {type: integer}, bind: {from: nodes.assemble.outputs.total}}
+    total: { schema: { type: integer }, bind: { from: nodes.assemble.outputs.total } }
     report:
-      artifact: {mediaTypes: [text/markdown]}
-      bind: {from: nodes.assemble.outputs.report}
+      artifact: { mediaTypes: [text/markdown] }
+      bind: { from: nodes.assemble.outputs.report }

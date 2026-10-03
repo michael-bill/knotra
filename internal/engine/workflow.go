@@ -8,9 +8,10 @@ import (
 	"sort"
 	"time"
 
-	"github.com/michael-bill/knotra/internal/contract"
 	"go.temporal.io/sdk/temporal"
 	"go.temporal.io/sdk/workflow"
+
+	"github.com/michael-bill/knotra/internal/contract"
 )
 
 type counters struct{ nodes, active int }
@@ -52,17 +53,33 @@ type graphContext struct {
 func Workflow(ctx workflow.Context, input RunInput) (RunResult, error) {
 	loadPlan := input.Plan.Version == ""
 	if loadPlan {
-		if err := workflow.ExecuteActivity(storageSummary(ctx, "Load admitted pipeline plan"), PlanActivity, PlanRequest{RunID: input.RunID}).Get(ctxWithoutCancel(ctx), &input.Plan); err != nil {
+		if err := workflow.ExecuteActivity(
+			storageSummary(ctx, "Load admitted pipeline plan"),
+			PlanActivity,
+			PlanRequest{RunID: input.RunID},
+		).Get(
+			ctxWithoutCancel(ctx),
+			&input.Plan,
+		); err != nil {
 			return RunResult{}, err
 		}
 	}
 	if input.Plan.Version != "knotra/v1" || input.Plan.CompilerVersion != contract.CompilerVersion || input.Plan.CELVersion != contract.CELVersion {
-		return rejectPlan(ctx, input, failure("PLAN_VERSION_UNSUPPORTED", "admitted plan requires a different contract/compiler/CEL version"))
+		return rejectPlan(
+			ctx,
+			input,
+			failure("PLAN_VERSION_UNSUPPORTED", "admitted plan requires a different contract/compiler/CEL version"),
+		)
 	}
 	ctx, cancel := workflow.WithCancel(ctx)
 	defer cancel()
 	r := &runtime{in: input, cancel: cancel,
-		state:   Snapshot{RunID: input.RunID, Status: "running", Nodes: map[string]*NodeSnapshot{}, Requests: map[string]*Request{}},
+		state: Snapshot{
+			RunID:    input.RunID,
+			Status:   "running",
+			Nodes:    map[string]*NodeSnapshot{},
+			Requests: map[string]*Request{},
+		},
 		budgets: map[string]*counters{}, humans: map[string][]HumanSignal{}, resolutions: map[string][]ResolutionSignal{}, paused: map[string]bool{}, publishing: map[string]bool{}, projected: map[string]bool{}, loops: map[string]LoopCheckpoint{}, foreachResults: map[string]map[int]contract.Values{}}
 	r.restore(input.Checkpoint)
 	if err := workflow.SetQueryHandler(ctx, SnapshotQuery, func() (Snapshot, error) { return r.state, nil }); err != nil {
@@ -106,7 +123,13 @@ func Workflow(ctx workflow.Context, input RunInput) (RunResult, error) {
 	if !deadline.After(workflow.Now(ctx)) {
 		r.stop(failure("DEADLINE_EXCEEDED", "run deadline expired before worker admission"))
 	}
-	gc := graphContext{pipeline: input.Plan.Root, document: document, path: input.RunID + "/root", scopes: []BudgetScope{scope}, deadline: deadline}
+	gc := graphContext{
+		pipeline: input.Plan.Root,
+		document: document,
+		path:     input.RunID + "/root",
+		scopes:   []BudgetScope{scope},
+		deadline: deadline,
+	}
 	outputs, runErr := r.graph(ctx, gc, document.Spec.Graph, input.Inputs)
 	if r.checkpointing && r.failure == nil {
 		input.Checkpoint = r.checkpoint(ctxWithoutCancel(ctx), deadline)
@@ -143,8 +166,18 @@ func rejectPlan(ctx workflow.Context, input RunInput, reason *Failure) (RunResul
 		sequence = input.Checkpoint.Sequence + 1
 	}
 	result := RunResult{Status: "failed", Failure: reason}
-	event := Projection{RunID: input.RunID, Sequence: sequence, Time: workflow.Now(ctx), Kind: "run", Status: result.Status, Failure: reason}
-	if err := workflow.ExecuteActivity(storageSummary(ctx, "Persist incompatible plan failure"), ProjectActivity, event).Get(ctxWithoutCancel(ctx), nil); err != nil {
+	event := Projection{
+		RunID:    input.RunID,
+		Sequence: sequence,
+		Time:     workflow.Now(ctx),
+		Kind:     "run",
+		Status:   result.Status,
+		Failure:  reason,
+	}
+	if err := workflow.ExecuteActivity(storageSummary(ctx, "Persist incompatible plan failure"), ProjectActivity, event).Get(
+		ctxWithoutCancel(ctx),
+		nil,
+	); err != nil {
 		return RunResult{}, err
 	}
 	return result, nil
@@ -163,6 +196,7 @@ func (r *runtime) listen(ctx workflow.Context) {
 		human := workflow.GetSignalChannel(ctx, HumanSignalName)
 		resolve := workflow.GetSignalChannel(ctx, ResolveSignalName)
 		cancel := workflow.GetSignalChannel(ctx, CancelSignalName)
+
 		for ctx.Err() == nil {
 			sel := workflow.NewSelector(ctx)
 			sel.AddReceive(human, func(c workflow.ReceiveChannel, _ bool) {
@@ -247,7 +281,14 @@ func (r *runtime) request(ctx workflow.Context, request Request) error {
 	request.RunID = r.in.RunID
 	copy := request
 	r.state.Requests[request.ID] = &copy
-	return workflow.ExecuteActivity(storageSummary(ctx, "Persist "+request.Kind+" request: "+request.Status), RequestActivity, request).Get(ctxWithoutCancel(ctx), nil)
+	return workflow.ExecuteActivity(
+		storageSummary(ctx, "Persist "+request.Kind+" request: "+request.Status),
+		RequestActivity,
+		request,
+	).Get(
+		ctxWithoutCancel(ctx),
+		nil,
+	)
 }
 
 func failure(code, message string) *Failure { return &Failure{Code: code, Message: message} }
@@ -265,9 +306,11 @@ func asFailure(err error) *Failure {
 
 func keys[T any](values map[string]T) []string {
 	result := make([]string, 0, len(values))
+
 	for key := range values {
 		result = append(result, key)
 	}
+
 	sort.Strings(result)
 	return result
 }
@@ -329,6 +372,7 @@ func (r *runtime) materialize(ctx workflow.Context, scopes []BudgetScope, count 
 	if err := r.admit(ctx); err != nil {
 		return err
 	}
+
 	for _, scope := range scopes {
 		c := r.budgets[scope.ID]
 		if c == nil {
@@ -339,9 +383,11 @@ func (r *runtime) materialize(ctx workflow.Context, scopes []BudgetScope, count 
 			return failure("LIMIT_EXCEEDED", fmt.Sprintf("node instance budget exhausted in %s", scope.ID))
 		}
 	}
+
 	for _, scope := range scopes {
 		r.budgets[scope.ID].nodes += count
 	}
+
 	return nil
 }
 
@@ -359,11 +405,13 @@ func (r *runtime) acquire(ctx workflow.Context, scopes []BudgetScope) error {
 		if r.budgets[scopes[0].ID].active >= maxActiveLeafAttempts {
 			return false
 		}
+
 		for _, scope := range scopes {
 			if scope.Limits.MaxConcurrentNodes > 0 && r.budgets[scope.ID].active >= scope.Limits.MaxConcurrentNodes {
 				return false
 			}
 		}
+
 		return true
 	}); err != nil {
 		return err
@@ -374,9 +422,11 @@ func (r *runtime) acquire(ctx workflow.Context, scopes []BudgetScope) error {
 	if r.failure != nil {
 		return r.failure
 	}
+
 	for _, scope := range scopes {
 		r.budgets[scope.ID].active++
 	}
+
 	return nil
 }
 

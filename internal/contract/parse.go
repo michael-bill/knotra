@@ -22,7 +22,9 @@ const (
 )
 
 var jsonNumber = regexp.MustCompile(`^-?(0|[1-9][0-9]*)(\.[0-9]+)?([eE][+-]?[0-9]+)?$`)
+
 var yamlNumberLike = regexp.MustCompile(`(?i)^[+-]?(?:[0-9][0-9_]*(?:\.[0-9_]*)?(?:e[+-]?[0-9_]+)?|\.[0-9_]+|\.inf|\.nan|0[xob][0-9a-f_]+)$`)
+
 var durationPattern = regexp.MustCompile(`^[1-9][0-9]*(ms|s|m|h)$`)
 
 // Duration implements the bounded single-unit duration grammar of Knotra v1.
@@ -91,6 +93,7 @@ func parseYAML(data []byte) (*yaml.Node, error) {
 	// Strip the sole directive allowed by our grammar without changing line numbers.
 	lines := strings.Split(string(data), "\n")
 	directiveSeen, documentStarted := false, false
+
 	for i, line := range lines {
 		if strings.HasPrefix(line, "%") {
 			if strings.TrimSpace(strings.SplitN(line, "#", 2)[0]) != "%YAML 1.2" || directiveSeen || documentStarted {
@@ -105,6 +108,7 @@ func parseYAML(data []byte) (*yaml.Node, error) {
 			documentStarted = true
 		}
 	}
+
 	dec := yaml.NewDecoder(strings.NewReader(strings.Join(lines, "\n")))
 	var doc yaml.Node
 	if err := dec.Decode(&doc); err != nil {
@@ -136,6 +140,7 @@ func yamlValue(n *yaml.Node, depth int) (any, error) {
 			return fail("container depth exceeds 64")
 		}
 	}
+
 	switch n.Kind {
 	case yaml.MappingNode:
 		result := map[string]any{}
@@ -234,6 +239,7 @@ func jsonValue(d *json.Decoder, depth int) (any, error) {
 	if err != nil {
 		return nil, err
 	}
+
 	switch x := t.(type) {
 	case json.Number:
 		return number(string(x))
@@ -244,6 +250,7 @@ func jsonValue(d *json.Decoder, depth int) (any, error) {
 		}
 		if x == '{' {
 			m := map[string]any{}
+
 			for d.More() {
 				k, err := d.Token()
 				if err != nil {
@@ -262,11 +269,13 @@ func jsonValue(d *json.Decoder, depth int) (any, error) {
 				}
 				m[s] = v
 			}
+
 			_, err = d.Token()
 			return m, err
 		}
 		if x == '[' {
 			a := []any{}
+
 			for d.More() {
 				v, err := jsonValue(d, depth)
 				if err != nil {
@@ -274,6 +283,7 @@ func jsonValue(d *json.Decoder, depth int) (any, error) {
 				}
 				a = append(a, v)
 			}
+
 			_, err = d.Token()
 			return a, err
 		}
@@ -285,6 +295,7 @@ func jsonValue(d *json.Decoder, depth int) (any, error) {
 
 func checkSurrogates(b []byte) error {
 	inside := false
+
 	for i := 0; i < len(b); i++ {
 		if b[i] == '"' {
 			inside = !inside
@@ -322,6 +333,7 @@ func checkSurrogates(b []byte) error {
 			i += 6
 		}
 	}
+
 	return nil
 }
 

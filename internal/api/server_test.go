@@ -15,6 +15,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+
 	"github.com/michael-bill/knotra/internal/contract"
 	"github.com/michael-bill/knotra/internal/engine"
 	"github.com/michael-bill/knotra/internal/protocol"
@@ -23,6 +24,7 @@ import (
 
 func TestStrictBodiesAndBearerAuthentication(t *testing.T) {
 	srv := Server{Token: "secret", Store: &store.Store{EngineID: "test"}}
+
 	for _, header := range []string{"", "secret", "Basic secret", "Bearer wrong"} {
 		r := httptest.NewRequest("GET", "/v1/info", nil)
 		r.Header.Set("Authorization", header)
@@ -32,6 +34,7 @@ func TestStrictBodiesAndBearerAuthentication(t *testing.T) {
 			t.Fatal(header, w.Code)
 		}
 	}
+
 	for _, body := range []string{`null`, `[]`, `{"a":1,"a":2}`, `{} {}`, `{"unexpected":true}`} {
 		w := httptest.NewRecorder()
 		r := httptest.NewRequest("POST", "/", strings.NewReader(body))
@@ -49,6 +52,7 @@ func TestStrictBodiesAndBearerAuthentication(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
 func apiStore(t *testing.T) *store.Store {
 	t.Helper()
 	dsn := os.Getenv("KNOTRA_TEST_DATABASE_URL")
@@ -87,6 +91,7 @@ func apiStore(t *testing.T) *store.Store {
 	})
 	return db
 }
+
 func TestDurableAPICommandsAndHumanCancellation(t *testing.T) {
 	db := apiStore(t)
 	profile, ds := contract.ParseProfile([]byte(`apiVersion: knotra/v1
@@ -98,7 +103,11 @@ spec:
 	if contract.HasErrors(ds) {
 		t.Fatal(ds)
 	}
-	srv := Server{Store: db, Artifacts: store.Artifacts{Root: t.TempDir(), Store: db}, Profiles: map[string]contract.Profile{"test": profile}}
+	srv := Server{
+		Store:     db,
+		Artifacts: store.Artifacts{Root: t.TempDir(), Store: db},
+		Profiles:  map[string]contract.Profile{"test": profile},
+	}
 	handler := srv.Handler()
 	call := func(route, key string, payload any) (int, []byte) {
 		t.Helper()
@@ -138,7 +147,15 @@ spec:
 	if err := json.Unmarshal(b, &definition); err != nil {
 		t.Fatal(err)
 	}
-	payload := map[string]any{"definitionId": definition.Definition.ID, "profile": "test", "inputs": map[string]any{}, "artifacts": map[string]any{}}
+	if definition.Definition.Title == "" || definition.Definition.Title != definition.Definition.Name {
+		t.Fatal("a definition without a title must use its pipeline name")
+	}
+	payload := map[string]any{
+		"definitionId": definition.Definition.ID,
+		"profile":      "test",
+		"inputs":       map[string]any{},
+		"artifacts":    map[string]any{},
+	}
 	code, b = call("/runs", "run", payload)
 	if code != 201 {
 		t.Fatalf("start %d %s", code, b)
@@ -160,7 +177,15 @@ spec:
 	}
 	id := result.Run.ID
 	values := map[string]contract.Port{"ok": {Schema: json.RawMessage(`{"type":"boolean"}`)}}
-	req := engine.Request{RunID: id, ID: "human1", InstanceID: "n1", Kind: "human", Status: "open", Outputs: values, Deadline: time.Now().Add(time.Minute)}
+	req := engine.Request{
+		RunID:      id,
+		ID:         "human1",
+		InstanceID: "n1",
+		Kind:       "human",
+		Status:     "open",
+		Outputs:    values,
+		Deadline:   time.Now().Add(time.Minute),
+	}
 	if err := db.SaveRequest(context.Background(), req); err != nil {
 		t.Fatal(err)
 	}
@@ -192,7 +217,11 @@ spec:
 	if err != nil || signal == nil {
 		t.Fatalf("accepted answer lost on cancel: %v %v", signal, err)
 	}
-	code, b = call("/artifacts", "artifact", map[string]any{"name": "file.txt", "mediaType": "text/plain", "content": []byte("durable file")})
+	code, b = call(
+		"/artifacts",
+		"artifact",
+		map[string]any{"name": "file.txt", "mediaType": "text/plain", "content": []byte("durable file")},
+	)
 	if code != 201 {
 		t.Fatalf("upload %d %s", code, b)
 	}
@@ -209,7 +238,10 @@ spec:
 		t.Fatal(w.Code, w.Body.String())
 	}
 	// A cursor from another run must never silently skip this run's events.
-	if err = db.Project(context.Background(), engine.Projection{RunID: id, Sequence: 1, Time: time.Now(), Kind: "run", Status: "running"}); err != nil {
+	if err = db.Project(
+		context.Background(),
+		engine.Projection{RunID: id, Sequence: 1, Time: time.Now(), Kind: "run", Status: "running"},
+	); err != nil {
 		t.Fatal(err)
 	}
 	events, err := db.Events(context.Background(), id, "")
@@ -234,5 +266,24 @@ func TestListPageHasCursorAtByteBoundary(t *testing.T) {
 	result := page(entries, func(v item) string { return v.ID })
 	if len(result.Items) != 1 || result.NextCursor == nil || *result.NextCursor != "a" {
 		t.Fatal("oversized list has no continuation cursor")
+	}
+}
+
+func TestProfilesUseNameWhenTitleOmitted(t *testing.T) {
+	srv := Server{Profiles: map[string]contract.Profile{
+		"local": {Metadata: contract.Metadata{Name: "Local engine"}},
+	}}
+	response := httptest.NewRecorder()
+	srv.profiles(response, httptest.NewRequest(http.MethodGet, "/v1/profiles", nil))
+	var catalog struct {
+		Items []struct {
+			Title string `json:"title"`
+		} `json:"items"`
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &catalog); err != nil {
+		t.Fatal(err)
+	}
+	if len(catalog.Items) != 1 || catalog.Items[0].Title != "Local engine" {
+		t.Fatalf("profile without an explicit title must display its name: %s", response.Body.String())
 	}
 }

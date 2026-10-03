@@ -8,11 +8,11 @@ services:
       POSTGRES_USER: knotra
       POSTGRES_PASSWORD: ${KNOTRA_DEV_DB_PASSWORD:-knotra-development}
     ports:
-      - "127.0.0.1:${KNOTRA_PG_PORT:-25432}:5432"
+      - '127.0.0.1:${KNOTRA_PG_PORT:-25432}:5432'
     volumes:
       - postgres-data:/var/lib/postgresql
     healthcheck:
-      test: [CMD-SHELL, "pg_isready -U knotra -d knotra"]
+      test: [CMD-SHELL, 'pg_isready -U knotra -d knotra']
       interval: 3s
       timeout: 3s
       retries: 20
@@ -32,12 +32,12 @@ services:
       - /home/temporal/temporal.db
       - --ui-disable-news-fetch
     ports:
-      - "127.0.0.1:${KNOTRA_TEMPORAL_PORT:-27233}:7233"
-      - "127.0.0.1:${KNOTRA_TEMPORAL_UI_PORT:-28233}:8233"
+      - '127.0.0.1:${KNOTRA_TEMPORAL_PORT:-27233}:7233'
+      - '127.0.0.1:${KNOTRA_TEMPORAL_UI_PORT:-28233}:8233'
     volumes:
       - temporal-data:/home/temporal
     healthcheck:
-      test: [CMD, temporal, operator, cluster, health, --address, "127.0.0.1:7233"]
+      test: [CMD, temporal, operator, cluster, health, --address, '127.0.0.1:7233']
       interval: 3s
       timeout: 5s
       retries: 30

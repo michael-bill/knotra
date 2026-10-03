@@ -22,6 +22,7 @@ func (c *Client) lockCommand(ctx context.Context, id string) (func(), error) {
 	if err != nil {
 		return nil, err
 	}
+
 	for {
 		err = syscall.Flock(int(f.Fd()), syscall.LOCK_EX|syscall.LOCK_NB)
 		if err == nil {
@@ -32,6 +33,7 @@ func (c *Client) lockCommand(ctx context.Context, id string) (func(), error) {
 			return nil, err
 		}
 		timer := time.NewTimer(25 * time.Millisecond)
+
 		select {
 		case <-ctx.Done():
 			timer.Stop()

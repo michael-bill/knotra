@@ -5,8 +5,9 @@ import (
 	"net/url"
 	"time"
 
-	"github.com/michael-bill/knotra/internal/protocol"
 	"github.com/spf13/cobra"
+
+	"github.com/michael-bill/knotra/internal/protocol"
 )
 
 func (s *commandState) definitionsCommand() *cobra.Command {
@@ -22,9 +23,11 @@ func (s *commandState) definitionsCommand() *cobra.Command {
 			return s.printJSON(page)
 		}
 		rows := [][]string{}
+
 		for _, definition := range page.Items {
 			rows = append(rows, []string{definition.ID, definition.Name, definition.Title, definition.PackageDigest})
 		}
+
 		if err = s.table([]string{"ID", "NAME", "TITLE", "DIGEST"}, rows); err != nil {
 			return err
 		}
@@ -64,19 +67,33 @@ func (s *commandState) requestsCommand() *cobra.Command {
 			return err
 		}
 		filtered := []protocol.HumanRequest{}
+
 		for _, request := range page.Items {
 			if (runFilter == "" || request.RunID == runFilter) && (statusFilter == "" || request.Status == statusFilter) {
 				filtered = append(filtered, request)
 			}
 		}
+
 		page.Items = filtered
 		if s.json {
 			return s.printJSON(page)
 		}
 		rows := [][]string{}
+
 		for _, request := range page.Items {
-			rows = append(rows, []string{request.ID, request.RunID, request.InstanceID, request.Status, request.Deadline.Format(time.RFC3339), request.Prompt})
+			rows = append(
+				rows,
+				[]string{
+					request.ID,
+					request.RunID,
+					request.InstanceID,
+					request.Status,
+					request.Deadline.Format(time.RFC3339),
+					request.Prompt,
+				},
+			)
 		}
+
 		if err = s.table([]string{"ID", "RUN", "INSTANCE", "STATUS", "DEADLINE", "PROMPT"}, rows); err != nil {
 			return err
 		}
@@ -115,9 +132,11 @@ func (s *commandState) operationsCommand() *cobra.Command {
 			return s.printJSON(map[string]any{"items": items})
 		}
 		rows := [][]string{}
+
 		for _, item := range items {
 			rows = append(rows, []string{item.ID, item.Status, item.Route, item.EngineID})
 		}
+
 		return s.table([]string{"ID", "STATUS", "ROUTE", "ENGINE"}, rows)
 	}}
 	retry := &cobra.Command{Use: "retry OPERATION_ID", Short: "Reconcile the original payload with the original idempotency key", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {

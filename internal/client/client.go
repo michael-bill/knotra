@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+
 	"github.com/michael-bill/knotra/internal/protocol"
 )
 
@@ -28,6 +29,7 @@ type Client struct {
 	BaseURL, Token, StateDir string
 	HTTP                     *http.Client
 }
+
 type Command struct {
 	ID          string          `json:"id"`
 	Endpoint    string          `json:"endpoint"`
@@ -39,6 +41,7 @@ type Command struct {
 	Response    json.RawMessage `json:"response,omitempty"`
 	HTTPStatus  int             `json:"httpStatus,omitempty"`
 }
+
 type HTTPError struct {
 	Status int
 	Body   protocol.Error
@@ -47,6 +50,7 @@ type HTTPError struct {
 func (e *HTTPError) Error() string {
 	return fmt.Sprintf("HTTP %d %s: %s", e.Status, e.Body.Code, e.Body.Message)
 }
+
 func (c *Client) validate() error {
 	u, e := url.Parse(c.BaseURL)
 	if e != nil || u.Host == "" || u.User != nil || u.RawQuery != "" || u.Fragment != "" {
@@ -62,6 +66,7 @@ func (c *Client) validate() error {
 	}
 	return nil
 }
+
 func (c *Client) httpClient() *http.Client {
 	client := &http.Client{}
 	if c.HTTP != nil {
@@ -70,6 +75,7 @@ func (c *Client) httpClient() *http.Client {
 	client.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
 	return client
 }
+
 func (c *Client) request(ctx context.Context, method, route string, body []byte, key string) (*http.Response, error) {
 	if e := c.validate(); e != nil {
 		return nil, e
@@ -89,6 +95,7 @@ func (c *Client) request(ctx context.Context, method, route string, body []byte,
 	}
 	return c.httpClient().Do(req)
 }
+
 func response(res *http.Response, out any) error {
 	defer res.Body.Close()
 	b, e := io.ReadAll(io.LimitReader(res.Body, (256<<20)+1))
@@ -111,6 +118,7 @@ func response(res *http.Response, out any) error {
 	}
 	return nil
 }
+
 func (c *Client) Get(ctx context.Context, route string, out any) error {
 	res, e := c.request(ctx, http.MethodGet, route, nil, "")
 	if e != nil {
@@ -118,6 +126,7 @@ func (c *Client) Get(ctx context.Context, route string, out any) error {
 	}
 	return response(res, out)
 }
+
 func (c *Client) Validate(ctx context.Context, payload any, out any) error {
 	b, e := json.Marshal(payload)
 	if e != nil {
@@ -129,10 +138,12 @@ func (c *Client) Validate(ctx context.Context, payload any, out any) error {
 	}
 	return response(res, out)
 }
+
 func (c *Client) commandDir() string {
 	sum := sha256.Sum256([]byte(strings.TrimRight(c.BaseURL, "/")))
 	return filepath.Join(c.StateDir, "commands", hex.EncodeToString(sum[:16]))
 }
+
 func (c *Client) save(v Command) error {
 	dir := c.commandDir()
 	if e := os.MkdirAll(dir, 0700); e != nil {
@@ -169,17 +180,21 @@ func (c *Client) save(v Command) error {
 	defer d.Close()
 	return d.Sync()
 }
+
 func validID(s string) bool {
 	if len(s) < 1 || len(s) > 128 {
 		return false
 	}
+
 	for _, r := range s {
 		if !(r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || r == '_' || r == '-') {
 			return false
 		}
 	}
+
 	return true
 }
+
 func (c *Client) Command(ctx context.Context, route string, payload any, id string, out any) error {
 	if id == "" {
 		id = uuid.NewString()
@@ -207,7 +222,15 @@ func (c *Client) Command(ctx context.Context, route string, payload any, id stri
 	if info.Protocol != protocol.Version || info.EngineID == "" || info.PrincipalID == "" {
 		return errors.New("incompatible engine identity or protocol")
 	}
-	v := Command{ID: id, Endpoint: c.BaseURL, EngineID: info.EngineID, PrincipalID: info.PrincipalID, Route: route, Payload: b, Status: "pending"}
+	v := Command{
+		ID:          id,
+		Endpoint:    c.BaseURL,
+		EngineID:    info.EngineID,
+		PrincipalID: info.PrincipalID,
+		Route:       route,
+		Payload:     b,
+		Status:      "pending",
+	}
 	old, e := c.load(id)
 	if e == nil {
 		if old.Route != route || !bytes.Equal(old.Payload, b) || old.EngineID != info.EngineID || old.PrincipalID != info.PrincipalID {
@@ -290,6 +313,7 @@ func (c *Client) load(id string) (Command, error) {
 	}
 	return v, e
 }
+
 func (c *Client) Retry(ctx context.Context, id string, out any) error {
 	v, e := c.load(id)
 	if e != nil {
@@ -297,6 +321,7 @@ func (c *Client) Retry(ctx context.Context, id string, out any) error {
 	}
 	return c.Command(ctx, v.Route, v.Payload, id, out)
 }
+
 func (c *Client) Commands() ([]Command, error) {
 	entries, e := os.ReadDir(c.commandDir())
 	if errors.Is(e, os.ErrNotExist) {
@@ -306,6 +331,7 @@ func (c *Client) Commands() ([]Command, error) {
 		return nil, e
 	}
 	out := []Command{}
+
 	for _, f := range entries {
 		if !strings.HasSuffix(f.Name(), ".json") {
 			continue
@@ -316,8 +342,10 @@ func (c *Client) Commands() ([]Command, error) {
 		}
 		out = append(out, v)
 	}
+
 	return out, nil
 }
+
 func (c *Client) Bytes(ctx context.Context, route string) ([]byte, error) {
 	res, e := c.request(ctx, http.MethodGet, route, nil, "")
 	if e != nil {
@@ -338,7 +366,12 @@ func (c *Client) Bytes(ctx context.Context, route string) ([]byte, error) {
 // advances; mutations are never automatically resubmitted.
 func (c *Client) Watch(ctx context.Context, runID, cursor string, emit func(protocol.Event) error) error {
 	for {
-		req, e := http.NewRequestWithContext(ctx, "GET", strings.TrimRight(c.BaseURL, "/")+"/v1/runs/"+url.PathEscape(runID)+"/events", nil)
+		req, e := http.NewRequestWithContext(
+			ctx,
+			"GET",
+			strings.TrimRight(c.BaseURL, "/")+"/v1/runs/"+url.PathEscape(runID)+"/events",
+			nil,
+		)
 		if e != nil {
 			return e
 		}
@@ -387,6 +420,7 @@ func (c *Client) Watch(ctx context.Context, runID, cursor string, emit func(prot
 			return ctx.Err()
 		}
 		timer := time.NewTimer(time.Second)
+
 		select {
 		case <-ctx.Done():
 			timer.Stop()
@@ -399,6 +433,7 @@ func (c *Client) Watch(ctx context.Context, runID, cursor string, emit func(prot
 type eventReadError struct{ err error }
 
 func (e *eventReadError) Error() string { return e.err.Error() }
+
 func (e *eventReadError) Unwrap() error { return e.err }
 
 func scanEvents(r io.Reader, runID string, emit func(protocol.Event) error) error {
@@ -407,6 +442,7 @@ func scanEvents(r io.Reader, runID string, emit func(protocol.Event) error) erro
 	var id string
 	var data []string
 	size := 0
+
 	for scan.Scan() {
 		line := scan.Text()
 		size += len(line) + 1
@@ -439,6 +475,7 @@ func scanEvents(r io.Reader, runID string, emit func(protocol.Event) error) erro
 			continue
 		}
 		value = strings.TrimPrefix(value, " ")
+
 		switch field {
 		case "id":
 			id = value
@@ -446,6 +483,7 @@ func scanEvents(r io.Reader, runID string, emit func(protocol.Event) error) erro
 			data = append(data, value)
 		}
 	}
+
 	if e := scan.Err(); e != nil {
 		if errors.Is(e, bufio.ErrTooLong) {
 			return errors.New("event frame exceeds 256 KiB")

@@ -1,9 +1,11 @@
 use super::{Error, Result};
+
 #[derive(Debug, PartialEq)]
 pub struct Frame {
     pub id: String,
     pub data: String,
 }
+
 /// Incremental UTF-8 SSE parsing; arbitrary network boundaries and CR/LF are allowed.
 #[derive(Default)]
 pub struct Parser {
@@ -14,6 +16,7 @@ pub struct Parser {
     cr: bool,
     size: usize,
 }
+
 impl Parser {
     pub fn push(&mut self, bytes: &[u8]) -> Result<Vec<Frame>> {
         let mut frames = Vec::new();
@@ -67,6 +70,7 @@ impl Parser {
         Ok(frames)
     }
 }
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -86,6 +90,7 @@ mod tests {
             }]
         );
     }
+
     #[test]
     fn rejects_unresumable_and_oversized_events() {
         assert!(Parser::default().push(b"data: {}\n\n").is_err());

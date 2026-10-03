@@ -4,28 +4,39 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
-	"github.com/michael-bill/knotra/internal/contract"
 	"net/http"
 	"os"
 	"slices"
+
+	"github.com/michael-bill/knotra/internal/contract"
 )
 
 func (s *Server) profiles(w http.ResponseWriter, r *http.Request) {
 	items := []map[string]any{}
+
 	for _, id := range keys(s.Profiles) {
 		p := s.Profiles[id]
 		b, _ := json.Marshal(p)
 		h := sha256.Sum256(b)
-		items = append(items, map[string]any{"id": id, "title": p.Metadata.Title, "revision": hex.EncodeToString(h[:])})
+		title := p.Metadata.Title
+		if title == "" {
+			title = p.Metadata.Name
+		}
+		items = append(items, map[string]any{"id": id, "title": title, "revision": hex.EncodeToString(h[:])})
 	}
+
 	s.write(w, 200, map[string]any{"items": items})
 }
+
 func (s *Server) resources(w http.ResponseWriter, r *http.Request) {
 	items := []map[string]any{}
+
 	for _, profileID := range keys(s.Profiles) {
 		p := s.Profiles[profileID]
+
 		for _, kind := range []string{"model", "mcp", "sandbox", "secret"} {
 			var ids []string
+
 			switch kind {
 			case "model":
 				ids = keys(p.Spec.Models)
@@ -36,6 +47,7 @@ func (s *Server) resources(w http.ResponseWriter, r *http.Request) {
 			case "secret":
 				ids = keys(p.Spec.Secrets)
 			}
+
 			for _, id := range ids {
 				available := true
 				capabilities := []string{}
@@ -48,8 +60,10 @@ func (s *Server) resources(w http.ResponseWriter, r *http.Request) {
 							}
 						}
 					}
+
 					return true
 				}
+
 				switch kind {
 				case "model":
 					m := p.Spec.Models[id]
@@ -63,21 +77,35 @@ func (s *Server) resources(w http.ResponseWriter, r *http.Request) {
 				case "secret":
 					available = os.Getenv(p.Spec.Secrets[id].Env) != ""
 				}
+
 				status := "available"
 				if !available {
 					status = "unavailable"
 				}
-				items = append(items, map[string]any{"id": id, "kind": kind, "title": profileID + " / " + id, "capabilities": capabilities, "status": status})
+				items = append(
+					items,
+					map[string]any{
+						"id":           id,
+						"kind":         kind,
+						"title":        profileID + " / " + id,
+						"capabilities": capabilities,
+						"status":       status,
+					},
+				)
 			}
 		}
 	}
+
 	s.write(w, 200, map[string]any{"items": items})
 }
+
 func keys[V any](m map[string]V) []string {
 	a := make([]string, 0, len(m))
+
 	for k := range m {
 		a = append(a, k)
 	}
+
 	slices.Sort(a)
 	return a
 }

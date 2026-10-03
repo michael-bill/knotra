@@ -13,6 +13,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+
 	"github.com/michael-bill/knotra/internal/contract"
 )
 
@@ -66,8 +67,16 @@ func (a Artifacts) Write(name, mediaType string, data []byte, origin map[string]
 	if origin == nil {
 		origin = map[string]string{}
 	}
-	return contract.Artifact{ID: uuid.NewString(), Name: name, MediaType: mediaType, Size: int64(len(data)), SHA256: hash, Origin: origin}, nil
+	return contract.Artifact{
+		ID:        uuid.NewString(),
+		Name:      name,
+		MediaType: mediaType,
+		Size:      int64(len(data)),
+		SHA256:    hash,
+		Origin:    origin,
+	}, nil
 }
+
 func RegisterArtifact(ctx context.Context, tx pgx.Tx, art contract.Artifact) error {
 	b, e := raw(art)
 	if e != nil {
@@ -76,6 +85,7 @@ func RegisterArtifact(ctx context.Context, tx pgx.Tx, art contract.Artifact) err
 	_, e = tx.Exec(ctx, "INSERT INTO knotra_artifacts(id,document,published) VALUES($1,$2,true)", art.ID, b)
 	return e
 }
+
 func (a Artifacts) Put(ctx context.Context, name, mediaType string, data []byte, origin map[string]string) (contract.Artifact, error) {
 	v, e := a.Write(name, mediaType, data, origin)
 	if e != nil {
@@ -88,6 +98,7 @@ func (a Artifacts) Put(ctx context.Context, name, mediaType string, data []byte,
 	_, e = a.Store.Pool.Exec(ctx, "INSERT INTO knotra_artifacts(id,document) VALUES($1,$2)", v.ID, b)
 	return v, e
 }
+
 func ReadArtifact(ctx context.Context, q Querier, id string) (contract.Artifact, error) {
 	var v contract.Artifact
 	var b []byte
@@ -97,9 +108,16 @@ func ReadArtifact(ctx context.Context, q Querier, id string) (contract.Artifact,
 	}
 	return v, classify(e)
 }
+
 func (s *Store) Artifacts(ctx context.Context, cursor string) ([]contract.Artifact, error) {
-	return list[contract.Artifact](ctx, s.Pool, "SELECT document FROM knotra_artifacts WHERE published AND ($1='' OR id<$1) ORDER BY id DESC LIMIT 101", cursor)
+	return list[contract.Artifact](
+		ctx,
+		s.Pool,
+		"SELECT document FROM knotra_artifacts WHERE published AND ($1='' OR id<$1) ORDER BY id DESC LIMIT 101",
+		cursor,
+	)
 }
+
 func (a Artifacts) Get(ctx context.Context, id string) ([]byte, error) {
 	var v contract.Artifact
 	var meta []byte
@@ -169,6 +187,7 @@ func ArtifactValue(ctx context.Context, q Querier, b json.RawMessage) (contract.
 		return contract.Value{}, &ValidationError{"artifact must be a registered ID or array of IDs"}
 	}
 	value := contract.Value{Collection: collection, Artifacts: []contract.Artifact{}}
+
 	for _, id := range ids {
 		a, err := ReadArtifact(ctx, q, id)
 		if err != nil {
@@ -176,5 +195,6 @@ func ArtifactValue(ctx context.Context, q Querier, b json.RawMessage) (contract.
 		}
 		value.Artifacts = append(value.Artifacts, a)
 	}
+
 	return value, nil
 }

@@ -25,16 +25,19 @@ func validPath(name string) error {
 	if len(name) >= 2 && ((name[0] >= 'a' && name[0] <= 'z') || (name[0] >= 'A' && name[0] <= 'Z')) && name[1] == ':' {
 		return fmt.Errorf("drive-prefixed path forbidden")
 	}
+
 	for _, part := range strings.Split(name, "/") {
 		if part == "" || part == "." || part == ".." {
 			return fmt.Errorf("invalid path segment")
 		}
 	}
+
 	for _, r := range name {
 		if r < 0x20 || r == 0x7f {
 			return fmt.Errorf("control character in path")
 		}
 	}
+
 	return nil
 }
 
@@ -78,6 +81,7 @@ func LoadPackageRoot(root, entrypoint string) (Package, error) {
 			return b, nil
 		}
 		segments := strings.Split(name, "/")
+
 		for i := range segments {
 			info, err := fs.Lstat(strings.Join(segments[:i+1], "/"))
 			if err != nil {
@@ -87,6 +91,7 @@ func LoadPackageRoot(root, entrypoint string) (Package, error) {
 				return nil, fmt.Errorf("symlink forbidden: %s", name)
 			}
 		}
+
 		f, err := fs.Open(name)
 		if err != nil {
 			return nil, err
@@ -139,12 +144,14 @@ func LoadPackageRoot(root, entrypoint string) (Package, error) {
 		if len(diags) > 0 {
 			return fmt.Errorf("%s: %s", name, diags[0].Message)
 		}
+
 		for _, file := range p.Spec.Files {
 			admitted[file] = true
 			if _, err := read(file); err != nil {
 				return err
 			}
 		}
+
 		for _, edge := range importEdges(p.Spec.Graph, 0) {
 			child := edge.file
 			if !admitted[child] {
@@ -154,15 +161,18 @@ func LoadPackageRoot(root, entrypoint string) (Package, error) {
 				return err
 			}
 		}
+
 		return nil
 	}
 	if err := visit(entrypoint, 0); err != nil {
 		return Package{}, err
 	}
 	p := Package{Entrypoint: entrypoint, Source: string(files[entrypoint])}
+
 	for _, name := range sortedKeys(files) {
 		p.Files = append(p.Files, File{Path: name, Content: files[name]})
 	}
+
 	return p, nil
 }
 
@@ -173,6 +183,7 @@ type importEdge struct {
 
 func importEdges(g Graph, depth int) []importEdge {
 	out := []importEdge{}
+
 	for _, name := range sortedKeys(g.Nodes) {
 		n := g.Nodes[name]
 		if n.Pipeline != nil {
@@ -185,6 +196,7 @@ func importEdges(g Graph, depth int) []importEdge {
 			out = append(out, importEdges(n.Loop.Body, depth+1)...)
 		}
 	}
+
 	return out
 }
 
@@ -207,6 +219,7 @@ func packageFiles(p Package) (map[string][]byte, string, error) {
 	if len(p.Files) > 512 {
 		return nil, "", fmt.Errorf("package exceeds 512 files")
 	}
+
 	for _, f := range p.Files {
 		if err := validPath(f.Path); err != nil {
 			return nil, "", err
@@ -219,6 +232,7 @@ func packageFiles(p Package) (map[string][]byte, string, error) {
 		files[f.Path] = f.Content
 		total += len(f.Content)
 	}
+
 	if total > 64<<20 {
 		return nil, "", fmt.Errorf("package exceeds 64 MiB")
 	}
@@ -229,16 +243,20 @@ func packageFiles(p Package) (map[string][]byte, string, error) {
 	if p.Source != "" && p.Source != string(source) {
 		return nil, "", fmt.Errorf("source differs from entrypoint bytes")
 	}
+
 	for _, name := range sortedKeys(files) {
 		parts := strings.Split(name, "/")
+
 		for i := 1; i < len(parts); i++ {
 			if _, exists := names[foldPath(strings.Join(parts[:i], "/"))]; exists {
 				return nil, "", fmt.Errorf("package file/directory collision")
 			}
 		}
+
 		hash := sha256.Sum256(files[name])
 		manifest.Files = append(manifest.Files, manifestFile{name, len(files[name]), hex.EncodeToString(hash[:])})
 	}
+
 	raw, err := json.Marshal(manifest)
 	if err != nil {
 		return nil, "", err
@@ -254,6 +272,7 @@ func packageFiles(p Package) (map[string][]byte, string, error) {
 func diagnostic(code, phase, file, path string, err error) Diagnostic {
 	return diagnosticError(code, phase, file, path, err)
 }
+
 func parsePipeline(data []byte, file string) (Pipeline, []Diagnostic) {
 	var p Pipeline
 	value, err := ParseDocument(data)
@@ -298,9 +317,11 @@ func ParseProfile(data []byte) (Profile, []Diagnostic) {
 		return p, []Diagnostic{diagnostic("DOCUMENT_KIND", "semantic", "", "/kind", fmt.Errorf("expected EngineProfile"))}
 	}
 	diags := validateProfile(p)
+
 	for i := range diags {
 		diags[i] = locateDiagnostic(diags[i], data)
 	}
+
 	sortDiagnostics(diags)
 	return p, diags
 }

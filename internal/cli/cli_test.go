@@ -44,10 +44,20 @@ func fixtureFile(t *testing.T, content string) string {
 	}
 	return file
 }
+
 func invoke(t *testing.T, args []string, input string) (string, string, error) {
 	t.Helper()
 	var out, stderr bytes.Buffer
-	err := Execute(context.Background(), args, Options{In: strings.NewReader(input), Out: &out, Err: &stderr, Getenv: func(string) string { return "" }})
+	err := Execute(
+		context.Background(),
+		args,
+		Options{
+			In:     strings.NewReader(input),
+			Out:    &out,
+			Err:    &stderr,
+			Getenv: func(string) string { return "" },
+		},
+	)
 	return out.String(), stderr.String(), err
 }
 
@@ -68,6 +78,7 @@ func TestValidateOffline(t *testing.T) {
 		t.Fatal("offline check claims admission")
 	}
 }
+
 func TestInvalidPackageExitCode(t *testing.T) {
 	file := fixtureFile(t, strings.Replace(minimalPipeline, "nodes.choose.outputs.route", "nodes.missing.outputs.route", 1))
 	out, _, err := invoke(t, []string{"validate", file, "--json"}, "")
@@ -75,6 +86,7 @@ func TestInvalidPackageExitCode(t *testing.T) {
 		t.Fatalf("out=%s err=%v code=%d", out, err, ExitCode(err))
 	}
 }
+
 func TestRunUsesStableDistinctMutationKeys(t *testing.T) {
 	file := fixtureFile(t, minimalPipeline)
 	var mu sync.Mutex
@@ -90,6 +102,7 @@ func TestRunUsesStableDistinctMutationKeys(t *testing.T) {
 		defer mu.Unlock()
 		mutations++
 		keys[r.URL.Path] = r.Header.Get("Idempotency-Key")
+
 		switch r.URL.Path {
 		case "/v1/definitions":
 			fmt.Fprint(w, `{"definition":{"id":"definition"}}`)
@@ -107,17 +120,34 @@ func TestRunUsesStableDistinctMutationKeys(t *testing.T) {
 		}
 	}))
 	defer server.Close()
-	args := []string{"--endpoint", server.URL, "--state-dir", t.TempDir(), "--json", "run", file, "--profile", "local", "--input", "count=3", "--idempotency-key", "stable"}
+	args := []string{
+		"--endpoint",
+		server.URL,
+		"--state-dir",
+		t.TempDir(),
+		"--json",
+		"run",
+		file,
+		"--profile",
+		"local",
+		"--input",
+		"count=3",
+		"--idempotency-key",
+		"stable",
+	}
+
 	for i := 0; i < 2; i++ {
 		out, _, err := invoke(t, args, "")
 		if err != nil || !strings.Contains(out, `"id":"run"`) {
 			t.Fatalf("%s %v", out, err)
 		}
 	}
+
 	if mutations != 2 || keys["/v1/runs"] != "stable" || keys["/v1/definitions"] == "stable" || keys["/v1/definitions"] == "" {
 		t.Fatalf("invalid mutations %d %v", mutations, keys)
 	}
 }
+
 func TestArtifactDownloadIntegrityBeforeWriting(t *testing.T) {
 	data := []byte("verified\n")
 	sum := sha256.Sum256(data)
@@ -156,6 +186,7 @@ func TestArtifactDownloadIntegrityBeforeWriting(t *testing.T) {
 		t.Fatal("corrupt file written")
 	}
 }
+
 func TestHumanResponseTargetsExactRequest(t *testing.T) {
 	var route string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -172,11 +203,28 @@ func TestHumanResponseTargetsExactRequest(t *testing.T) {
 		fmt.Fprint(w, `{"accepted":true,"requestId":"request"}`)
 	}))
 	defer server.Close()
-	_, _, err := invoke(t, []string{"--endpoint", server.URL, "--state-dir", t.TempDir(), "requests", "respond", "request", "--output", "approved=true", "--idempotency-key", "answer"}, "")
+	_, _, err := invoke(
+		t,
+		[]string{
+			"--endpoint",
+			server.URL,
+			"--state-dir",
+			t.TempDir(),
+			"requests",
+			"respond",
+			"request",
+			"--output",
+			"approved=true",
+			"--idempotency-key",
+			"answer",
+		},
+		"",
+	)
 	if err != nil || route != "/v1/requests/request/response" {
 		t.Fatalf("%s %v", route, err)
 	}
 }
+
 func TestWatchJournalsBeforeTerminalDisplay(t *testing.T) {
 	stateDir := t.TempDir()
 	event := protocol.Event{ID: "event-1", RunID: "run", At: time.Now().UTC(), Type: "run", Message: "succeeded"}
@@ -208,6 +256,7 @@ func TestWatchJournalsBeforeTerminalDisplay(t *testing.T) {
 		t.Fatal("terminal cursor not committed")
 	}
 }
+
 func TestInputRejectsDuplicateKeysAndAssignments(t *testing.T) {
 	s := commandState{options: Options{In: strings.NewReader(`{"x":1,"x":2}`)}}
 	if _, err := s.object("-", nil); err == nil {

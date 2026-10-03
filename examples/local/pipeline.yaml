@@ -13,29 +13,29 @@ spec:
       profile: python_box
   inputs:
     name:
-      schema: {type: string}
+      schema: { type: string }
       default: Knotra
   nodes:
     greet:
       type: llm
       inputs:
         name:
-          schema: {type: string}
-          bind: {from: inputs.name}
+          schema: { type: string }
+          bind: { from: inputs.name }
       llm:
         model: writer
         prompt:
           text: Write a brief friendly greeting to the supplied name. Return it as greeting.
       outputs:
         greeting:
-          schema: {type: string}
+          schema: { type: string }
     save:
       type: code
       sandbox: work
       inputs:
         greeting:
-          schema: {type: string}
-          bind: {from: nodes.greet.outputs.greeting}
+          schema: { type: string }
+          bind: { from: nodes.greet.outputs.greeting }
       code:
         command:
           - python3
@@ -48,12 +48,12 @@ spec:
             Path(os.environ['KNOTRA_OUTPUT_JSON']).write_text('{}')
       outputs:
         file:
-          artifact: {mediaTypes: [text/plain]}
-          collect: {path: greeting.txt, mediaType: text/plain}
+          artifact: { mediaTypes: [text/plain] }
+          collect: { path: greeting.txt, mediaType: text/plain }
   outputs:
     greeting:
-      schema: {type: string}
-      bind: {from: nodes.greet.outputs.greeting}
+      schema: { type: string }
+      bind: { from: nodes.greet.outputs.greeting }
     file:
-      artifact: {mediaTypes: [text/plain]}
-      bind: {from: nodes.save.outputs.file}
+      artifact: { mediaTypes: [text/plain] }
+      bind: { from: nodes.save.outputs.file }

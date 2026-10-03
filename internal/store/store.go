@@ -17,6 +17,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+
 	"github.com/michael-bill/knotra/internal/contract"
 	"github.com/michael-bill/knotra/internal/engine"
 	"github.com/michael-bill/knotra/internal/protocol"
@@ -24,7 +25,9 @@ import (
 
 //go:embed migrations/*.sql
 var migrations embed.FS
+
 var ErrNotFound = errors.New("not found")
+
 var ErrConflict = errors.New("operation conflicts with existing state")
 
 type Store struct {
@@ -65,8 +68,11 @@ func Open(ctx context.Context, dsn string) (_ *Store, err error) {
 	}
 	return s, nil
 }
-func (s *Store) Close()         { s.Pool.Close() }
+
+func (s *Store) Close() { s.Pool.Close() }
+
 func raw(v any) ([]byte, error) { return json.Marshal(v) }
+
 func classify(err error) error {
 	if errors.Is(err, pgx.ErrNoRows) {
 		return ErrNotFound
@@ -91,7 +97,12 @@ func (s *Store) Command(ctx context.Context, principal, key, route string, paylo
 	var oldRoute, oldDigest string
 	var status int
 	var response []byte
-	err = tx.QueryRow(ctx, "SELECT route,digest,status,response FROM knotra_commands WHERE principal=$1 AND id=$2", principal, key).Scan(&oldRoute, &oldDigest, &status, &response)
+	err = tx.QueryRow(ctx, "SELECT route,digest,status,response FROM knotra_commands WHERE principal=$1 AND id=$2", principal, key).Scan(
+		&oldRoute,
+		&oldDigest,
+		&status,
+		&response,
+	)
 	if err == nil {
 		if oldRoute != route || oldDigest != digest {
 			return 0, nil, ErrConflict
@@ -109,19 +120,35 @@ func (s *Store) Command(ctx context.Context, principal, key, route string, paylo
 	if err != nil {
 		return 0, nil, err
 	}
-	_, err = tx.Exec(ctx, "INSERT INTO knotra_commands(principal,id,route,digest,status,response) VALUES($1,$2,$3,$4,$5,$6)", principal, key, route, digest, status, response)
+	_, err = tx.Exec(
+		ctx,
+		"INSERT INTO knotra_commands(principal,id,route,digest,status,response) VALUES($1,$2,$3,$4,$5,$6)",
+		principal,
+		key,
+		route,
+		digest,
+		status,
+		response,
+	)
 	if err != nil {
 		return 0, nil, err
 	}
 	return status, response, tx.Commit(ctx)
 }
+
 func PutDefinition(ctx context.Context, tx pgx.Tx, d protocol.Definition) (protocol.Definition, error) {
 	b, e := raw(d)
 	if e != nil {
 		return d, e
 	}
 	var saved []byte
-	e = tx.QueryRow(ctx, "INSERT INTO knotra_definitions(id,digest,document) VALUES($1,$2,$3) ON CONFLICT(digest) DO UPDATE SET digest=EXCLUDED.digest RETURNING document", d.ID, d.PackageDigest, b).Scan(&saved)
+	e = tx.QueryRow(
+		ctx,
+		"INSERT INTO knotra_definitions(id,digest,document) VALUES($1,$2,$3) ON CONFLICT(digest) DO UPDATE SET digest=EXCLUDED.digest RETURNING document",
+		d.ID,
+		d.PackageDigest,
+		b,
+	).Scan(&saved)
 	if e == nil {
 		e = json.Unmarshal(saved, &d)
 	}
@@ -144,12 +171,20 @@ func ReadDefinition(ctx context.Context, q Querier, id string) (protocol.Definit
 	}
 	return d, classify(err)
 }
+
 func (s *Store) Definition(ctx context.Context, id string) (protocol.Definition, error) {
 	return ReadDefinition(ctx, s.Pool, id)
 }
+
 func (s *Store) Definitions(ctx context.Context, cursor string) ([]protocol.Definition, error) {
-	return listPage[protocol.Definition](ctx, s.Pool, "SELECT document FROM knotra_definitions WHERE ($1='' OR id<$1) ORDER BY id DESC LIMIT 101", cursor)
+	return listPage[protocol.Definition](
+		ctx,
+		s.Pool,
+		"SELECT document FROM knotra_definitions WHERE ($1='' OR id<$1) ORDER BY id DESC LIMIT 101",
+		cursor,
+	)
 }
+
 func (s *Store) Run(ctx context.Context, id string) (protocol.Run, error) {
 	var v protocol.Run
 	var b []byte
@@ -162,6 +197,7 @@ func (s *Store) Run(ctx context.Context, id string) (protocol.Run, error) {
 	}
 	return v, classify(e)
 }
+
 func (s *Store) Plan(ctx context.Context, id string) (contract.Plan, error) {
 	var v contract.Plan
 	var b []byte
@@ -171,12 +207,19 @@ func (s *Store) Plan(ctx context.Context, id string) (contract.Plan, error) {
 	}
 	return v, classify(e)
 }
+
 func (s *Store) Runs(ctx context.Context, cursor string) ([]protocol.Run, error) {
-	runs, err := list[protocol.Run](ctx, s.Pool, "SELECT document FROM knotra_runs WHERE ($1='' OR id<$1) ORDER BY id DESC LIMIT 101", cursor)
+	runs, err := list[protocol.Run](
+		ctx,
+		s.Pool,
+		"SELECT document FROM knotra_runs WHERE ($1='' OR id<$1) ORDER BY id DESC LIMIT 101",
+		cursor,
+	)
 	if err != nil {
 		return nil, err
 	}
 	size := 0
+
 	for i := range runs {
 		if i > 0 && size >= MaxListPageBytes {
 			return runs[:i+1], nil
@@ -193,8 +236,10 @@ func (s *Store) Runs(ctx context.Context, cursor string) ([]protocol.Run, error)
 			return runs[:i+1], nil
 		}
 	}
+
 	return runs, nil
 }
+
 func list[T any](ctx context.Context, p *pgxpool.Pool, query string, args ...any) ([]T, error) {
 	rows, err := p.Query(ctx, query, args...)
 	if err != nil {
@@ -202,6 +247,7 @@ func list[T any](ctx context.Context, p *pgxpool.Pool, query string, args ...any
 	}
 	defer rows.Close()
 	out := []T{}
+
 	for rows.Next() {
 		var b []byte
 		var v T
@@ -213,8 +259,10 @@ func list[T any](ctx context.Context, p *pgxpool.Pool, query string, args ...any
 		}
 		out = append(out, v)
 	}
+
 	return out, rows.Err()
 }
+
 func PutRun(ctx context.Context, tx pgx.Tx, run protocol.Run, plan contract.Plan, inputs contract.Values) error {
 	state := run
 	state.Package = contract.Package{}
@@ -233,12 +281,21 @@ func PutRun(ctx context.Context, tx pgx.Tx, run protocol.Run, plan contract.Plan
 	if e != nil {
 		return e
 	}
-	_, e = tx.Exec(ctx, "INSERT INTO knotra_runs(id,definition_id,document,plan,inputs) VALUES($1,$2,$3,$4,$5)", run.ID, run.DefinitionID, b, p, i)
+	_, e = tx.Exec(
+		ctx,
+		"INSERT INTO knotra_runs(id,definition_id,document,plan,inputs) VALUES($1,$2,$3,$4,$5)",
+		run.ID,
+		run.DefinitionID,
+		b,
+		p,
+		i,
+	)
 	if e != nil {
 		return e
 	}
 	return Enqueue(ctx, tx, run.ID, "start", engine.RunInput{RunID: run.ID, AcceptedAt: run.CreatedAt, Inputs: inputs})
 }
+
 func Enqueue(ctx context.Context, tx pgx.Tx, runID, kind string, payload any) error {
 	b, e := raw(payload)
 	if e != nil {
@@ -247,6 +304,7 @@ func Enqueue(ctx context.Context, tx pgx.Tx, runID, kind string, payload any) er
 	_, e = tx.Exec(ctx, "INSERT INTO knotra_outbox(run_id,kind,payload) VALUES($1,$2,$3)", runID, kind, b)
 	return e
 }
+
 func (s *Store) Deliver(ctx context.Context, send func(context.Context, Querier, string, string, []byte) error) error {
 	tx, e := s.Pool.Begin(ctx)
 	if e != nil {
@@ -256,7 +314,15 @@ func (s *Store) Deliver(ctx context.Context, send func(context.Context, Querier,
 	var id int64
 	var runID, kind string
 	var payload []byte
-	e = tx.QueryRow(ctx, "SELECT o.id,o.run_id,o.kind,o.payload FROM knotra_outbox o WHERE o.sent_at IS NULL AND NOT EXISTS (SELECT 1 FROM knotra_outbox earlier WHERE earlier.run_id=o.run_id AND earlier.id<o.id AND earlier.sent_at IS NULL) ORDER BY o.id FOR UPDATE OF o SKIP LOCKED LIMIT 1").Scan(&id, &runID, &kind, &payload)
+	e = tx.QueryRow(
+		ctx,
+		"SELECT o.id,o.run_id,o.kind,o.payload FROM knotra_outbox o WHERE o.sent_at IS NULL AND NOT EXISTS (SELECT 1 FROM knotra_outbox earlier WHERE earlier.run_id=o.run_id AND earlier.id<o.id AND earlier.sent_at IS NULL) ORDER BY o.id FOR UPDATE OF o SKIP LOCKED LIMIT 1",
+	).Scan(
+		&id,
+		&runID,
+		&kind,
+		&payload,
+	)
 	if errors.Is(e, pgx.ErrNoRows) {
 		return nil
 	}
@@ -272,6 +338,7 @@ func (s *Store) Deliver(ctx context.Context, send func(context.Context, Querier,
 	}
 	return tx.Commit(ctx)
 }
+
 func (s *Store) Events(ctx context.Context, runID, after string) ([]protocol.Event, error) {
 	var n int64
 	var err error
@@ -295,6 +362,7 @@ func (s *Store) Events(ctx context.Context, runID, after string) ([]protocol.Eve
 	}
 	defer rows.Close()
 	out := []protocol.Event{}
+
 	for rows.Next() {
 		var id int64
 		var b []byte
@@ -308,13 +376,18 @@ func (s *Store) Events(ctx context.Context, runID, after string) ([]protocol.Eve
 		ev.ID = strconv.FormatInt(id, 10)
 		out = append(out, ev)
 	}
+
 	return out, rows.Err()
 }
+
 func now() time.Time { return time.Now().UTC() }
 
 // migrate applies immutable, ordered migrations under Open's transaction lock.
 func migrate(ctx context.Context, tx pgx.Tx) error {
-	if _, err := tx.Exec(ctx, `CREATE TABLE IF NOT EXISTS knotra_migrations (name text PRIMARY KEY, sha256 text NOT NULL, applied_at timestamptz NOT NULL DEFAULT now())`); err != nil {
+	if _, err := tx.Exec(
+		ctx,
+		`CREATE TABLE IF NOT EXISTS knotra_migrations (name text PRIMARY KEY, sha256 text NOT NULL, applied_at timestamptz NOT NULL DEFAULT now())`,
+	); err != nil {
 		return err
 	}
 	names, err := fs.Glob(migrations, "migrations/*.sql")
@@ -323,13 +396,16 @@ func migrate(ctx context.Context, tx pgx.Tx) error {
 	}
 	sort.Strings(names)
 	known := map[string]bool{}
+
 	for _, name := range names {
 		known[name] = true
 	}
+
 	rows, err := tx.Query(ctx, "SELECT name FROM knotra_migrations")
 	if err != nil {
 		return err
 	}
+
 	for rows.Next() {
 		var name string
 		if err = rows.Scan(&name); err != nil {
@@ -341,11 +417,13 @@ func migrate(ctx context.Context, tx pgx.Tx) error {
 			return fmt.Errorf("database has newer migration %s; upgrade engine", name)
 		}
 	}
+
 	err = rows.Err()
 	rows.Close()
 	if err != nil {
 		return err
 	}
+
 	for _, name := range names {
 		b, err := migrations.ReadFile(name)
 		if err != nil {
@@ -371,6 +449,7 @@ func migrate(ctx context.Context, tx pgx.Tx) error {
 			return err
 		}
 	}
+
 	return nil
 }
 
@@ -392,19 +471,23 @@ func (s *Store) hydrateRun(ctx context.Context, run *protocol.Run) error {
 	}
 	run.Inputs = map[string]json.RawMessage{}
 	run.InputArtifacts = map[string]any{}
+
 	for key, v := range inputs {
 		if v.JSON != nil {
 			run.Inputs[key] = v.JSON
 		} else if v.Collection {
 			ids := []string{}
+
 			for _, a := range v.Artifacts {
 				ids = append(ids, a.ID)
 			}
+
 			run.InputArtifacts[key] = ids
 		} else if len(v.Artifacts) == 1 {
 			run.InputArtifacts[key] = v.Artifacts[0].ID
 		}
 	}
+
 	run.Instances, err = list[protocol.Instance](ctx, s.Pool, "SELECT document FROM knotra_instances WHERE run_id=$1 ORDER BY id", run.ID)
 	return err
 }
@@ -427,6 +510,7 @@ func listPage[T any](ctx context.Context, p *pgxpool.Pool, query string, args ..
 	defer rows.Close()
 	out := []T{}
 	size := 0
+
 	for rows.Next() {
 		var b []byte
 		var value T
@@ -446,11 +530,16 @@ func listPage[T any](ctx context.Context, p *pgxpool.Pool, query string, args ..
 			break
 		}
 	}
+
 	return out, rows.Err()
 }
 
 func ReadRunName(ctx context.Context, q Querier, id string) (string, error) {
 	var name string
-	err := q.QueryRow(ctx, `SELECT d.document->>'name' FROM knotra_runs r JOIN knotra_definitions d ON d.id=r.definition_id WHERE r.id=$1`, id).Scan(&name)
+	err := q.QueryRow(
+		ctx,
+		`SELECT d.document->>'name' FROM knotra_runs r JOIN knotra_definitions d ON d.id=r.definition_id WHERE r.id=$1`,
+		id,
+	).Scan(&name)
 	return name, classify(err)
 }

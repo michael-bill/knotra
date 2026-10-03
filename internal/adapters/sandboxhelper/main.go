@@ -31,6 +31,7 @@ type request struct {
 	Content  string   `json:"content,omitempty"`
 	Mode     string   `json:"mode,omitempty"`
 }
+
 type boundedBuffer struct {
 	b         []byte
 	truncated bool
@@ -45,14 +46,18 @@ func (b *boundedBuffer) Write(p []byte) (int, error) {
 	b.b = append(b.b, p...)
 	return n, nil
 }
+
 func (b *boundedBuffer) text() string {
 	s := strings.ToValidUTF8(string(b.b), "�")
+
 	for len(s) > limit {
 		_, size := utf8.DecodeLastRuneInString(s)
 		s = s[:len(s)-size]
 	}
+
 	return s
 }
+
 func main() {
 	if len(os.Args) < 2 {
 		fatal(errors.New("missing operation"))
@@ -89,6 +94,7 @@ func main() {
 	}
 	var out any
 	var err error
+
 	switch op {
 	case "exec":
 		out, err = execute(req)
@@ -99,6 +105,7 @@ func main() {
 	default:
 		err = errors.New("unknown operation")
 	}
+
 	if err != nil {
 		fatal(err)
 	}
@@ -124,10 +131,12 @@ func supervise(control string) error {
 	if err != nil {
 		return err
 	}
+
 	for {
 		if err := lease.check(control, time.Now()); err != nil {
 			return err
 		}
+
 		select {
 		case sig := <-signals:
 			if sig != syscall.SIGCHLD {
@@ -199,10 +208,12 @@ func (s *supervisorLease) check(control string, now time.Time) error {
 	}
 	return nil
 }
+
 func fatal(err error) {
 	_ = json.NewEncoder(os.Stdout).Encode(map[string]any{"error": err.Error()})
 	os.Exit(1)
 }
+
 func execute(req request) (any, error) {
 	if len(req.Command) == 0 || req.Command[0] == "" {
 		return nil, errors.New("empty command")
@@ -242,14 +253,21 @@ func execute(req request) (any, error) {
 		}
 		exit = e.ExitCode()
 	}
-	return map[string]any{"exitCode": exit, "stdout": stdout.text(), "stderr": stderr.text(), "truncated": stdout.truncated || stderr.truncated}, nil
+	return map[string]any{
+		"exitCode":  exit,
+		"stdout":    stdout.text(),
+		"stderr":    stderr.text(),
+		"truncated": stdout.truncated || stderr.truncated,
+	}, nil
 }
+
 func safePath(root, name string, createParents bool) (string, error) {
 	if name == "" || filepath.IsAbs(name) || strings.Contains(name, "\\") || strings.ContainsRune(name, 0) {
 		return "", errors.New("invalid relative path")
 	}
 	parts := strings.Split(name, "/")
 	current := root
+
 	for i, part := range parts {
 		if part == "" || part == "." || part == ".." {
 			return "", errors.New("invalid path component")
@@ -275,8 +293,10 @@ func safePath(root, name string, createParents bool) (string, error) {
 			return "", errors.New("parent is not a directory")
 		}
 	}
+
 	return current, nil
 }
+
 func readFile(req request, collect bool) (any, error) {
 	root := "/workspace"
 	if req.Root == "package" {
@@ -321,6 +341,7 @@ func readFile(req request, collect bool) (any, error) {
 		encoding = "utf8"
 	}
 	var content string
+
 	switch encoding {
 	case "base64":
 		content = base64.StdEncoding.EncodeToString(data)
@@ -332,14 +353,17 @@ func readFile(req request, collect bool) (any, error) {
 	default:
 		return nil, errors.New("invalid encoding")
 	}
+
 	return map[string]any{"content": content, "encoding": encoding}, nil
 }
+
 func writeFile(req request) (any, error) {
 	name, err := safePath("/workspace", req.Path, true)
 	if err != nil {
 		return nil, err
 	}
 	var data []byte
+
 	switch req.Encoding {
 	case "", "utf8":
 		if !utf8.ValidString(req.Content) {
@@ -357,6 +381,7 @@ func writeFile(req request) (any, error) {
 	default:
 		return nil, errors.New("invalid encoding")
 	}
+
 	if len(data) > limit {
 		return nil, errors.New("file exceeds size limit")
 	}
@@ -403,12 +428,14 @@ func writeFile(req request) (any, error) {
 // No untrusted process may survive a command and race subsequent file checks.
 func quiesce() error {
 	self := os.Getpid()
+
 	for attempt := 0; attempt < 100; attempt++ {
 		entries, err := os.ReadDir("/proc")
 		if err != nil {
 			return err
 		}
 		alive := false
+
 		for _, entry := range entries {
 			pid, e := strconv.Atoi(entry.Name())
 			if e != nil || pid == 1 || pid == self {
@@ -425,10 +452,12 @@ func quiesce() error {
 			alive = true
 			_ = syscall.Kill(pid, syscall.SIGKILL)
 		}
+
 		if !alive {
 			return nil
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
+
 	return fmt.Errorf("cannot quiesce sandbox processes")
 }
