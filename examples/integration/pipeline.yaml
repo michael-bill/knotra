@@ -1,0 +1,269 @@
+apiVersion: knotra/v1
+kind: Pipeline
+metadata:
+  name: integration-report
+  title: Dataset report with review and archival
+spec:
+  files:
+    - worker.py
+    - child.yaml
+    - prompts/narrative.txt
+    - prompts/writer.txt
+    - schemas/statistics.json
+  schemas:
+    statistics: {file: schemas/statistics.json}
+  models:
+    writer:
+      connection: local_model
+      requires: [toolCalling, structuredOutput]
+  mcp:
+    dataset: {connection: dataset_service, session: run}
+  sandboxes:
+    python: {profile: python}
+  secrets:
+    dataset_label: {ref: integration_label}
+  defaults:
+    execution: {timeout: 20m}
+    tools:
+      mcp: {dataset: [stats]}
+  limits:
+    timeout: 30m
+    maxConcurrentNodes: 6
+    maxNodeInstances: 128
+    maxModelCalls: 40
+    maxToolCalls: 100
+  inputs:
+    marker: {schema: {type: string, minLength: 1}, default: local-demo}
+  nodes:
+    prepare:
+      type: code
+      sandbox: python
+      inputs:
+        marker: {schema: {type: string}, bind: {from: inputs.marker}}
+      env:
+        DATASET_LABEL: {secret: dataset_label}
+      code: {command: [python, /package/worker.py, prepare]}
+      outputs:
+        rows: {schema: {type: array, items: {type: integer}}}
+        marker: {schema: {type: string}}
+        env_seen: {schema: {const: true}}
+        dataset:
+          artifact: {mediaTypes: [text/csv]}
+          collect: {path: dataset.csv, mediaType: text/csv}
+    statistics:
+      type: tool
+      inputs:
+        marker: {schema: {type: string}, bind: {from: nodes.prepare.outputs.marker}}
+        rows:
+          schema: {type: array, items: {type: integer}}
+          bind: {from: nodes.prepare.outputs.rows}
+      tool:
+        server: dataset
+        name: stats
+        arguments: {expr: '{"numbers": args.rows, "marker": args.marker}'}
+      outputs:
+        result: {schemaRef: statistics}
+    narrative:
+      type: llm
+      inputs:
+        statistics:
+          schemaRef: statistics
+          bind: {from: nodes.statistics.outputs.result}
+      llm:
+        model: writer
+        prompt: {file: prompts/narrative.txt}
+      outputs:
+        summary: {schema: {type: string, minLength: 1}}
+    write_report:
+      type: agent
+      sandbox: python
+      inputs:
+        marker: {schema: {type: string}, bind: {from: nodes.prepare.outputs.marker}}
+        dataset:
+          artifact: {mediaTypes: [text/csv]}
+          mount: incoming/dataset.csv
+          bind: {from: nodes.prepare.outputs.dataset}
+        rows:
+          schema: {type: array, items: {type: integer}}
+          bind: {from: nodes.prepare.outputs.rows}
+        statistics:
+          schemaRef: statistics
+          bind: {from: nodes.statistics.outputs.result}
+      tools:
+        sandbox: [files.read, files.write, process.exec]
+      agent:
+        model: writer
+        maxSteps: 12
+        prompt: {file: prompts/writer.txt}
+      outputs:
+        summary: {schema: {type: string, minLength: 1}}
+        report:
+          artifact: {mediaTypes: [text/markdown]}
+          collect: {path: report.md, mediaType: text/markdown}
+    route:
+      type: switch
+      inputs:
+        sum:
+          schema: {type: integer}
+          bind: {from: nodes.statistics.outputs.result, path: /sum}
+      switch:
+        cases:
+          - {name: publish, when: 'args.sum >= 10'}
+        default: hold
+    approval:
+      type: human
+      when: 'nodes.route.outputs.route == "publish"'
+      inputs:
+        summary:
+          schema: {type: string}
+          bind: {from: nodes.narrative.outputs.summary}
+      human:
+        prompt: {text: Approve publication of this local integration report.}
+      outputs:
+        approved: {schema: {type: boolean}}
+    fallback:
+      type: code
+      sandbox: python
+      when: 'nodes.route.outputs.route == "hold"'
+      code: {command: [python, /package/worker.py, fallback]}
+      outputs:
+        approved: {schema: {const: false}}
+    per_item:
+      type: foreach
+      inputs:
+        rows:
+          schema: {type: array, items: {type: integer}}
+          bind: {from: nodes.prepare.outputs.rows}
+      foreach:
+        over: rows
+        concurrency: 3
+        with:
+          value: {from: iteration.item}
+          index: {from: iteration.index}
+        body:
+          inputs:
+            value: {schema: {type: integer}}
+            index: {schema: {type: integer, minimum: 0}}
+          nodes:
+            double:
+              type: code
+              sandbox: python
+              inputs:
+                value: {schema: {type: integer}, bind: {from: inputs.value}}
+                index: {schema: {type: integer}, bind: {from: inputs.index}}
+              code: {command: [python, /package/worker.py, double]}
+              outputs:
+                value: {schema: {type: integer}}
+          outputs:
+            value:
+              schema: {type: integer}
+              bind: {from: nodes.double.outputs.value}
+    refine:
+      type: loop
+      inputs:
+        start: {schema: {type: integer}, bind: {value: 0}}
+      loop:
+        maxIterations: 3
+        state:
+          count:
+            schema: {type: integer}
+            initial: {from: args.start}
+            next: {from: body.outputs.count}
+        with:
+          count: {from: state.count}
+        body:
+          inputs:
+            count: {schema: {type: integer}}
+          nodes:
+            increment:
+              type: code
+              sandbox: python
+              inputs:
+                count: {schema: {type: integer}, bind: {from: inputs.count}}
+              code: {command: [python, /package/worker.py, increment]}
+              outputs:
+                count: {schema: {type: integer}}
+          outputs:
+            count:
+              schema: {type: integer}
+              bind: {from: nodes.increment.outputs.count}
+        until: body.outputs.count >= 2
+    bundle:
+      type: pipeline
+      inputs:
+        marker: {schema: {type: string}, bind: {from: nodes.prepare.outputs.marker}}
+        report:
+          artifact: {mediaTypes: [text/markdown]}
+          bind: {from: nodes.write_report.outputs.report}
+        doubled:
+          schema: {type: array, items: {type: integer}}
+          bind: {from: nodes.per_item.outputs.value}
+        iterations:
+          schema: {type: integer}
+          bind: {from: nodes.refine.outputs.iterations}
+        approved:
+          schema: {type: boolean}
+          bind:
+            coalesce:
+              - {from: nodes.approval.outputs.approved}
+              - {from: nodes.fallback.outputs.approved}
+      pipeline:
+        file: child.yaml
+        permissions:
+          models: []
+          mcp: {}
+          sandboxes: [python]
+          secrets: []
+    archive:
+      type: tool
+      inputs:
+        marker: {schema: {type: string}, bind: {from: nodes.prepare.outputs.marker}}
+        caption:
+          schema: {type: string}
+          bind: {from: nodes.narrative.outputs.summary}
+        total:
+          schema: {type: integer}
+          bind: {from: nodes.bundle.outputs.total}
+      tool:
+        server: dataset
+        name: archive
+        arguments: {expr: '{"caption": args.caption, "total": args.total, "marker": args.marker}'}
+      outputs:
+        result:
+          schema:
+            type: object
+            properties:
+              receipt: {type: string, minLength: 1}
+              total: {const: 24}
+              writes: {const: 1}
+            required: [receipt, total, writes]
+            additionalProperties: false
+    verify:
+      type: code
+      sandbox: python
+      needs: [archive]
+      inputs:
+        marker: {schema: {type: string}, bind: {from: nodes.prepare.outputs.marker}}
+        report:
+          artifact: {mediaTypes: [text/markdown]}
+          mount: incoming/final.md
+          bind: {from: nodes.bundle.outputs.report}
+      code: {command: [python, /package/worker.py, verify]}
+      outputs:
+        verified: {schema: {const: true}}
+  outputs:
+    report:
+      artifact: {mediaTypes: [text/markdown]}
+      bind: {from: nodes.bundle.outputs.report}
+    doubled:
+      schema: {type: array, items: {type: integer}}
+      bind: {from: nodes.per_item.outputs.value}
+    iterations:
+      schema: {type: integer}
+      bind: {from: nodes.refine.outputs.iterations}
+    receipt:
+      schema: {type: object}
+      bind: {from: nodes.archive.outputs.result}
+    verified:
+      schema: {const: true}
+      bind: {from: nodes.verify.outputs.verified}

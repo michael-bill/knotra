@@ -1,0 +1,55 @@
+apiVersion: knotra/v1
+kind: Pipeline
+metadata:
+  name: recovery-check
+  title: Publish a file, pause for review, and verify it after restart
+spec:
+  files: [recovery.py]
+  sandboxes:
+    python: {profile: python}
+  limits: {timeout: 10m, maxNodeInstances: 8, maxConcurrentNodes: 2}
+  inputs:
+    marker: {schema: {type: string, minLength: 1}}
+  nodes:
+    prepare:
+      type: code
+      sandbox: python
+      inputs:
+        marker: {schema: {type: string}, bind: {from: inputs.marker}}
+      code: {command: [python, /package/recovery.py, prepare]}
+      outputs:
+        nonce: {schema: {type: string}}
+        document:
+          artifact: {mediaTypes: [application/json]}
+          collect: {path: checkpoint.json, mediaType: application/json}
+    review:
+      type: human
+      inputs:
+        document:
+          artifact: {mediaTypes: [application/json]}
+          bind: {from: nodes.prepare.outputs.document}
+      human:
+        prompt: {text: Approve this file after restarting the engine.}
+      outputs:
+        approved: {schema: {const: true}}
+    verify:
+      type: code
+      sandbox: python
+      inputs:
+        marker: {schema: {type: string}, bind: {from: inputs.marker}}
+        nonce: {schema: {type: string}, bind: {from: nodes.prepare.outputs.nonce}}
+        approved: {schema: {const: true}, bind: {from: nodes.review.outputs.approved}}
+        document:
+          artifact: {mediaTypes: [application/json]}
+          mount: incoming/checkpoint.json
+          bind: {from: nodes.prepare.outputs.document}
+      code: {command: [python, /package/recovery.py, verify]}
+      outputs:
+        nonce: {schema: {type: string}}
+        verified: {schema: {const: true}}
+  outputs:
+    document:
+      artifact: {mediaTypes: [application/json]}
+      bind: {from: nodes.prepare.outputs.document}
+    nonce: {schema: {type: string}, bind: {from: nodes.verify.outputs.nonce}}
+    verified: {schema: {const: true}, bind: {from: nodes.verify.outputs.verified}}

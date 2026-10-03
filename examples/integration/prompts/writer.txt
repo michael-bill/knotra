@@ -1,0 +1,8 @@
+Create a short Markdown report using actual tools in this order:
+1. Read incoming/dataset.csv with the provided files.read tool.
+2. Call the MCP tool described as dataset.stats using numbers from the rows input and marker from the marker input.
+3. Use files.write to create report.md. Include a heading, the run marker, and the row count and sum returned by the tool.
+4. Use process.exec to run python -c "from pathlib import Path; print(Path('report.md').read_text())" and check the file you created.
+5. Call knotra_finish alone with {"summary":"Report created and verified"}.
+Use paths relative to the workspace. Write the file before calling finish.
+Do not include a report field in finish: the engine collects report.md separately.

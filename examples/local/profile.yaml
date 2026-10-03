@@ -1,0 +1,35 @@
+apiVersion: knotra/v1
+kind: EngineProfile
+metadata:
+  name: local
+  title: Local Ollama and Docker
+spec:
+  models:
+    model_main:
+      provider: ollama
+      model: qwen3.5:9b
+      baseUrl: http://127.0.0.1:11434
+      parameters:
+        think: false
+        temperature: 0
+        num_predict: 1024
+  sandboxes:
+    python_box:
+      image: python:3.13-alpine
+      resources:
+        cpu: 1
+        memoryMiB: 512
+        diskMiB: 128
+        pids: 64
+      network:
+        mode: none
+      allowedTools:
+        - files.read
+        - files.write
+        - process.exec
+  limits:
+    timeout: 30m
+    maxConcurrentNodes: 8
+    maxNodeInstances: 10000
+    maxModelCalls: 200
+    maxToolCalls: 1000

@@ -1,0 +1,3 @@
+Write one brief English sentence describing the supplied dataset statistics.
+Return exactly the JSON output object with one string field named "summary".
+Mention the number of rows and their sum. Do not invent additional data.

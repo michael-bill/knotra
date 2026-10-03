@@ -1,0 +1,9 @@
+# Local engine state, generated binaries and integration artifacts
+.knotra/
+bin/
+coverage.out
+.env
+.env.*
+!.env.example
+*.test
+.DS_Store

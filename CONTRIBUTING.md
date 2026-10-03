@@ -1,0 +1,95 @@
+# Contributing to Knotra
+
+Knotra's YAML contract lives in [`docs/notation`](docs/notation/v1.md); the schema
+and prose together define behavior. Start by reading the relevant contract and
+the existing tests before changing execution semantics. A specification change
+must update its schema, diagnostics, fixtures, runtime behavior and documentation
+together. New syntax must not silently change already persisted runs.
+
+## Development environment
+
+Use the Go version in `go.mod`. The [running guide](docs/running.md) describes local
+Docker/Colima, PostgreSQL, Temporal and Ollama setup. For fast development:
+
+```sh
+go mod download
+make build
+make check
+```
+
+`make check` runs formatting checks, `go vet`, unit tests and the race detector.
+Unit tests may open loopback listeners. They require no paid model calls, installed
+Ollama, PostgreSQL or Docker daemon; integration tests skip unless explicitly enabled.
+
+## Package boundaries
+
+| Package | Responsibility |
+| --- | --- |
+| `internal/contract` | Package loading, strict parsing, semantic validation, CEL and immutable plan compilation |
+| `internal/engine` | Deterministic graph execution and Temporal workflow behavior |
+| `internal/adapters` | Model, MCP and isolated command execution behind injected durable hooks |
+| `internal/store` | PostgreSQL transactions, projections, durable operations and artifact metadata |
+| `internal/api`, `internal/protocol` | Versioned HTTP/SSE boundary and transport DTOs |
+| `internal/client`, `internal/cli` | Client mutation journals, event observation and command presentation |
+| `internal/app` | Dependency wiring and service lifecycle |
+
+Keep external I/O out of workflow code and expression evaluation. Pass
+`context.Context` through blocking work, bound reads and concurrency, preserve
+typed errors, and make cleanup ownership clear. Configuration and credentials
+are engine concerns; provider responses and pipeline content are untrusted data.
+Avoid global mutable state and broad interfaces added for hypothetical future use.
+
+Use ordinary Go conventions: `gofmt`, small cohesive functions, explicit errors,
+table-driven tests where they clarify behavior, and comments explaining invariants
+or non-obvious decisions. Tests should demonstrate contract behavior or prevent a
+specific failure, not mirror implementation line by line. Do not log secrets or
+provider-hidden reasoning. Never test arbitrary pipeline commands on the host.
+
+## Integration tests
+
+Start development infrastructure and build sandbox dependencies:
+
+```sh
+docker compose up -d --wait
+make helper firewall
+docker pull python:3.13-alpine
+export KNOTRA_TEST_DATABASE_URL='postgres://knotra:knotra-development@127.0.0.1:25432/knotra?sslmode=disable'
+export KNOTRA_TEST_HELPER="$PWD/.knotra/bin/sandbox-helper"
+export KNOTRA_TEST_WORKDIR="$PWD/.knotra/test-work"
+export KNOTRA_TEST_FIREWALL_IMAGE=knotra-firewall:dev
+go test -race -count=1 -timeout=15m ./internal/store ./internal/api ./internal/adapters/...
+```
+
+Use a development database. Database tests create isolated schemas; Docker tests
+remove their own containers. No blanket database reset or Docker prune is needed.
+The regular GitHub workflow runs these persistence, HTTP, sandbox and MCP checks
+without downloading a model.
+
+To include real local model calls, install `qwen3.5:9b` in Ollama and set:
+
+```sh
+export KNOTRA_TEST_OLLAMA=http://127.0.0.1:11434
+export KNOTRA_TEST_TEMPORAL=127.0.0.1:27233
+export KNOTRA_TEST_REAL=1
+go test -race -count=1 -timeout=30m ./internal/adapters/... ./internal/integration
+```
+
+These tests intentionally run actual models and isolated processes. They are
+separate from default CI so a contributor does not need model weights to submit a
+change. Report the exact integration command and environment used in a pull request.
+
+## Pull requests and compatibility
+
+Keep changes focused. Explain the trigger or problem, resulting behavior, and
+checks performed. Include a reproducible example for a bug and a regression test
+when appropriate. Keep schema errors, runtime failures and uncertain external
+outcomes distinct; do not turn an ambiguous write into an automatic retry.
+
+New adapters must validate capabilities before admission, fix resolved resources
+in the plan, count every outbound call, and document retry/idempotency behavior.
+Persistence changes must preserve existing histories and deployed data; add explicit
+migrations instead of resetting tables. Workflow changes need replay-compatible
+versioning when they would alter already recorded execution decisions.
+
+Do not add a project license or change its terms as part of an unrelated patch;
+licensing is an explicit maintainer decision.

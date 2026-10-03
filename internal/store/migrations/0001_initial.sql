@@ -1,0 +1,14 @@
+CREATE TABLE knotra_settings (key text PRIMARY KEY, value text NOT NULL);
+CREATE TABLE knotra_definitions (id text PRIMARY KEY, digest text UNIQUE NOT NULL, document json NOT NULL, created_at timestamptz NOT NULL DEFAULT now());
+CREATE TABLE knotra_runs (id text PRIMARY KEY, definition_id text NOT NULL REFERENCES knotra_definitions(id), document json NOT NULL, plan json NOT NULL, inputs json NOT NULL, created_at timestamptz NOT NULL DEFAULT now(), sequence bigint NOT NULL DEFAULT 0, cancel_requested boolean NOT NULL DEFAULT false);
+CREATE TABLE knotra_events (id bigserial PRIMARY KEY, run_id text NOT NULL REFERENCES knotra_runs(id), sequence bigint NOT NULL, document json NOT NULL, UNIQUE(run_id,sequence));
+CREATE INDEX knotra_events_run ON knotra_events(run_id,id);
+CREATE TABLE knotra_requests (id text PRIMARY KEY, run_id text NOT NULL REFERENCES knotra_runs(id), kind text NOT NULL, status text NOT NULL, document json NOT NULL, response_id text, response json, accepted_at timestamptz, created_at timestamptz NOT NULL DEFAULT now());
+CREATE INDEX knotra_requests_run ON knotra_requests(run_id);
+CREATE TABLE knotra_commands (principal text NOT NULL, id text NOT NULL, route text NOT NULL, digest text NOT NULL, status integer NOT NULL, response bytea NOT NULL, created_at timestamptz NOT NULL DEFAULT now(), PRIMARY KEY(principal,id));
+CREATE TABLE knotra_outbox (id bigserial PRIMARY KEY, run_id text NOT NULL REFERENCES knotra_runs(id), kind text NOT NULL, payload json NOT NULL, sent_at timestamptz, created_at timestamptz NOT NULL DEFAULT now());
+CREATE INDEX knotra_outbox_pending ON knotra_outbox(id) WHERE sent_at IS NULL;
+CREATE TABLE knotra_artifacts (id text PRIMARY KEY, document json NOT NULL, created_at timestamptz NOT NULL DEFAULT now());
+CREATE TABLE knotra_operations (id text PRIMARY KEY, run_id text NOT NULL REFERENCES knotra_runs(id), kind text NOT NULL, effect text NOT NULL, completed boolean NOT NULL DEFAULT false, response bytea, created_at timestamptz NOT NULL DEFAULT now());
+CREATE TABLE knotra_budgets (run_id text NOT NULL REFERENCES knotra_runs(id), scope text NOT NULL, kind text NOT NULL, used bigint NOT NULL, PRIMARY KEY(run_id,scope,kind));
+CREATE TABLE knotra_instances (run_id text NOT NULL REFERENCES knotra_runs(id), id text NOT NULL, sequence bigint NOT NULL, document json NOT NULL, PRIMARY KEY(run_id,id));

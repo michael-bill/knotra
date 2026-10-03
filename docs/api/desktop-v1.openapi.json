@@ -1,14 +1,14 @@
 {
   "openapi": "3.1.0",
   "info": {
-    "title": "Knotra desktop engine boundary",
-    "version": "0.1.0-proposal",
-    "description": "PROPOSAL. The app implements this client. No Go engine implementation is supplied. See desktop-v1.md for normative idempotency, events, security and execution rules."
+    "title": "Knotra client engine boundary",
+    "version": "1.0.0",
+    "description": "Implemented HTTP API for the Go engine and CLI. The protocol identifier remains knotra.desktop/1. See desktop-v1.md for normative idempotency, events, security and execution rules."
   },
   "servers": [
     {
-      "url": "http://127.0.0.1:8080/v1",
-      "description": "Future local engine"
+      "url": "http://127.0.0.1:8787/v1",
+      "description": "Local engine"
     }
   ],
   "security": [
@@ -215,10 +215,17 @@
                       "items": {
                         "$ref": "#/components/schemas/Definition"
                       }
+                    },
+                    "nextCursor": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
                     }
                   },
                   "required": [
-                    "items"
+                    "items",
+                    "nextCursor"
                   ]
                 }
               }
@@ -234,13 +241,23 @@
               }
             }
           }
-        }
+        },
+        "parameters": [
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
       },
       "post": {
         "operationId": "post_definitions",
         "summary": "Commit immutable package version",
         "responses": {
-          "200": {
+          "201": {
             "description": "Successful result or durable command receipt.",
             "content": {
               "application/json": {
@@ -389,7 +406,7 @@
         "operationId": "post_runs",
         "summary": "Admit and accept a run",
         "responses": {
-          "200": {
+          "201": {
             "description": "Successful result or durable command receipt.",
             "content": {
               "application/json": {
@@ -517,7 +534,7 @@
         "operationId": "post_runs_runId_cancel",
         "summary": "Request cancel without inventing client-side transitions",
         "responses": {
-          "200": {
+          "202": {
             "description": "Successful result or durable command receipt.",
             "content": {
               "application/json": {
@@ -576,14 +593,14 @@
     "/runs/{runId}/resume": {
       "post": {
         "operationId": "post_runs_runId_resume",
-        "summary": "Request resume without inventing client-side transitions",
+        "summary": "Reject unsupported checkpoint resume; use an advertised resolution action",
         "responses": {
-          "200": {
-            "description": "Successful result or durable command receipt.",
+          "409": {
+            "description": "UNSAFE_ACTION: no resumable checkpoint is advertised by this engine.",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/AcceptedRun"
+                  "$ref": "#/components/schemas/Error"
                 }
               }
             }
@@ -639,7 +656,7 @@
         "operationId": "post_runs_runId_instances_instanceId_resolve",
         "summary": "Resolve an unknown external outcome using evidence",
         "responses": {
-          "200": {
+          "202": {
             "description": "Successful result or durable command receipt.",
             "content": {
               "application/json": {
@@ -850,7 +867,7 @@
         "operationId": "post_artifacts",
         "summary": "Register uploaded input bytes",
         "responses": {
-          "200": {
+          "201": {
             "description": "Successful result or durable command receipt.",
             "content": {
               "application/json": {
@@ -1154,7 +1171,9 @@
             "items": {
               "$ref": "#/components/schemas/PackageFile"
             },
-            "maxItems": 511
+            "maxItems": 512,
+            "minItems": 1,
+            "description": "Complete package manifest, including the entrypoint. Its decoded bytes must equal source when source is nonempty."
           }
         },
         "required": [
@@ -1520,12 +1539,12 @@
                 "additionalProperties": {
                   "oneOf": [
                     {
-                      "$ref": "#/components/schemas/Artifact"
+                      "$ref": "#/components/schemas/ContextArtifact"
                     },
                     {
                       "type": "array",
                       "items": {
-                        "$ref": "#/components/schemas/Artifact"
+                        "$ref": "#/components/schemas/ContextArtifact"
                       }
                     }
                   ]
@@ -1771,6 +1790,35 @@
         "required": [
           "items",
           "nextCursor"
+        ]
+      },
+      "ContextArtifact": {
+        "type": "object",
+        "description": "Artifact handle in a node input envelope; metadata and content can be retrieved by ID.",
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          },
+          "mediaType": {
+            "type": "string"
+          },
+          "size": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 67108864
+          },
+          "sha256": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          }
+        },
+        "required": [
+          "id",
+          "mediaType",
+          "size",
+          "sha256"
         ]
       }
     },
