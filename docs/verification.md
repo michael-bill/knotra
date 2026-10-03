@@ -63,8 +63,15 @@ functional edits concern the documented integration fixes. Applied SQL migration
 assets and dependency locks are not hand formatted.
 
 Vite reports the existing large-bundle warning. Signing/notarization and Windows or Linux native
-builds were not verified in this macOS review. GitHub workflow commands were run locally; the remote
-CI jobs have not been run by this change.
+builds were not verified in this macOS review. The first GitHub run passed Go checks and
+integration, native tests, Python fixtures, and frontend formatting, unit tests and build. Its Linux
+browser job failed because screenshots used macOS temporary paths and two polling callbacks read
+data before the browser's debounced persistence completed.
+
+The CI follow-up uses Playwright per-test output directories and waits for persisted state without
+throwing on fields that have not been saved yet. The complete offline browser suite passed locally
+with `CI=1`: 39 tests passed; the two opt-in real-engine scenarios were skipped. Application
+behavior was unchanged by this follow-up.
 
 ## Historical verification on 3 October 2026
 

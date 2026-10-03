@@ -13,6 +13,7 @@ test.beforeEach(async ({ page }) => {
   await page.setViewportSize({ width: 1456, height: 767 });
   await page.goto('/');
   await expect(page.getByRole('heading', { name: 'Research brief', exact: true })).toBeVisible();
+  await expect.poll(() => state(page)).not.toBeNull();
 });
 
 test.afterEach(async ({ page }) => {
@@ -127,7 +128,7 @@ async function configure(page: Page, id: string, node: any) {
       .fill('{"query":"Verified UI"}');
     await save(page);
     await expect
-      .poll(async () => (await pipeline(page)).spec.nodes[id].tool.arguments.value.query)
+      .poll(async () => (await pipeline(page)).spec.nodes[id].tool.arguments?.value?.query)
       .toBe('Verified UI');
     await page.getByRole('combobox', { name: 'Tool arguments', exact: true }).selectOption('expr');
     await page
@@ -228,7 +229,7 @@ for (const title of templates)
     await expect(page.locator('.validation-summary')).toContainText('Local checks passed');
     await fits(page);
     await page.screenshot({
-      path: `/private/tmp/knotra-audit-template-${title.replaceAll(' ', '-')}.png`,
+      path: test.info().outputPath(`knotra-audit-template-${title.replaceAll(' ', '-')}.png`),
     });
     await page.getByRole('button', { name: 'Inputs & outputs', exact: true }).click();
     const selected = await page
@@ -315,7 +316,7 @@ test('scratch workflow supports port values, expressions, schemas and block remo
   await page.getByRole('textbox', { name: 'Value for context', exact: true }).fill('User context');
   await save(page);
   await expect
-    .poll(async () => (await pipeline(page)).spec.nodes.ask_copy?.inputs.context.bind.value)
+    .poll(async () => (await pipeline(page)).spec.nodes.ask_copy?.inputs?.context?.bind?.value)
     .toBe('User context');
   await page
     .getByRole('combobox', { name: 'Source for context', exact: true })
@@ -325,7 +326,7 @@ test('scratch workflow supports port values, expressions, schemas and block remo
     .fill('"Computed context"');
   await save(page);
   await expect
-    .poll(async () => (await pipeline(page)).spec.nodes.ask_copy?.inputs.context.bind.expr)
+    .poll(async () => (await pipeline(page)).spec.nodes.ask_copy?.inputs?.context?.bind?.expr)
     .toBe('"Computed context"');
   await page
     .getByRole('combobox', { name: 'Source for context', exact: true })
@@ -334,7 +335,7 @@ test('scratch workflow supports port values, expressions, schemas and block remo
   await page.getByRole('textbox', { name: 'JSON pointer', exact: true }).fill('/answer');
   await save(page);
   await expect
-    .poll(async () => (await pipeline(page)).spec.nodes.ask_copy?.inputs.context.bind.path)
+    .poll(async () => (await pipeline(page)).spec.nodes.ask_copy?.inputs?.context?.bind?.path)
     .toBe('/answer');
   await page.getByRole('button', { name: 'Add output', exact: true }).click();
   await page.getByRole('textbox', { name: 'New output name', exact: true }).fill('extra');
@@ -460,7 +461,7 @@ test('resource tabs lead directly to their editors and persist alias edits', asy
       .locator('.resource-card')
       .filter({ has: page.getByRole('heading', { name: 'researcher', exact: true }) }),
   ).toContainText('model_verified');
-  await page.screenshot({ path: '/private/tmp/knotra-audit-resources-edited.png' });
+  await page.screenshot({ path: test.info().outputPath('knotra-audit-resources-edited.png') });
 });
 
 test('settings, search, shortcuts and modal dismissal work with persisted preferences', async ({
@@ -505,7 +506,7 @@ test('settings, search, shortcuts and modal dismissal work with persisted prefer
   await page.getByRole('button', { name: 'New pipeline', exact: true }).click();
   await page.locator('.modal-backdrop').click({ position: { x: 5, y: 5 } });
   await expect(page.getByRole('dialog')).toHaveCount(0);
-  await page.screenshot({ path: '/private/tmp/knotra-audit-settings-light.png' });
+  await page.screenshot({ path: test.info().outputPath('knotra-audit-settings-light.png') });
 });
 
 test('folder and loose YAML imports work and reject invalid selections', async ({ page }) => {
@@ -582,7 +583,7 @@ test('demo tabs, cancellation, review links and artifact search complete the run
     page.getByRole('heading', { name: 'Completed UI check', exact: true }),
   ).toBeVisible();
   await page.getByRole('button', { name: 'Review request', exact: true }).click();
-  await page.screenshot({ path: '/private/tmp/knotra-audit-review-dark.png' });
+  await page.screenshot({ path: test.info().outputPath('knotra-audit-review-dark.png') });
   await page.getByRole('button', { name: 'JSON response', exact: true }).click();
   await page
     .getByRole('textbox', { name: 'Review JSON response', exact: true })
@@ -593,7 +594,7 @@ test('demo tabs, cancellation, review links and artifact search complete the run
     .getByRole('textbox', { name: 'Review JSON response', exact: true })
     .fill('{"feedback":"UI verified"}');
   await page.getByRole('button', { name: 'Submit response', exact: true }).click();
-  await expect.poll(async () => (await state(page)).runs[0].status).toBe('succeeded');
+  await expect.poll(async () => (await state(page)).runs[0]?.status).toBe('succeeded');
   await nav(page, 'Runs');
   await page
     .getByRole('combobox', { name: 'Filter runs by status', exact: true })
@@ -601,7 +602,7 @@ test('demo tabs, cancellation, review links and artifact search complete the run
   await page.locator('.table-row').filter({ hasText: 'Completed UI check' }).click();
   await page.getByRole('button', { name: 'Outputs', exact: true }).click();
   await expect(page.locator('.json-view')).toContainText('document');
-  await page.screenshot({ path: '/private/tmp/knotra-audit-run-complete.png' });
+  await page.screenshot({ path: test.info().outputPath('knotra-audit-run-complete.png') });
   await nav(page, 'Artifacts');
   await page.locator('.artifact-card').click();
   await expect(page.locator('.artifact-text')).toContainText('UI verified');
@@ -613,7 +614,7 @@ test('demo tabs, cancellation, review links and artifact search complete the run
     .getByRole('textbox', { name: 'Search artifacts', exact: true })
     .fill('Completed UI check');
   await expect(page.locator('.artifact-card')).toHaveCount(1);
-  await page.screenshot({ path: '/private/tmp/knotra-audit-artifact-dark.png' });
+  await page.screenshot({ path: test.info().outputPath('knotra-audit-artifact-dark.png') });
   for (const theme of ['dark', 'light'] as const) {
     await page.getByRole('button', { name: 'Settings', exact: true }).click();
     await page
@@ -640,7 +641,9 @@ test('demo tabs, cancellation, review links and artifact search complete the run
         }
         await fits(page);
         await page.screenshot({
-          path: `/private/tmp/knotra-audit-${view.toLowerCase()}-${theme}-${width}-${height}.png`,
+          path: test
+            .info()
+            .outputPath(`knotra-audit-${view.toLowerCase()}-${theme}-${width}-${height}.png`),
         });
       }
     }
@@ -685,7 +688,7 @@ test('workflow inputs, exports and all editable resource aliases persist', async
     .fill('"Reference information"');
   await save(page);
   await expect
-    .poll(async () => (await pipeline(page)).spec.inputs.context?.default)
+    .poll(async () => (await pipeline(page)).spec.inputs?.context?.default)
     .toBe('Reference information');
   await page.getByRole('textbox', { name: 'New workflow output', exact: true }).fill('summary');
   await page
@@ -696,7 +699,7 @@ test('workflow inputs, exports and all editable resource aliases persist', async
     .getByRole('combobox', { name: 'Source for summary', exact: true })
     .selectOption('inputs.context');
   await expect
-    .poll(async () => (await pipeline(page)).spec.outputs.summary?.bind.from)
+    .poll(async () => (await pipeline(page)).spec.outputs?.summary?.bind?.from)
     .toBe('inputs.context');
   for (const [kind, summary, aliasLabel, alias, idLabel, connection] of [
     ['models', 'Models', 'New model alias', 'assistant', 'Connection ID', 'model_verified'],
@@ -713,7 +716,7 @@ test('workflow inputs, exports and all editable resource aliases persist', async
     await expect
       .poll(
         async () =>
-          (await pipeline(page)).spec[kind][alias]?.[
+          (await pipeline(page)).spec[kind]?.[alias]?.[
             kind === 'sandboxes' ? 'profile' : 'connection'
           ],
       )

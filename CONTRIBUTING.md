@@ -78,9 +78,11 @@ fixtures and generated content. Use `black --check scripts examples/integration`
 Python sources. The structural fixture script has reproducible
 [setup instructions](contracts/v1/fixtures/README.md).
 
-The desktop CI workflow runs these offline/fixture checks and native tests on macOS. Browser
-acceptance against a real engine is opt-in. Start an engine with `examples/local/profile.yaml` and
-the exact browser origin as described in [app/README](app/README.md), then run from `app/`:
+The desktop CI workflow runs frontend and contract-script checks on Linux and native tests on macOS.
+Browser screenshots and failure traces are written to per-test directories in `app/test-results/`;
+tests must use Playwright output paths rather than OS-specific temporary paths. Browser acceptance
+against a real engine is opt-in. Start an engine with `examples/local/profile.yaml` and the exact
+browser origin as described in [app/README](app/README.md), then run from `app/`:
 
 ```sh
 KNOTRA_E2E_ENDPOINT=http://127.0.0.1:8787 bun run test:e2e

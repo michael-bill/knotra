@@ -410,7 +410,9 @@ test('engine admission, immutable package, live events, request response and bin
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
         true,
       );
-      await page.screenshot({ path: `/private/tmp/knotra-engine-${section}-${theme}.png` });
+      await page.screenshot({
+        path: test.info().outputPath(`knotra-engine-${section}-${theme}.png`),
+      });
     }
   }
   expect(errors).toEqual([]);

@@ -14,6 +14,7 @@ async function navigate(page: Page, name: string) {
 async function open(page: Page) {
   await page.goto('/');
   await expect(page.getByRole('heading', { name: 'Research brief', exact: true })).toBeVisible();
+  await expect.poll(() => persisted(page)).not.toBeNull();
 }
 
 async function persisted(page: Page) {
@@ -177,7 +178,9 @@ test('saved human request resumes once and produces a traceable artifact', async
         };
       });
       expect(geometry).toEqual({ aligned: true, separated: true, fits: true });
-      await page.screenshot({ path: `/private/tmp/knotra-runs-${theme}-${width}.png` });
+      await page.screenshot({
+        path: test.info().outputPath(`knotra-runs-${theme}-${width}.png`),
+      });
     }
     await page.locator('.table-row').first().click();
     await expect(page.locator('.run-bottom')).toBeVisible();
@@ -196,7 +199,7 @@ for (const theme of ['dark', 'light'] as const)
     await page
       .getByRole('radio', { name: theme === 'dark' ? 'Dark' : 'Light', exact: true })
       .click();
-    await expect.poll(async () => (await persisted(page)).theme).toBe(theme);
+    await expect.poll(async () => (await persisted(page))?.theme).toBe(theme);
     await page.reload();
     await expect(page.locator('html')).toHaveAttribute('data-theme', theme);
     await expect(page.locator(`.react-flow.${theme}`)).toBeVisible();
@@ -381,7 +384,7 @@ test('configure a nested body and add blocks in its own scope', async ({ page })
       async () =>
         (await persisted(page)).workspaces.find((w: { source: string }) =>
           w.source.includes('foreach-contract'),
-        ).source,
+        )?.source,
     )
     .toContain('concurrency: 3');
 });
@@ -429,6 +432,8 @@ for (const theme of ['dark', 'light'] as const)
         };
       });
       expect(geometry).toEqual({ fullWidth: true, stacked: true, fits: true });
-      await page.screenshot({ path: `/private/tmp/knotra-source-${theme}-${width}.png` });
+      await page.screenshot({
+        path: test.info().outputPath(`knotra-source-${theme}-${width}.png`),
+      });
     }
   });
