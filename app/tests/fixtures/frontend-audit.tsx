@@ -6,6 +6,7 @@ import SourceEditor from '../../src/components/SourceEditor';
 import WorkspaceView from '../../src/components/WorkspaceView';
 import { Modal } from '../../src/components/ui';
 import { connectEngine } from '../../src/lib/engine/client';
+import type { EngineRequest } from '../../src/lib/engine/types';
 import type { EngineController } from '../../src/lib/engine/useEngine';
 import { validatePipeline } from '../../src/lib/validation';
 import type { Workspace } from '../../src/lib/types';
@@ -38,7 +39,7 @@ const engine: EngineController = {
   profiles: [],
   resources: [],
   pending: [],
-  requests: ['first', 'second'].map((name) => ({
+  requests: ['first', 'second'].map((name): EngineRequest => ({
     id: `request-${name}`,
     runId: `run-${name}`,
     instanceId: `root/${name}`,
@@ -47,7 +48,20 @@ const engine: EngineController = {
     prompt: `Review ${name} request.`,
     createdAt: '2026-10-01T00:00:00Z',
     deadline: '2030-01-01T00:00:00Z',
-    inputs: { values: {}, artifacts: {} },
+    inputs: {
+      values: {},
+      artifacts:
+        name === 'first'
+          ? {
+              document: {
+                id: 'artifact-1',
+                mediaType: 'text/plain',
+                size: 5,
+                sha256: '2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824',
+              },
+            }
+          : {},
+    },
     responseSchema: { type: 'object' },
   })),
   connect: async () => {},
@@ -130,6 +144,9 @@ function Fixture() {
   }
 }
 
-if (new URLSearchParams(location.search).get('component') === 'artifacts')
+if (
+  new URLSearchParams(location.search).get('component') === 'artifacts' ||
+  new URLSearchParams(location.search).has('connected')
+)
   await connectEngine('http://127.0.0.1:19879');
 createRoot(document.getElementById('root')!).render(<Fixture />);

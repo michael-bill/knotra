@@ -516,7 +516,7 @@ test('settings, search, shortcuts and modal dismissal work with persisted prefer
   await page.getByRole('button', { name: 'Export backup', exact: true }).click();
   const backup = JSON.parse(readFileSync((await (await download).path())!, 'utf8'));
   expect(backup.theme).toBe('light');
-  expect(backup.workspaces).toHaveLength(5);
+  expect(backup.workspaces).toHaveLength(6);
   await page.keyboard.press('Control+n');
   await expect(page.getByRole('dialog')).toBeVisible();
   await page.keyboard.press('Escape');

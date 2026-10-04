@@ -100,6 +100,8 @@ func New(options Options) *cobra.Command {
 	root.AddCommand(
 		s.validateCommand(),
 		s.serveCommand(),
+		s.bootstrapCommand(false),
+		s.bootstrapCommand(true),
 		s.runCommand(),
 		s.runsCommand(),
 		s.definitionsCommand(),

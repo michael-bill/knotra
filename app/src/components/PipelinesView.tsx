@@ -189,6 +189,7 @@ export function TemplateLibrary({ onSelect }: { onSelect: (id: string) => void }
                       {
                         hello: 'llm',
                         'research-dossier': 'agent',
+                        'reviewed-research': 'human',
                         'tic-tac-toe': 'code',
                         publication: 'human',
                         subpipeline: 'pipeline',

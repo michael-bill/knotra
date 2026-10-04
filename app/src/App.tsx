@@ -64,7 +64,7 @@ import {
   type TranslationValues,
   type MessageKey,
 } from './lib/i18n';
-import { loadWorkspace, saveState, readBackup, type State } from './lib/storage';
+import { STARTER_REVISION, loadWorkspace, saveState, readBackup, type State } from './lib/storage';
 import { parsePipeline, validatePipeline, validPath } from './lib/validation';
 import { base64, decodeText, textBytes, unbase64 } from './lib/bytes';
 import {
@@ -192,7 +192,7 @@ function WorkspaceRecovery({
           if (!file) return;
           try {
             if (file.size > 96 * 1024 * 1024) throw new Error('Workspace backup exceeds 96 MiB.');
-            setCandidate({ ...readBackup(await file.text()), starterRevision: 3 });
+            setCandidate({ ...readBackup(await file.text()), starterRevision: STARTER_REVISION });
           } catch (e) {
             setDetail(e instanceof Error ? e.message : String(e));
             setCandidate(undefined);
@@ -1076,7 +1076,10 @@ function LoadedApp({ initial }: { initial: State }) {
               try {
                 if (file.size > 96 * 1024 * 1024)
                   throw new Error('Workspace backup exceeds 96 MiB.');
-                setRestoring({ ...readBackup(await file.text()), starterRevision: 3 });
+                setRestoring({
+                  ...readBackup(await file.text()),
+                  starterRevision: STARTER_REVISION,
+                });
                 setDialog('restore');
               } catch (error) {
                 notify(error instanceof Error ? error.message : String(error));

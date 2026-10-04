@@ -6,17 +6,18 @@ const key = 'knotra.workspace.v1';
 const titles = [
   'Hello, model',
   'Research dossier from source materials',
+  'Research, verify and approve',
   'Build a playable game',
   'From brief to reviewed publication',
 ];
 
-test('fresh launch lists four runnable starters, filters them, and opens editors explicitly', async ({
+test('fresh launch lists five runnable starters, filters them, and opens editors explicitly', async ({
   page,
 }, testInfo) => {
   const errors: string[] = [];
   page.on('pageerror', (error) => errors.push(error.message));
   await page.goto('/');
-  await expect(page.locator('.pipeline-card')).toHaveCount(4);
+  await expect(page.locator('.pipeline-card')).toHaveCount(5);
   await expect(page.locator('.graph-view')).toHaveCount(0);
   for (const title of titles)
     await expect(page.getByRole('button', { name: `Open ${title}`, exact: true })).toBeVisible();
@@ -29,14 +30,14 @@ test('fresh launch lists four runnable starters, filters them, and opens editors
     .getByRole('navigation', { name: 'Main navigation' })
     .getByRole('button', { name: 'Pipelines', exact: true })
     .click();
-  await expect(page.locator('.pipeline-card')).toHaveCount(4);
-  await page.locator('.sidebar-pipelines > button').filter({ hasText: titles[2] }).click();
-  await expect(page.getByRole('heading', { name: titles[2], exact: true })).toBeVisible();
+  await expect(page.locator('.pipeline-card')).toHaveCount(5);
+  await page.locator('.sidebar-pipelines > button').filter({ hasText: titles[3] }).click();
+  await expect(page.getByRole('heading', { name: titles[3], exact: true })).toBeVisible();
   await page.reload();
-  await expect(page.locator('.pipeline-card')).toHaveCount(4);
+  await expect(page.locator('.pipeline-card')).toHaveCount(5);
   await expect(page.locator('.graph-view')).toHaveCount(0);
   const saved = await page.evaluate((key) => JSON.parse(localStorage.getItem(key)!), key);
-  expect(saved.starterRevision).toBe(3);
+  expect(saved.starterRevision).toBe(4);
   expect(
     saved.workspaces.map((workspace: { source: string }) => parse(workspace.source).metadata.title),
   ).toEqual(titles);
@@ -56,7 +57,7 @@ test('Library separates runnable starters, building blocks and guided demo and o
     'aria-pressed',
     'true',
   );
-  await expect(page.locator('.template-card')).toHaveCount(4);
+  await expect(page.locator('.template-card')).toHaveCount(5);
   await page.getByRole('button', { name: 'Guided demo', exact: true }).click();
   await expect(page.locator('.template-card')).toHaveCount(1);
   await expect(page.locator('.template-card')).toContainText('Research brief');
@@ -68,7 +69,7 @@ test('Library separates runnable starters, building blocks and guided demo and o
   await page.locator('.template-card').filter({ hasText: titles[0] }).click();
   await expect(page.getByRole('heading', { name: titles[0], exact: true })).toBeVisible();
   await expect(page.locator('.graph-view')).toBeVisible();
-  await expect(page.locator('.sidebar-pipelines > button')).toHaveCount(5);
+  await expect(page.locator('.sidebar-pipelines > button')).toHaveCount(6);
 });
 
 test('unreadable local data remains downloadable and a reviewed legacy backup restores exactly after reload', async ({
@@ -128,7 +129,7 @@ test('unreadable local data remains downloadable and a reviewed legacy backup re
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'light');
   const restored = await page.evaluate((key) => JSON.parse(localStorage.getItem(key)!), key);
   expect(restored.workspaces).toEqual(backup.workspaces);
-  expect(restored.starterRevision).toBe(3);
+  expect(restored.starterRevision).toBe(4);
 });
 
 test('a disconnected starter directs execution to engine settings', async ({ page }) => {
@@ -150,7 +151,7 @@ test.describe('Russian starter workspace', () => {
     const ru = JSON.parse(readFileSync('src/locales/ru.json', 'utf8'));
     await page.goto('/');
     await expect(page.locator('html')).toHaveAttribute('lang', 'ru');
-    await expect(page.locator('.pipeline-card')).toHaveCount(4);
+    await expect(page.locator('.pipeline-card')).toHaveCount(5);
     await expect(page.locator('.pipeline-card').first()).not.toContainText(titles[0]);
     await page.getByRole('button', { name: ru['navigation.settings'], exact: true }).click();
     await page.getByRole('radio', { name: ru['resources.light'], exact: true }).click();
@@ -165,7 +166,7 @@ test.describe('Russian starter workspace', () => {
       .locator('.app-sidebar')
       .getByRole('button', { name: ru['shell.newPipeline'], exact: true })
       .click();
-    await expect(page.locator('.template-card')).toHaveCount(4);
+    await expect(page.locator('.template-card')).toHaveCount(5);
     await page.screenshot({
       path: testInfo.outputPath('starter-library-ru-light.png'),
       fullPage: true,

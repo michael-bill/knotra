@@ -6,19 +6,20 @@ import { graphOrder } from '../src/lib/graph';
 import { translate } from '../src/lib/i18n';
 import { parsePipeline, validateResponse } from '../src/lib/validation';
 
-const starterIDs = ['hello', 'research-dossier', 'tic-tac-toe', 'publication'];
+const starterIDs = ['hello', 'research-dossier', 'reviewed-research', 'tic-tac-toe', 'publication'];
 const example = (id: string) => examples.find((candidate) => candidate.id === id)!;
 
 describe('runnable starter packages', () => {
-  it('seeds four local scenarios while keeping the demo and technical blocks in the library', () => {
+  it('seeds five scenarios while keeping the demo and technical blocks in the library', () => {
     expect(examples.filter((item) => item.category === 'starter').map((item) => item.id)).toEqual(
       starterIDs,
     );
     const initial = initialWorkspaces();
-    expect(initial).toHaveLength(4);
+    expect(initial).toHaveLength(5);
     expect(initial.map((workspace) => parsePipeline(workspace.source)!.metadata.name)).toEqual([
       'hello-world',
       'research-dossier',
+      'reviewed-research',
       'build-tic-tac-toe',
       'publication-workflow',
     ]);

@@ -330,6 +330,7 @@ export function SettingsView({
             )}
           </span>
         </div>
+        <p className="muted">{t('resources.quickstartHint')}</p>
         <label className="field">
           {t('resources.engineBaseUrl')}
           <div className="inline">

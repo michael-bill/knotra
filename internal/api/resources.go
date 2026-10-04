@@ -67,7 +67,11 @@ func (s *Server) resources(w http.ResponseWriter, r *http.Request) {
 				switch kind {
 				case "model":
 					m := p.Spec.Models[id]
-					available = m.Provider == "ollama" && credentialsReady(m.Auth)
+					available = slices.Contains([]string{"ollama", "openai", "anthropic"}, m.Provider) && credentialsReady(m.Auth)
+					if m.Provider != "ollama" {
+						_, hasKey := m.Auth["key"]
+						available = available && hasKey
+					}
 				case "mcp":
 					m := p.Spec.MCP[id]
 					available = credentialsReady(m.Headers) && credentialsReady(m.Env)

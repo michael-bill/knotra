@@ -8,12 +8,14 @@ import type { Theme } from './theme';
 import { normalizeLocale, preferredLocale, type Locale } from './i18n';
 import type { DemoRun, Workspace } from './types';
 
+export const STARTER_REVISION = 4;
+
 const KEY = 'knotra.workspace.v1';
 const foldPath = (path: string) => path.replace(/[A-Z]/g, (letter) => letter.toLowerCase());
 
 export interface State {
   version: 1;
-  starterRevision?: 1 | 2 | 3;
+  starterRevision?: 1 | 2 | 3 | 4;
   workspaces: Workspace[];
   runs: DemoRun[];
   activeId: string;
@@ -28,7 +30,7 @@ export function freshState(): State {
   const workspaces = initialWorkspaces(locale);
   return {
     version: 1,
-    starterRevision: 3,
+    starterRevision: STARTER_REVISION,
     workspaces,
     runs: [],
     activeId: workspaces[0].id,
@@ -47,7 +49,7 @@ export function loadState(): State {
 // Importing a backup is exact; only opening an older installation adds new starters.
 // Once marked, deliberately deleted starters stay deleted on subsequent launches.
 export async function migrateStarters(state: State): Promise<State> {
-  if (state.starterRevision === 3) return state;
+  if (state.starterRevision === STARTER_REVISION) return state;
   const nameOf = (workspace: Workspace): string | undefined => {
     // A draft may temporarily fail contract validation while retaining its identity.
     if (workspace.source.length > 8 * 1024 * 1024) return;
@@ -58,6 +60,20 @@ export async function migrateStarters(state: State): Promise<State> {
       return;
     }
   };
+  // Revision 3 already installed the original starters. Add only the new one,
+  // so upgrading does not restore examples deliberately deleted by the user.
+  if (state.starterRevision === 3) {
+    const additions = initialWorkspaces(state.locale).filter(
+      (workspace) =>
+        nameOf(workspace) === 'reviewed-research' &&
+        !state.workspaces.some((existing) => nameOf(existing) === 'reviewed-research'),
+    );
+    return {
+      ...state,
+      starterRevision: STARTER_REVISION,
+      workspaces: [...state.workspaces, ...additions],
+    };
+  }
   const fingerprint = (source: string, files: Workspace['files']) =>
     sha256(
       textBytes(
@@ -106,7 +122,7 @@ export async function migrateStarters(state: State): Promise<State> {
   const workspaces = [...retained, ...additions];
   return {
     ...state,
-    starterRevision: 3,
+    starterRevision: STARTER_REVISION,
     workspaces,
     activeId: workspaces.some((w) => w.id === state.activeId)
       ? state.activeId
@@ -266,8 +282,8 @@ export function readBackup(text: string): State {
     throw new Error('Invalid engine address in backup.');
   return {
     version: 1,
-    ...([1, 2, 3].includes(value.starterRevision)
-      ? { starterRevision: value.starterRevision as 1 | 2 | 3 }
+    ...([1, 2, 3, 4].includes(value.starterRevision)
+      ? { starterRevision: value.starterRevision as 1 | 2 | 3 | 4 }
       : {}),
     workspaces: value.workspaces,
     runs: value.runs,

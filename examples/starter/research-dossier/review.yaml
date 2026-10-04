@@ -1,0 +1,101 @@
+apiVersion: knotra/v1
+kind: Pipeline
+metadata:
+  name: reviewed-research
+  title: Research, verify, review and recover
+  description:
+    Build an evidence dossier, pause for approval and publish the reviewed files after a restart.
+spec:
+  files: [pipeline.yaml, schemas/weights.json, scripts/approve.py]
+  schemas:
+    weights: { file: schemas/weights.json }
+  sandboxes:
+    work: { profile: python_box }
+  inputs:
+    question:
+      schema: { type: string, minLength: 1 }
+      default: Which approach should our team choose to launch its help center?
+    monthly_budget:
+      schema: { type: number, minimum: 1, maximum: 100000 }
+      default: 200
+    launch_days:
+      schema: { type: integer, minimum: 1, maximum: 365 }
+      default: 10
+    weights:
+      schemaRef: weights
+      default: { cost: 25, speed: 35, control: 25, support: 15 }
+  nodes:
+    research:
+      type: pipeline
+      inputs:
+        question: { schema: { type: string }, bind: { from: inputs.question } }
+        monthly_budget: { schema: { type: number }, bind: { from: inputs.monthly_budget } }
+        launch_days: { schema: { type: integer }, bind: { from: inputs.launch_days } }
+        weights: { schemaRef: weights, bind: { from: inputs.weights } }
+      pipeline:
+        file: pipeline.yaml
+        permissions:
+          models: [model_main]
+          mcp: {}
+          sandboxes: [python_box]
+          secrets: []
+    review:
+      type: human
+      inputs:
+        dossier:
+          artifact: { mediaTypes: [text/markdown] }
+          bind: { from: nodes.research.outputs.document }
+        comparison:
+          artifact: { mediaTypes: [application/json] }
+          bind: { from: nodes.research.outputs.comparison_data }
+      human:
+        prompt:
+          text: |
+            Read the dossier and verified comparison. You can stop and restart the engine now;
+            this request and its files remain available. Approve to publish the reviewed bundle,
+            or cancel the run if the evidence is insufficient. Supply your name and any comments.
+      outputs:
+        approved: { schema: { const: true } }
+        reviewer: { schema: { type: string, minLength: 1 } }
+        comments: { schema: { type: string } }
+    publish:
+      type: code
+      sandbox: work
+      inputs:
+        approved: { schema: { const: true }, bind: { from: nodes.review.outputs.approved } }
+        reviewer: { schema: { type: string }, bind: { from: nodes.review.outputs.reviewer } }
+        comments: { schema: { type: string }, bind: { from: nodes.review.outputs.comments } }
+        dossier:
+          artifact: { mediaTypes: [text/markdown] }
+          mount: incoming/dossier.md
+          bind: { from: nodes.research.outputs.document }
+        comparison:
+          artifact: { mediaTypes: [application/json] }
+          mount: incoming/comparison.json
+          bind: { from: nodes.research.outputs.comparison_data }
+        bundle:
+          artifact: { mediaTypes: [application/zip] }
+          mount: incoming/dossier.zip
+          bind: { from: nodes.research.outputs.bundle }
+      code:
+        command: [python3, /package/scripts/approve.py]
+      outputs:
+        dossier:
+          artifact: { mediaTypes: [text/markdown] }
+          collect: { path: approved-dossier.md, mediaType: text/markdown }
+        review:
+          artifact: { mediaTypes: [application/json] }
+          collect: { path: review.json, mediaType: application/json }
+        bundle:
+          artifact: { mediaTypes: [application/zip] }
+          collect: { path: approved-dossier.zip, mediaType: application/zip }
+  outputs:
+    dossier:
+      artifact: { mediaTypes: [text/markdown] }
+      bind: { from: nodes.publish.outputs.dossier }
+    review:
+      artifact: { mediaTypes: [application/json] }
+      bind: { from: nodes.publish.outputs.review }
+    bundle:
+      artifact: { mediaTypes: [application/zip] }
+      bind: { from: nodes.publish.outputs.bundle }

@@ -21,13 +21,13 @@ describe('workspace loading and starter migration', () => {
     },
   );
 
-  it('creates exactly four starters in the preferred locale and marks them installed', () => {
+  it('creates exactly five starters in the preferred locale and marks them installed', () => {
     vi.stubGlobal('navigator', { language: 'ru-RU' });
     const state = freshState();
     expect(state.locale).toBe('ru');
-    expect(state.starterRevision).toBe(3);
+    expect(state.starterRevision).toBe(4);
     const starters = examples.filter((example) => example.category === 'starter');
-    expect(state.workspaces).toHaveLength(4);
+    expect(state.workspaces).toHaveLength(5);
     expect(
       state.workspaces.map((workspace) =>
         parseDocument(workspace.source).getIn(['metadata', 'title']),
@@ -50,8 +50,8 @@ describe('workspace loading and starter migration', () => {
     state.workspaces = [edited, demo];
     const source = edited.source;
     const migrated = await migrateStarters(state);
-    expect(migrated.starterRevision).toBe(3);
-    expect(migrated.workspaces).toHaveLength(5);
+    expect(migrated.starterRevision).toBe(4);
+    expect(migrated.workspaces).toHaveLength(6);
     expect(migrated.workspaces.slice(0, 2)).toEqual([edited, demo]);
     expect(migrated.workspaces[0]).toBe(edited);
     expect(migrated.workspaces[0].source).toBe(source);
@@ -74,7 +74,7 @@ describe('workspace loading and starter migration', () => {
     expect(restored.starterRevision).toBeUndefined();
     vi.stubGlobal('localStorage', { getItem: () => raw });
     expect(loadState()).toEqual(state);
-    expect((await migrateStarters(restored)).workspaces).toHaveLength(4);
+    expect((await migrateStarters(restored)).workspaces).toHaveLength(5);
   });
 
   it.each([1, 2] as const)(
@@ -94,8 +94,8 @@ describe('workspace loading and starter migration', () => {
       state.workspaces = [existing, edited];
       state.activeId = existing.id;
       const migrated = await migrateStarters(state);
-      expect(migrated.starterRevision).toBe(3);
-      expect(migrated.workspaces).toHaveLength(5);
+      expect(migrated.starterRevision).toBe(4);
+      expect(migrated.workspaces).toHaveLength(6);
       expect(migrated.workspaces[0]).toBe(edited);
       expect(migrated.workspaces.some((workspace) => workspace.id === existing.id)).toBe(false);
       expect(migrated.activeId).toBe(edited.id);
@@ -116,5 +116,25 @@ it('keeps legacy drafts with a customized package name, layout, or supporting fi
   const state = { ...freshState(), starterRevision: 2 as const, workspaces: customized };
   const migrated = await migrateStarters(state);
   expect(migrated.workspaces.slice(0, 3)).toEqual(customized);
-  expect(migrated.workspaces).toHaveLength(7);
+  expect(migrated.workspaces).toHaveLength(8);
+});
+
+it('adds only the new review workflow when upgrading revision 3', async () => {
+  const state = { ...freshState(), starterRevision: 3 as const };
+  state.workspaces = [state.workspaces[0]];
+  state.workspaces[0].source += '\n# My edits\n';
+  const migrated = await migrateStarters(state);
+  expect(migrated.workspaces).toHaveLength(2);
+  expect(migrated.workspaces[0]).toBe(state.workspaces[0]);
+  expect(migrated.workspaces[1].entrypoint).toBe('review.yaml');
+  expect(await migrateStarters(migrated)).toBe(migrated);
+});
+
+it('does not confuse a custom review.yaml package with the new starter', async () => {
+  const state = { ...freshState(), starterRevision: 3 as const };
+  const custom = { ...state.workspaces[0], entrypoint: 'review.yaml' };
+  state.workspaces = [custom];
+  const migrated = await migrateStarters(state);
+  expect(migrated.workspaces).toHaveLength(2);
+  expect(migrated.workspaces[0]).toBe(custom);
 });

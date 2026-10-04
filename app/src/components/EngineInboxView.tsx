@@ -5,6 +5,7 @@ import { Validator } from '@cfworker/json-schema';
 import { engineError } from '../lib/engine/client';
 import type { EngineRequest } from '../lib/engine/types';
 import type { EngineController } from '../lib/engine/useEngine';
+import { ReviewArtifact } from './ReviewArtifact';
 import { Empty, time } from './ui';
 
 export function EngineInboxView({
@@ -145,7 +146,20 @@ function EngineResponse({
       <p className="small muted">
         {t('execution.deadlineTime', { time: time(request.deadline, locale) })}
       </p>
-      <pre className="json-view">{JSON.stringify(request.inputs, null, 2)}</pre>
+      {Object.entries(request.inputs.artifacts ?? {}).flatMap(([name, value]) =>
+        (Array.isArray(value) ? value : [value]).map((artifact, index) => (
+          <ReviewArtifact
+            key={`${artifact.id}/${artifact.sha256}`}
+            name={Array.isArray(value) ? `${name}[${index}]` : name}
+            artifact={artifact}
+            connected={!!engine.info}
+          />
+        )),
+      )}
+      <details>
+        <summary>{t('execution.inputs')}</summary>
+        <pre className="json-view">{JSON.stringify(request.inputs, null, 2)}</pre>
+      </details>
       <details>
         <summary>{t('execution.responseSchema')}</summary>
         <pre className="json-view">{JSON.stringify(request.responseSchema, null, 2)}</pre>

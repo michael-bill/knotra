@@ -156,3 +156,55 @@ spec:
     expect(errors).toEqual([]);
   });
 }
+
+test('human review previews verified files and keeps the response draft when a download fails', async ({
+  page,
+}) => {
+  let corrupt = false;
+  await page.route('http://127.0.0.1:19879/v1/**', async (route) => {
+    const path = new URL(route.request().url()).pathname;
+    const headers = { 'Access-Control-Allow-Origin': '*' };
+    if (path === '/v1/info')
+      return route.fulfill({
+        headers,
+        json: {
+          protocol: 'knotra.desktop/1',
+          engineId: 'audit-engine',
+          principalId: 'audit-user',
+          version: 'fixture',
+          capabilities: [],
+        },
+      });
+    if (path === '/v1/artifacts/artifact-1')
+      return route.fulfill({
+        headers,
+        json: {
+          artifact: {
+            id: 'artifact-1',
+            name: 'hello.txt',
+            mediaType: 'text/plain',
+            size: 5,
+            sha256: '2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824',
+            origin: {},
+          },
+        },
+      });
+    if (path === '/v1/artifacts/artifact-1/content')
+      return route.fulfill({
+        headers,
+        contentType: 'text/plain',
+        body: corrupt ? 'wrong' : 'hello',
+      });
+    return route.abort();
+  });
+  await page.goto('/tests/fixtures/frontend-audit.html?component=inbox&connected=1');
+  const draft = page.getByRole('textbox', { name: 'Engine review response' });
+  await draft.fill('{"feedback":"My review"}');
+  await page.getByRole('button', { name: 'Preview document', exact: true }).click();
+  await expect(page.locator('.review-artifact pre')).toHaveText('hello');
+  corrupt = true;
+  await page.getByRole('button', { name: 'Preview document', exact: true }).click();
+  await expect(page.locator('.review-artifact pre')).toHaveCount(0);
+  await expect(page.getByRole('alert')).toContainText('SHA-256');
+  await expect(draft).toHaveValue('{"feedback":"My review"}');
+});

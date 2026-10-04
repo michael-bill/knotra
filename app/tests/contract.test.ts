@@ -18,7 +18,7 @@ const errors = (source: string) =>
 describe('repository contracts in the desktop workbench', () => {
   for (const example of examples)
     it(`opens the complete ${example.id} package without local errors`, () => {
-      const result = validatePipeline(example.source, example.files);
+      const result = validatePipeline(example.source, example.files, example.entrypoint);
       expect(result.diagnostics.filter((d) => d.severity === 'error')).toEqual([]);
       expect(result.pipeline).toBeDefined();
       expect(result.diagnostics.some((d) => d.code === 'ENGINE_ADMISSION_REQUIRED')).toBe(true);

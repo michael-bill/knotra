@@ -933,7 +933,7 @@
   "library.category.starter": "Ready to run",
   "library.category.block": "Building blocks",
   "library.category.demo": "Guided demo",
-  "library.hint.starter": "Four examples for the local Ollama and Docker profile: start small, then explore research, development, and review workflows.",
+  "library.hint.starter": "Five examples using your configured model and Docker: start small, then explore research, development, and human review.",
   "library.hint.block": "Small examples of notation and individual blocks. Check their required resources before running.",
   "library.hint.demo": "Explore the interface with sample results. A real run requires the listed engine resources.",
   "library.requires": "Requires",
@@ -965,7 +965,7 @@
   "pipelines.invalid": "Check YAML",
   "pipelines.checkSource": "Open to fix the source",
   "starter.hello.title": "Hello, model",
-  "starter.hello.description": "A small first run to check local model generation and a downloadable text artifact.",
+  "starter.hello.description": "A small first run to check model generation and a downloadable text artifact.",
   "starter.hello.kind": "Generate → save",
   "starter.hello.result": "A personal greeting and a downloadable greeting.txt file.",
   "starter.research.title": "Research dossier from source materials",
@@ -980,5 +980,11 @@
   "starter.game.title": "Build a playable game",
   "starter.game.description": "A model writes tic-tac-toe logic. The engine runs fixed tests and feeds failures into a bounded correction loop, then packages the verified game.",
   "starter.game.kind": "Plan → generate → test loop → play",
-  "starter.game.result": "A playable offline HTML game, its source code, and an independent test report"
+  "starter.game.result": "A playable offline HTML game, its source code, and an independent test report",
+  "starter.reviewed.title": "Research, verify and approve",
+  "starter.reviewed.description": "Build an evidence dossier, verify its scores with code, review the files and publish after approval. Try restarting the engine while it waits.",
+  "starter.reviewed.kind": "Research → verify → review → publish",
+  "starter.reviewed.result": "An approved dossier and ZIP with the source materials, verified comparison and recorded review.",
+  "resources.quickstartHint": "For a local engine, run knotra quickstart in a terminal, keep it running and connect to the address it prints. The default uses Ollama; OpenAI and Anthropic can be configured in the engine profile.",
+  "execution.previewReviewFile": "Preview {name}"
 }

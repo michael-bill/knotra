@@ -128,6 +128,7 @@ export interface Example {
   category: 'starter' | 'block' | 'demo';
   requirements: ('model' | 'sandbox' | 'nodeSandbox' | 'mcp' | 'secret')[];
   resultKey?: MessageKey;
+  entrypoint?: string;
   source: string;
   files: PackageFile[];
 }
@@ -143,16 +144,23 @@ const starterFiles = import.meta.glob('../../../examples/starter/*/**/*', {
   import: 'default',
 }) as Record<string, string>;
 
-function packageFiles(files: Record<string, string>, prefix: string): PackageFile[] {
+function packageFiles(
+  files: Record<string, string>,
+  prefix: string,
+  entrypoint = 'pipeline.yaml',
+): PackageFile[] {
   return Object.entries(files)
-    .filter(([path]) => path.startsWith(prefix) && path !== prefix + 'pipeline.yaml')
+    .filter(([path]) => path.startsWith(prefix) && path !== prefix + entrypoint)
     .map(([path, content]) => ({
       path: path.slice(prefix.length),
       content: base64(textBytes(content)),
     }));
 }
 
-const starters: Pick<Example, 'id' | 'titleKey' | 'descriptionKey' | 'kindKey' | 'resultKey'>[] = [
+const starters: (Pick<
+  Example,
+  'id' | 'titleKey' | 'descriptionKey' | 'kindKey' | 'resultKey' | 'entrypoint'
+> & { directory?: string })[] = [
   {
     id: 'hello',
     titleKey: 'starter.hello.title',
@@ -166,6 +174,15 @@ const starters: Pick<Example, 'id' | 'titleKey' | 'descriptionKey' | 'kindKey' |
     descriptionKey: 'starter.research.description',
     kindKey: 'starter.research.kind',
     resultKey: 'starter.research.result',
+  },
+  {
+    id: 'reviewed-research',
+    directory: 'research-dossier',
+    entrypoint: 'review.yaml',
+    titleKey: 'starter.reviewed.title',
+    descriptionKey: 'starter.reviewed.description',
+    kindKey: 'starter.reviewed.kind',
+    resultKey: 'starter.reviewed.result',
   },
   {
     id: 'tic-tac-toe',
@@ -228,14 +245,15 @@ export const examples: Example[] = [
     source: localSource,
     files: [],
   },
-  ...starters.map((starter): Example => {
-    const prefix = `../../../examples/starter/${starter.id}/`;
+  ...starters.map(({ directory, ...starter }): Example => {
+    const prefix = `../../../examples/starter/${directory ?? starter.id}/`;
+    const entrypoint = starter.entrypoint ?? 'pipeline.yaml';
     return {
       ...starter,
       category: 'starter',
       requirements: starter.id === 'tic-tac-toe' ? ['model', 'nodeSandbox'] : ['model', 'sandbox'],
-      source: starterFiles[prefix + 'pipeline.yaml'],
-      files: packageFiles(starterFiles, prefix),
+      source: starterFiles[prefix + entrypoint],
+      files: packageFiles(starterFiles, prefix, entrypoint),
     };
   }),
   ...Object.entries(fixtureTitles).map(([id, [title, description]]) => {
@@ -278,7 +296,7 @@ export function fromExample(example: Example, locale: Locale = 'en'): Workspace 
   }
   return {
     id: crypto.randomUUID(),
-    entrypoint: 'pipeline.yaml',
+    entrypoint: example.entrypoint ?? 'pipeline.yaml',
     source,
     savedSource: source,
     files: example.files.map((file) => ({ ...file })),

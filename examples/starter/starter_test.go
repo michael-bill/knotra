@@ -19,9 +19,13 @@ func TestStartersCompileWithLocalProfileAndDefaults(t *testing.T) {
 	if contract.HasErrors(diags) {
 		t.Fatal(diags)
 	}
-	for _, name := range []string{"hello", "research-dossier", "tic-tac-toe", "publication"} {
+	for _, name := range []string{"hello", "research-dossier", "tic-tac-toe", "publication", "research-dossier/review.yaml"} {
 		t.Run(name, func(t *testing.T) {
-			pkg, err := contract.LoadPackage(filepath.Join(name, "pipeline.yaml"))
+			entry := filepath.Join(name, "pipeline.yaml")
+			if name == "research-dossier/review.yaml" {
+				entry = name
+			}
+			pkg, err := contract.LoadPackage(entry)
 			if err != nil {
 				t.Fatal(err)
 			}
