@@ -1,3 +1,4 @@
+import { useI18n } from '../lib/i18n';
 import { useEffect, useRef, useState } from 'react';
 import { Play } from 'lucide-react';
 import type { Workspace } from '../lib/types';
@@ -20,6 +21,7 @@ export function EngineRunDialog({
   onClose: () => void;
   onStarted: (id: string) => void;
 }) {
+  const { t, locale, message } = useI18n();
   const pipeline = parsePipeline(workspace.source);
   const [profile, setProfile] = useState(engine.profiles[0]?.id ?? '');
   const [inputs, setInputs] = useState(() =>
@@ -37,6 +39,10 @@ export function EngineRunDialog({
   const [artifactText, setArtifactText] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const [localError, setLocalError] = useState<{
+    phrase: string;
+    params?: Record<string, string | number>;
+  }>();
   const [diagnostics, setDiagnostics] = useState<EngineDiagnostic[]>([]);
   const [validated, setValidated] = useState(false);
   const [blocked, setBlocked] = useState(false);
@@ -49,16 +55,25 @@ export function EngineRunDialog({
   async function check(start: boolean) {
     setBusy(true);
     setError('');
+    setLocalError(undefined);
+    let localFailure: typeof localError;
     try {
       const values = JSON.parse(inputs);
-      if (!values || typeof values !== 'object' || Array.isArray(values))
+      if (!values || typeof values !== 'object' || Array.isArray(values)) {
+        localFailure = { phrase: 'Inputs must be a JSON object.' };
         throw new Error('Inputs must be a JSON object.');
+      }
       const artifactBindings = { ...handles };
       for (const [name, port] of Object.entries(pipeline?.spec.inputs ?? {}))
         if (port.artifact?.collection) {
           const value = JSON.parse(artifactText[name] ?? '[]');
-          if (!Array.isArray(value) || !value.every((id) => typeof id === 'string' && id.length))
+          if (!Array.isArray(value) || !value.every((id) => typeof id === 'string' && id.length)) {
+            localFailure = {
+              phrase: '{name} requires an array of registered artifact IDs.',
+              params: { name },
+            };
             throw new Error(`${name} requires an array of registered artifact IDs.`);
+          }
           artifactBindings[name] = value;
         }
       const pack = enginePackage(workspace);
@@ -94,6 +109,11 @@ export function EngineRunDialog({
     } catch (error) {
       const caught = engineError(error);
       setError(caught.message);
+      setLocalError(
+        error instanceof SyntaxError
+          ? { phrase: 'Invalid JSON: {message}', params: { message: caught.message } }
+          : localFailure,
+      );
       setDiagnostics(caught.diagnostics as EngineDiagnostic[]);
       if (start && frozen.current) {
         if (
@@ -114,20 +134,20 @@ export function EngineRunDialog({
   }
   return (
     <Modal
-      title="Run on engine"
-      subtitle="The engine checks admission and fixes an immutable execution plan."
+      title={t('execution.runOnEngine')}
+      subtitle={t('execution.theEngineChecksAdmissionAndFixesAnImmutable')}
       onClose={onClose}
     >
       <div className="modal-body engine-run-form">
         <label className="field">
-          Engine profile
+          {t('execution.engineProfile')}
           <select
-            aria-label="Engine profile"
+            aria-label={t('execution.engineProfile')}
             value={profile}
             onChange={(event) => setProfile(event.target.value)}
           >
             {!engine.profiles.length ? (
-              <option value="">No profiles available</option>
+              <option value="">{t('execution.noProfilesAvailable')}</option>
             ) : (
               engine.profiles.map((profile) => (
                 <option key={profile.id} value={profile.id}>
@@ -138,9 +158,9 @@ export function EngineRunDialog({
           </select>
         </label>
         <label className="field">
-          Workflow values (JSON)
+          {t('execution.workflowValuesJson')}
           <textarea
-            aria-label="Workflow input values"
+            aria-label={t('execution.workflowInputValues')}
             className="code-input"
             rows={7}
             value={inputs}
@@ -148,21 +168,24 @@ export function EngineRunDialog({
           />
         </label>
         <p className="small muted">
-          Input ports:{' '}
-          {Object.entries(pipeline?.spec.inputs ?? {})
-            .filter(([, port]) => !port.artifact)
-            .map(([name, port]) => `${name}${port.required ? ' (required)' : ''}`)
-            .join(', ') || 'none'}
-          . Omitted defaults are supplied by the engine.
+          {t('execution.inputPortsPortsOmittedDefaultsAreSuppliedBy', {
+            ports:
+              Object.entries(pipeline?.spec.inputs ?? {})
+                .filter(([, port]) => !port.artifact)
+                .map(([name, port]) =>
+                  port.required ? t('execution.nameRequired', { name }) : name,
+                )
+                .join(', ') || t('execution.none'),
+          })}
         </p>
         {Object.entries(pipeline?.spec.inputs ?? {})
           .filter(([, port]) => port.artifact)
           .map(([name, port]) => (
             <label className="field" key={name}>
-              {name} · input artifact
+              {t('execution.nameInputArtifact', { name })}
               {port.artifact?.collection ? (
                 <textarea
-                  aria-label={`Artifact handles for ${name}`}
+                  aria-label={t('execution.artifactHandlesForName', { name })}
                   placeholder='["artifact-id"]'
                   value={artifactText[name] ?? '[]'}
                   onChange={(event) =>
@@ -171,7 +194,7 @@ export function EngineRunDialog({
                 />
               ) : (
                 <select
-                  aria-label={`Artifact handle for ${name}`}
+                  aria-label={t('execution.artifactHandleForName', { name })}
                   value={String(handles[name] ?? '')}
                   onChange={(event) =>
                     setHandles((current) => {
@@ -182,7 +205,7 @@ export function EngineRunDialog({
                     })
                   }
                 >
-                  <option value="">Choose a registered artifact</option>
+                  <option value="">{t('execution.chooseARegisteredArtifact')}</option>
                   {engine.artifacts
                     .filter((artifact) =>
                       port.artifact?.mediaTypes.some(
@@ -194,7 +217,7 @@ export function EngineRunDialog({
                     )
                     .map((artifact) => (
                       <option key={artifact.id} value={artifact.id}>
-                        {artifact.name} · {size(artifact.size)}
+                        {artifact.name} · {size(artifact.size, locale)}
                       </option>
                     ))}
                 </select>
@@ -203,19 +226,16 @@ export function EngineRunDialog({
           ))}
         {error ? (
           <p className="form-error" role="alert">
-            {error}
+            {localError ? message(localError.phrase, localError.params) : error}
           </p>
         ) : null}
         {blocked ? (
-          <div className="notice small">
-            This command has a saved operation ID. Close this dialog and reconcile it from the
-            engine banner before submitting a replacement.
-          </div>
+          <div className="notice small">{t('execution.thisCommandHasASavedOperationIdClose')}</div>
         ) : null}
         <Diagnostics diagnostics={diagnostics} />
         {validated ? (
           <p className="small">
-            Engine admission checks passed. Start checks again before accepting the plan.
+            {t('execution.engineAdmissionChecksPassedStartChecksAgainBefore')}
           </p>
         ) : null}
       </div>
@@ -225,7 +245,7 @@ export function EngineRunDialog({
           disabled={busy || !profile || blocked}
           onClick={() => void check(false)}
         >
-          Check with engine
+          {t('execution.checkWithEngine')}
         </button>
         <button
           className="button primary"
@@ -238,7 +258,7 @@ export function EngineRunDialog({
           onClick={() => void check(true)}
         >
           <Play size={15} />
-          {busy ? 'Preparing…' : 'Start run'}
+          {busy ? t('execution.preparing') : t('execution.startRun')}
         </button>
       </div>
     </Modal>

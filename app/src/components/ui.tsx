@@ -13,43 +13,67 @@ import {
   Boxes,
 } from 'lucide-react';
 import type { NodeKind, NodeStatus, RunStatus } from '../lib/types';
+import { localeTag, translate, useI18n, type Locale, type MessageKey } from '../lib/i18n';
 
 export const nodeMeta = {
   llm: {
-    label: 'Language model',
+    label: 'editor.languageModel',
     icon: Sparkles,
     color: 'violet',
-    detail: 'One structured model response',
+    detail: 'editor.oneStructuredModelResponse',
   },
-  agent: { label: 'AI agent', icon: Bot, color: 'green', detail: 'Autonomous work within limits' },
-  code: { label: 'Code', icon: Code2, color: 'blue', detail: 'A command in an isolated sandbox' },
-  tool: { label: 'MCP tool', icon: Wrench, color: 'orange', detail: 'An explicit MCP tool call' },
-  switch: { label: 'Switch', icon: GitBranch, color: 'pink', detail: 'Choose a route with CEL' },
+  agent: {
+    label: 'editor.aiAgent',
+    icon: Bot,
+    color: 'green',
+    detail: 'editor.autonomousWorkWithinLimits',
+  },
+  code: {
+    label: 'editor.code',
+    icon: Code2,
+    color: 'blue',
+    detail: 'editor.aCommandInAnIsolatedSandbox',
+  },
+  tool: {
+    label: 'editor.mcpTool',
+    icon: Wrench,
+    color: 'orange',
+    detail: 'editor.anExplicitMcpToolCall',
+  },
+  switch: {
+    label: 'editor.switch',
+    icon: GitBranch,
+    color: 'pink',
+    detail: 'editor.chooseARouteWithCel',
+  },
   human: {
-    label: 'Human review',
+    label: 'execution.humanReview',
     icon: UserRound,
     color: 'yellow',
-    detail: 'A saved request for a person',
+    detail: 'editor.aSavedRequestForAPerson',
   },
   foreach: {
-    label: 'For each',
+    label: 'editor.forEach',
     icon: Layers,
     color: 'blue',
-    detail: 'An isolated graph for every item',
+    detail: 'editor.anIsolatedGraphForEveryItem',
   },
   loop: {
-    label: 'Loop',
+    label: 'editor.loop',
     icon: Repeat2,
     color: 'orange',
-    detail: 'Repeat a graph with bounded state',
+    detail: 'editor.repeatAGraphWithBoundedState',
   },
   pipeline: {
-    label: 'Pipeline',
+    label: 'editor.pipeline',
     icon: Boxes,
     color: 'green',
-    detail: 'Call a reusable pipeline package',
+    detail: 'editor.callAReusablePipelinePackage',
   },
-} as const;
+} as const satisfies Record<
+  NodeKind,
+  { label: MessageKey; detail: MessageKey; icon: typeof Workflow; color: string }
+>;
 
 export function NodeIcon({ kind, size = 18 }: { kind: NodeKind; size?: number }) {
   const Icon = nodeMeta[kind]?.icon ?? Workflow;
@@ -57,22 +81,23 @@ export function NodeIcon({ kind, size = 18 }: { kind: NodeKind; size?: number })
 }
 
 export function Status({ status }: { status: RunStatus | NodeStatus }) {
-  const names: Record<string, string> = {
-    ready: 'Queued',
-    retry_wait: 'Retry wait',
-    waiting_resolution: 'Needs resolution',
-    waiting_human: 'Needs review',
-    succeeded: 'Completed',
-    running: 'Running',
-    pending: 'Pending',
-    failed: 'Failed',
-    cancelled: 'Cancelled',
-    skipped: 'Skipped',
+  const { t } = useI18n();
+  const names: Record<RunStatus | NodeStatus, MessageKey> = {
+    ready: 'shell.queued',
+    retry_wait: 'shell.retryWait',
+    waiting_resolution: 'shell.needsResolution',
+    waiting_human: 'execution.needsReview',
+    succeeded: 'execution.completed',
+    running: 'execution.running',
+    pending: 'shell.pending',
+    failed: 'execution.failed',
+    cancelled: 'execution.cancelled',
+    skipped: 'shell.skipped',
   };
   return (
     <span className={`status status-${status}`}>
       <span />
-      {names[status]}
+      {t(names[status])}
     </span>
   );
 }
@@ -111,6 +136,7 @@ export function Modal({
   onClose: () => void;
   wide?: boolean;
 }) {
+  const { t } = useI18n();
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
     const previous = document.activeElement as HTMLElement;
@@ -162,7 +188,7 @@ export function Modal({
             <h2 id="modal-title">{title}</h2>
             {subtitle ? <p>{subtitle}</p> : null}
           </div>
-          <button className="icon-button" aria-label="Close dialog" onClick={onClose}>
+          <button className="icon-button" aria-label={t('common.closeDialog')} onClick={onClose}>
             <X size={20} />
           </button>
         </header>
@@ -172,8 +198,8 @@ export function Modal({
   );
 }
 
-export function time(value: string): string {
-  return new Date(value).toLocaleString(undefined, {
+export function time(value: string, locale: Locale = 'en'): string {
+  return new Date(value).toLocaleString(localeTag(locale), {
     month: 'short',
     day: 'numeric',
     hour: '2-digit',
@@ -181,6 +207,12 @@ export function time(value: string): string {
   });
 }
 
-export function size(bytes: number): string {
-  return bytes < 1024 ? `${bytes} B` : `${(bytes / 1024).toFixed(1)} KB`;
+export function size(bytes: number, locale: Locale = 'en'): string {
+  if (bytes < 1024) return `${bytes} ${translate('units.bytes', locale)}`;
+  const amount = new Intl.NumberFormat(localeTag(locale), {
+    useGrouping: false,
+    minimumFractionDigits: 1,
+    maximumFractionDigits: 1,
+  }).format(bytes / 1024);
+  return `${amount} ${translate('units.kilobytes', locale)}`;
 }

@@ -1,3 +1,5 @@
+import { editorDirectionKeys, editorPortTypeLabel, editorStatusKeys } from '../lib/editorLabels';
+import { useI18n } from '../lib/i18n';
 import { useTheme } from '../lib/theme';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
@@ -18,7 +20,7 @@ import {
 } from '@xyflow/react';
 import dagre from '@dagrejs/dagre';
 import { Check, CircleDot, UserRound, X } from 'lucide-react';
-import { dependencies, nodePorts, portType } from '../lib/graph';
+import { dependencies, nodePorts } from '../lib/graph';
 import { connectionError, type PortConnection } from '../lib/connections';
 import { record, type Graph, type NodeDefinition, type NodeStatus, type Port } from '../lib/types';
 import { NodeIcon, nodeMeta } from './ui';
@@ -35,21 +37,24 @@ interface CardData extends Record<string, unknown> {
 
 type CardNode = Node<CardData, 'pipelineNode'>;
 
-function nodeDetail(node: NodeDefinition): string {
+function nodeDetail(node: NodeDefinition, t: ReturnType<typeof useI18n>['t']): string {
   const config = record(node[node.type]);
   if (config.model)
-    return `${config.model}${config.maxSteps ? ` · ${config.maxSteps} steps` : ' · structured output'}`;
+    return `${config.model} · ${config.maxSteps ? t('editor.countSteps', { count: String(config.maxSteps) }) : t('editor.structuredOutput')}`;
   if (node.type === 'tool') return `${config.server}.${config.name}`;
-  if (node.type === 'human') return 'Waits for a person';
+  if (node.type === 'human') return t('editor.waitsForAPerson');
   if (node.type === 'code')
-    return `${Array.isArray(config.command) ? config.command[0] : 'command'} · ${node.sandbox ?? 'sandbox'}`;
-  if (node.type === 'foreach') return `${config.concurrency} concurrent iterations`;
-  if (node.type === 'loop') return `${config.maxIterations} maximum iterations`;
+    return `${Array.isArray(config.command) ? config.command[0] : t('editor.command')} · ${node.sandbox ?? t('editor.sandbox2')}`;
+  if (node.type === 'foreach')
+    return t('editor.countConcurrentIterations', { count: String(config.concurrency) });
+  if (node.type === 'loop')
+    return t('editor.countMaximumIterations', { count: String(config.maxIterations) });
   if (node.type === 'pipeline') return String(config.file);
-  return 'Conditional routing';
+  return t('editor.conditionalRouting');
 }
 
 function PipelineCard({ data, selected }: NodeProps<CardNode>) {
+  const { t } = useI18n();
   const meta = nodeMeta[data.node.type];
   const inputs = Object.entries(data.node.inputs ?? {});
   const outputs = Object.entries(data.outputs);
@@ -62,8 +67,11 @@ function PipelineCard({ data, selected }: NodeProps<CardNode>) {
         isConnectable={data.editable}
         role={data.editable ? 'button' : undefined}
         tabIndex={data.editable ? 0 : -1}
-        aria-label={`${data.id} ${source ? 'output' : 'input'} ${name}`}
-        title={`${source ? 'Drag from this output' : 'Drop an output here'} · ${name} (${portType(port)})`}
+        aria-label={t(source ? 'editor.nodeOutputName' : 'editor.nodeInputName', {
+          node: data.id,
+          name,
+        })}
+        title={`${t(source ? 'editor.dragFromThisOutput' : 'editor.dropAnOutputHere')} · ${name} (${editorPortTypeLabel(port, t)})`}
         onClick={(event) => {
           if (data.editable) {
             event.stopPropagation();
@@ -78,8 +86,8 @@ function PipelineCard({ data, selected }: NodeProps<CardNode>) {
           }
         }}
       />
-      <span title={`${name} · ${portType(port)}`}>{name}</span>
-      <small>{portType(port)}</small>
+      <span title={`${name} · ${editorPortTypeLabel(port, t)}`}>{name}</span>
+      <small>{editorPortTypeLabel(port, t)}</small>
     </div>
   );
   return (
@@ -104,9 +112,12 @@ function PipelineCard({ data, selected }: NodeProps<CardNode>) {
         <span className={`node-icon tint-${meta.color}`}>
           <NodeIcon kind={data.node.type} size={17} />
         </span>
-        <span className="node-kind">{meta.label}</span>
+        <span className="node-kind">{t(meta.label)}</span>
         {data.status ? (
-          <span className={`node-state state-${data.status}`} title={data.status}>
+          <span
+            className={`node-state state-${data.status}`}
+            title={t(editorStatusKeys[data.status])}
+          >
             {data.status === 'succeeded' ? (
               <Check size={14} />
             ) : data.status === 'waiting_human' ? (
@@ -118,18 +129,18 @@ function PipelineCard({ data, selected }: NodeProps<CardNode>) {
         ) : null}
       </div>
       <strong>{data.id.replace(/_/g, ' ')}</strong>
-      <p className="node-summary">{nodeDetail(data.node)}</p>
+      <p className="node-summary">{nodeDetail(data.node, t)}</p>
       <div className="canvas-ports">
         <div>
-          <span className="port-caption">INPUTS</span>
+          <span className="port-caption">{t('editor.inputs')}</span>
           {inputs.length ? (
             inputs.map((port) => renderPort(port, false))
           ) : (
-            <small className="port-none">No inputs</small>
+            <small className="port-none">{t('editor.noInputs')}</small>
           )}
         </div>
         <div>
-          <span className="port-caption">OUTPUTS</span>
+          <span className="port-caption">{t('editor.outputs')}</span>
           {outputs.map((port) => renderPort(port, true))}
         </div>
       </div>
@@ -200,6 +211,7 @@ export default function GraphView({
   onConnect?: (connection: PortConnection) => void;
   onNotify?: (message: string) => void;
 }) {
+  const { t, message } = useI18n();
   const canvas = useRef<HTMLDivElement>(null);
   const defaultPositions = useRef<Record<string, { x: number; y: number }>>({});
   const theme = useTheme();
@@ -217,7 +229,7 @@ export default function GraphView({
       targetPort: connection.targetHandle.slice(6),
     };
     const error = connectionError(graph, ports, importedGraphs);
-    if (error) onNotify?.(error);
+    if (error) onNotify?.(message(error));
     else onConnect?.(ports);
     setPending(undefined);
   }
@@ -232,9 +244,7 @@ export default function GraphView({
       });
     else {
       onSelect(node);
-      onNotify?.(
-        'Start at an output dot, then drag to this input. You can also choose a source in Inputs & outputs.',
-      );
+      onNotify?.(t('editor.startAtAnOutputDotThenDragTo'));
     }
   }
   const { nodes, edges } = useMemo(() => {
@@ -276,6 +286,7 @@ export default function GraphView({
           id: `${dep}-${id}-${suffix}`,
           source: dep,
           target: id,
+          ariaLabel: t('editor.edgeDescription', { source: dep, target: id }),
           sourceHandle,
           targetHandle,
           type: 'smoothstep',
@@ -365,7 +376,7 @@ export default function GraphView({
       },
     }));
     return { nodes, edges };
-  }, [graph, selected, statuses, importedGraphs, theme, pending, onConnect, positions]);
+  }, [graph, selected, statuses, importedGraphs, theme, pending, onConnect, positions, t, message]);
   const [flowNodes, setFlowNodes, onNodesChange] = useNodesState<CardNode>([]);
   useEffect(() => setFlowNodes(nodes), [nodes, setFlowNodes]);
   useEffect(() => {
@@ -382,11 +393,11 @@ export default function GraphView({
             <strong>
               {pending.node}.{pending.port}
             </strong>{' '}
-            selected — click an input dot to connect
+            {t('editor.selectedClickAnInputDotToConnect')}
           </span>
           <button
             className="icon-button"
-            aria-label="Cancel connection"
+            aria-label={t('editor.cancelConnection')}
             onClick={() => setPending(undefined)}
           >
             <X size={14} />
@@ -412,9 +423,20 @@ export default function GraphView({
         onNodeDoubleClick={(_, node) => onOpenBody?.(node.id)}
         proOptions={{ hideAttribution: true }}
         ariaLabelConfig={{
-          'controls.zoomIn.ariaLabel': 'Zoom in',
-          'controls.zoomOut.ariaLabel': 'Zoom out',
-          'controls.fitView.ariaLabel': 'Fit graph',
+          'controls.zoomIn.ariaLabel': t('editor.zoomIn'),
+          'controls.zoomOut.ariaLabel': t('editor.zoomOut'),
+          'controls.fitView.ariaLabel': t('editor.fitGraph'),
+          'controls.ariaLabel': t('editor.graphControls'),
+          'node.a11yDescription.default': t('editor.pressEnterOrSpaceToSelectANode'),
+          'node.a11yDescription.keyboardDisabled': t('editor.pressEnterOrSpaceToSelectANode2'),
+          'edge.a11yDescription.default': t('editor.pressEnterOrSpaceToSelectAnEdge'),
+          'node.a11yDescription.ariaLiveMessage': ({ direction, x, y }) =>
+            t('editor.movedSelectedNodeDirectionNewPositionXX', {
+              direction: t(editorDirectionKeys[direction]),
+              x,
+              y,
+            }),
+          'handle.ariaLabel': t('editor.port'),
         }}
       >
         <FitNewBlocks count={flowNodes.length} container={canvas} />

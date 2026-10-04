@@ -2,6 +2,7 @@ import { stringify } from 'yaml';
 import localSource from '../../../examples/local/pipeline.yaml?raw';
 import { base64, textBytes } from './bytes';
 import type { PackageFile, Pipeline, Workspace } from './types';
+import type { MessageKey } from './i18n';
 
 const stringPort = { schema: { type: 'string' } };
 export const researchPipeline: Pipeline = {
@@ -121,9 +122,9 @@ export const RESEARCH_SOURCE =
 
 export interface Example {
   id: string;
-  title: string;
-  description: string;
-  kind: string;
+  titleKey: MessageKey;
+  descriptionKey: MessageKey;
+  kindKey: MessageKey;
   source: string;
   files: PackageFile[];
 }
@@ -133,32 +134,32 @@ const rawFiles = import.meta.glob('../../../contracts/v1/fixtures/positive/**/*'
   query: '?raw',
   import: 'default',
 }) as Record<string, string>;
-const fixtureTitles: Record<string, [string, string]> = {
-  llm: ['Model response', 'Structured generation with a prompt and an external schema.'],
-  agent: ['Autonomous research', 'A bounded agent with MCP tools and an isolated sandbox.'],
-  code: ['Create an artifact', 'Run a command and collect a declared output file.'],
-  tool: ['MCP tool call', 'Call a specific tool with a structured response.'],
-  switch: ['Conditional routing', 'Select a branch and coalesce the resulting outputs.'],
-  human: ['Human review', 'Wait for a response that matches the output contract.'],
-  foreach: ['Parallel review', 'Review a collection with isolated, concurrent iterations.'],
-  loop: ['Iterative refinement', 'Carry state through a bounded loop.'],
-  subpipeline: ['Reusable pipeline', 'Invoke a child package with explicit permissions.'],
-  'artifact-mount': ['Pass a file', 'Mount a declared artifact in a separate sandbox.'],
+const fixtureTitles: Record<string, [MessageKey, MessageKey]> = {
+  llm: ['shell.modelResponse', 'shell.structuredGenerationWithAPromptAndAnExternal'],
+  agent: ['shell.autonomousResearch', 'shell.aBoundedAgentWithMcpToolsAndAn'],
+  code: ['shell.createAnArtifact', 'shell.runACommandAndCollectADeclaredOutput'],
+  tool: ['shell.mcpToolCall', 'shell.callASpecificToolWithAStructuredResponse'],
+  switch: ['editor.conditionalRouting', 'shell.selectABranchAndCoalesceTheResultingOutputs'],
+  human: ['execution.humanReview', 'shell.waitForAResponseThatMatchesTheOutput'],
+  foreach: ['shell.parallelReview', 'shell.reviewACollectionWithIsolatedConcurrentIterations'],
+  loop: ['shell.iterativeRefinement', 'shell.carryStateThroughABoundedLoop'],
+  subpipeline: ['shell.reusablePipeline', 'shell.invokeAChildPackageWithExplicitPermissions'],
+  'artifact-mount': ['shell.passAFile', 'shell.mountADeclaredArtifactInASeparateSandbox'],
 };
 export const examples: Example[] = [
   {
     id: 'research',
-    title: 'Research brief',
-    description: 'Explore the complete workbench with a guided demo.',
-    kind: '5 nodes · demo available',
+    titleKey: 'shell.researchBrief',
+    descriptionKey: 'shell.exploreTheCompleteWorkbenchWithAGuidedDemo',
+    kindKey: 'shell.5NodesDemoAvailable',
     source: RESEARCH_SOURCE,
     files: [],
   },
   {
     id: 'local',
-    title: 'Local Ollama greeting',
-    description: 'Generate and save a greeting with the bundled local engine profile.',
-    kind: 'llm + code · local profile',
+    titleKey: 'library.local.title',
+    descriptionKey: 'shell.generateAndSaveAGreetingWithTheBundled',
+    kindKey: 'shell.llmCodeLocalProfile',
     source: localSource,
     files: [],
   },
@@ -166,9 +167,22 @@ export const examples: Example[] = [
     const prefix = `../../../contracts/v1/fixtures/positive/${id}/`;
     return {
       id,
-      title,
-      description,
-      kind: id === 'subpipeline' ? 'pipeline' : id,
+      titleKey: title,
+      descriptionKey: description,
+      kindKey: (
+        {
+          llm: 'shell.llm',
+          agent: 'shell.agent',
+          code: 'shell.code',
+          tool: 'shell.tool',
+          switch: 'shell.switch',
+          human: 'shell.human',
+          foreach: 'shell.foreach',
+          loop: 'shell.loop',
+          subpipeline: 'shell.pipeline',
+          'artifact-mount': 'shell.artifactMount',
+        } as Record<string, MessageKey>
+      )[id],
       source: rawFiles[prefix + 'pipeline.yaml'],
       files: Object.entries(rawFiles)
         .filter(([path]) => path.startsWith(prefix) && path !== prefix + 'pipeline.yaml')

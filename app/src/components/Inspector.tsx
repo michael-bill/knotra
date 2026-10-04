@@ -1,3 +1,4 @@
+import { useI18n } from '../lib/i18n';
 import { useEffect, useState } from 'react';
 import { Copy, Trash2, Braces, ArrowRight, Settings2, Plus, X } from 'lucide-react';
 import { nodePorts } from '../lib/graph';
@@ -20,6 +21,7 @@ function TextField({
   multiline?: boolean;
   optional?: boolean;
 }) {
+  const { message } = useI18n();
   const [error, setError] = useState('');
   const props = {
     'aria-label': label,
@@ -40,7 +42,7 @@ function TextField({
       {hint ? <small>{hint}</small> : null}
       {error ? (
         <span className="form-error" role="alert">
-          {error}
+          {message(error)}
         </span>
       ) : null}
     </label>
@@ -60,6 +62,7 @@ function NumberField({
   onSave: (value: number) => void;
   hint: string;
 }) {
+  const { message } = useI18n();
   const [error, setError] = useState('');
   return (
     <label className="field">
@@ -75,7 +78,7 @@ function NumberField({
         onBlur={(event) => {
           const n = Number(event.target.value);
           if (!Number.isInteger(n) || n < 1 || n > max) {
-            setError(`Enter a whole number from 1 to ${max}.`);
+            setError('Enter a whole number from 1 to {max}.');
             return;
           }
           setError('');
@@ -85,7 +88,7 @@ function NumberField({
       <small>{hint}</small>
       {error ? (
         <span className="form-error" role="alert">
-          {error}
+          {message(error, { max })}
         </span>
       ) : null}
     </label>
@@ -122,6 +125,7 @@ export default function Inspector({
   showPorts?: boolean;
   onNotify?: (message: string) => void;
 }) {
+  const { t } = useI18n();
   const [tab, setTab] = useState<'setup' | 'ports'>('setup');
   useEffect(() => {
     if (showPorts) setTab('ports');
@@ -145,16 +149,22 @@ export default function Inspector({
         {label}
         <select aria-label={label} value={value} onChange={(event) => onSave(event.target.value)}>
           {!aliases(kind).includes(value) ? (
-            <option value={value}>{value || 'Choose an alias'}</option>
+            <option value={value}>{value || t('editor.chooseAnAlias')}</option>
           ) : null}
           {aliases(kind).map((alias) => (
             <option key={alias}>{alias}</option>
           ))}
         </select>
-        <small>Uses a resource declared in this workflow.</small>
+        <small>{t('editor.usesAResourceDeclaredInThisWorkflow')}</small>
       </label>
       <button className="text-button" type="button" onClick={onWorkflow}>
-        Manage {kind}
+        {t(
+          kind === 'models'
+            ? 'editor.manageModels'
+            : kind === 'mcp'
+              ? 'editor.manageMcpServers'
+              : 'editor.manageSandboxes',
+        )}
         <ArrowRight size={12} />
       </button>
     </div>
@@ -162,9 +172,13 @@ export default function Inspector({
   return (
     <aside className="inspector setup-inspector">
       <header className="inspector-header">
-        <span className="eyebrow">BLOCK SETTINGS</span>
+        <span className="eyebrow">{t('editor.blockSettings')}</span>
         <div className="inline">
-          <button className="icon-button" onClick={onDuplicate} aria-label="Duplicate node">
+          <button
+            className="icon-button"
+            onClick={onDuplicate}
+            aria-label={t('editor.duplicateNode')}
+          >
             <Copy size={15} />
           </button>
           <button
@@ -173,10 +187,10 @@ export default function Inspector({
             disabled={Object.keys(graph.nodes).length <= 1}
             title={
               Object.keys(graph.nodes).length <= 1
-                ? 'Keep at least one block in the workflow'
-                : 'Delete block'
+                ? t('editor.keepAtLeastOneBlockInTheWorkflow')
+                : t('editor.deleteBlock')
             }
-            aria-label="Delete node"
+            aria-label={t('editor.deleteNode')}
           >
             <Trash2 size={15} />
           </button>
@@ -188,41 +202,44 @@ export default function Inspector({
         </span>
         <div>
           <h2>{id.replace(/_/g, ' ')}</h2>
-          <p>{meta.detail}</p>
+          <p>{t(meta.detail)}</p>
         </div>
       </div>
       <div className="inspector-tabs">
         <button className={tab === 'setup' ? 'active' : ''} onClick={() => setTab('setup')}>
           <Settings2 size={13} />
-          Setup
+          {t('editor.setup')}
         </button>
         <button className={tab === 'ports' ? 'active' : ''} onClick={() => setTab('ports')}>
-          Inputs & outputs
+          {t('editor.inputsOutputs')}
         </button>
       </div>
       <div className="inspector-content">
         {tab === 'setup' ? (
           <>
             <TextField
-              label="Description"
+              label={t('editor.description')}
               value={node.description ?? ''}
               optional
               onSave={(value) => onEdit('description', value || undefined)}
             />
             {['llm', 'agent'].includes(node.type)
-              ? resourceSelect('Model alias', 'models', String(config.model ?? ''), (value) =>
-                  editConfig('model', value),
+              ? resourceSelect(
+                  t('editor.modelAlias'),
+                  'models',
+                  String(config.model ?? ''),
+                  (value) => editConfig('model', value),
                 )
               : null}
             {['agent', 'code'].includes(node.type)
-              ? resourceSelect('Sandbox', 'sandboxes', node.sandbox ?? '', (value) =>
+              ? resourceSelect(t('editor.sandbox'), 'sandboxes', node.sandbox ?? '', (value) =>
                   onEdit('sandbox', value),
                 )
               : null}
             {['llm', 'agent', 'human'].includes(node.type) ? (
               <>
                 <label className="field">
-                  Prompt source
+                  {t('editor.promptSource')}
                   <select
                     value={prompt.file ? 'file' : 'text'}
                     onChange={(event) => {
@@ -234,15 +251,15 @@ export default function Inspector({
                       }
                     }}
                   >
-                    <option value="text">Write instructions here</option>
+                    <option value="text">{t('editor.writeInstructionsHere')}</option>
                     <option value="file" disabled={!files.some((file) => !/\.ya?ml$/.test(file))}>
-                      Package file
+                      {t('editor.packageFile')}
                     </option>
                   </select>
                 </label>
                 {prompt.file ? (
                   <label className="field">
-                    Prompt file
+                    {t('editor.promptFile')}
                     <select
                       value={String(prompt.file)}
                       onChange={(event) => editConfig('prompt', { file: event.target.value })}
@@ -254,11 +271,13 @@ export default function Inspector({
                   </label>
                 ) : (
                   <TextField
-                    label={node.type === 'human' ? 'Review request' : 'Instructions'}
+                    label={t(
+                      node.type === 'human' ? 'execution.reviewRequest' : 'editor.instructions',
+                    )}
                     multiline
                     value={String(prompt.text ?? '')}
                     onSave={(text) => editConfig('prompt', { text })}
-                    hint="Inputs arrive as separate data. Describe the task without embedding connection syntax."
+                    hint={t('editor.inputsArriveAsSeparateDataDescribeTheTask')}
                   />
                 )}
               </>
@@ -266,22 +285,22 @@ export default function Inspector({
             {node.type === 'agent' ? (
               <>
                 <NumberField
-                  label="Maximum model steps"
+                  label={t('editor.maximumModelSteps')}
                   value={Number(config.maxSteps)}
                   max={10000}
                   onSave={(value) => editConfig('maxSteps', value)}
-                  hint="Limits how many model calls this agent can make."
+                  hint={t('editor.limitsHowManyModelCallsThisAgentCan')}
                 />
                 <details className="field-details">
-                  <summary>Tool permissions</summary>
+                  <summary>{t('editor.toolPermissions')}</summary>
                   <JsonField
-                    label="Allowed tools"
+                    label={t('editor.allowedTools')}
                     value={node.tools ?? { inherit: true }}
                     validate={(value) =>
                       !!value && typeof value === 'object' && !Array.isArray(value)
                     }
                     onSave={(value) => onEdit('tools', value)}
-                    hint="inherit, mcp aliases with tool lists, and sandbox tool names. These are grants checked by the engine."
+                    hint={t('editor.inheritMcpAliasesWithToolListsAndSandbox')}
                   />
                 </details>
               </>
@@ -289,18 +308,18 @@ export default function Inspector({
             {node.type === 'code' ? (
               <div className="command-editor">
                 <TextField
-                  label="Executable"
+                  label={t('editor.executable')}
                   value={String((config.command as string[])[0])}
                   onSave={(value) =>
                     editConfig('command', [value, ...(config.command as string[]).slice(1)])
                   }
-                  hint="The engine runs this executable in the selected sandbox."
+                  hint={t('editor.theEngineRunsThisExecutableInTheSelected')}
                 />
-                <h3>Arguments</h3>
+                <h3>{t('editor.arguments')}</h3>
                 {(config.command as string[]).slice(1).map((argument, index) => (
                   <div className="command-argument" key={index}>
                     <TextField
-                      label={`Argument ${index + 1}`}
+                      label={t('editor.argumentCount', { count: index + 1 })}
                       value={argument}
                       optional
                       multiline={argument.includes('\n') || argument.length > 80}
@@ -315,7 +334,7 @@ export default function Inspector({
                     />
                     <button
                       className="icon-button"
-                      aria-label={`Remove argument ${index + 1}`}
+                      aria-label={t('editor.removeArgumentCount', { count: index + 1 })}
                       onClick={() =>
                         editConfig(
                           'command',
@@ -332,23 +351,23 @@ export default function Inspector({
                   onClick={() => editConfig('command', [...(config.command as string[]), ''])}
                 >
                   <Plus size={13} />
-                  Add argument
+                  {t('editor.addArgument')}
                 </button>
               </div>
             ) : null}
             {node.type === 'tool' ? (
               <>
-                {resourceSelect('MCP server alias', 'mcp', String(config.server), (value) =>
+                {resourceSelect(t('editor.mcpServerAlias'), 'mcp', String(config.server), (value) =>
                   editConfig('server', value),
                 )}
                 <TextField
-                  label="Tool name"
+                  label={t('editor.toolName')}
                   value={String(config.name)}
                   onSave={(value) => editConfig('name', value)}
-                  hint="Exact tool name exposed by this MCP server."
+                  hint={t('editor.exactToolNameExposedByThisMcpServer')}
                 />
                 <label className="field">
-                  Tool arguments
+                  {t('editor.toolArguments')}
                   <select
                     value={'expr' in record(config.arguments) ? 'expr' : 'value'}
                     onChange={(event) =>
@@ -358,38 +377,36 @@ export default function Inspector({
                       )
                     }
                   >
-                    <option value="value">Fixed JSON object</option>
-                    <option value="expr">Use block inputs (CEL)</option>
+                    <option value="value">{t('editor.fixedJsonObject')}</option>
+                    <option value="expr">{t('editor.useBlockInputsCel')}</option>
                   </select>
                 </label>
                 {'expr' in record(config.arguments) ? (
                   <TextField
-                    label="Arguments expression"
+                    label={t('editor.argumentsExpression')}
                     value={String(record(config.arguments).expr)}
                     onSave={(expr) => editConfig('arguments', { expr })}
-                    hint={
-                      'args contains this block’s inputs; return an object, e.g. {"query": args.topic}.'
-                    }
+                    hint={t('editor.argsContainsThisBlockSInputsReturnAn')}
                   />
                 ) : (
                   <JsonField
-                    label="Arguments JSON"
+                    label={t('editor.argumentsJson')}
                     value={record(config.arguments).value ?? config.arguments}
                     onSave={(value) => editConfig('arguments', { value })}
                     validate={(value) =>
                       !!value && typeof value === 'object' && !Array.isArray(value)
                     }
-                    hint="A JSON object with the tool’s argument names."
+                    hint={t('editor.aJsonObjectWithTheToolSArgument')}
                   />
                 )}
                 <label className="field">
-                  Response format
+                  {t('editor.responseFormat')}
                   <select
                     value={String(config.response ?? 'structured')}
                     onChange={(event) => editConfig('response', event.target.value)}
                   >
-                    <option value="structured">Structured data</option>
-                    <option value="content">Content blocks</option>
+                    <option value="structured">{t('editor.structuredData')}</option>
+                    <option value="content">{t('editor.contentBlocks')}</option>
                   </select>
                 </label>
               </>
@@ -397,13 +414,12 @@ export default function Inspector({
             {node.type === 'switch' ? (
               <>
                 <p className="setup-hint">
-                  First matching condition wins. Later blocks can read the route output in their run
-                  condition.
+                  {t('editor.firstMatchingConditionWinsLaterBlocksCanRead')}
                 </p>
                 {(config.cases as { name: string; when: string }[]).map((item, index) => (
                   <div className="setup-group" key={index}>
                     <TextField
-                      label={`Route ${index + 1} name`}
+                      label={t('editor.routeCountName', { count: index + 1 })}
                       value={item.name}
                       onSave={(name) =>
                         editConfig(
@@ -415,7 +431,7 @@ export default function Inspector({
                       }
                     />
                     <TextField
-                      label={`Route ${index + 1} condition`}
+                      label={t('editor.routeCountCondition', { count: index + 1 })}
                       value={item.when}
                       onSave={(when) =>
                         editConfig(
@@ -425,7 +441,7 @@ export default function Inspector({
                           ),
                         )
                       }
-                      hint="A CEL boolean using args, e.g. args.score > 0.8."
+                      hint={t('editor.aCelBooleanUsingArgsEGArgs')}
                     />
                     <button
                       className="text-button"
@@ -437,7 +453,7 @@ export default function Inspector({
                         )
                       }
                     >
-                      Remove route
+                      {t('editor.removeRoute')}
                     </button>
                   </div>
                 ))}
@@ -455,10 +471,10 @@ export default function Inspector({
                   }}
                 >
                   <Plus size={13} />
-                  Add route
+                  {t('editor.addRoute')}
                 </button>
                 <TextField
-                  label="Default route"
+                  label={t('editor.defaultRoute')}
                   value={String(config.default)}
                   onSave={(value) => editConfig('default', value)}
                 />
@@ -467,7 +483,7 @@ export default function Inspector({
             {node.type === 'foreach' ? (
               <>
                 <label className="field">
-                  Collection input
+                  {t('editor.collectionInput')}
                   <select
                     value={String(config.over)}
                     onChange={(event) => editConfig('over', event.target.value)}
@@ -483,49 +499,49 @@ export default function Inspector({
                   </select>
                 </label>
                 <NumberField
-                  label="Concurrent iterations"
+                  label={t('editor.concurrentIterations')}
                   value={Number(config.concurrency)}
                   max={2147483647}
                   onSave={(value) => editConfig('concurrency', value)}
-                  hint="How many items may be processed at once."
+                  hint={t('editor.howManyItemsMayBeProcessedAtOnce')}
                 />
               </>
             ) : null}
             {node.type === 'loop' ? (
               <>
                 <NumberField
-                  label="Maximum iterations"
+                  label={t('editor.maximumIterations')}
                   value={Number(config.maxIterations)}
                   max={100000}
                   onSave={(value) => editConfig('maxIterations', value)}
-                  hint="A hard limit on repeated body execution."
+                  hint={t('editor.aHardLimitOnRepeatedBodyExecution')}
                 />
                 <TextField
-                  label="Stop condition"
+                  label={t('editor.stopCondition')}
                   value={String(config.until)}
                   onSave={(value) => editConfig('until', value)}
-                  hint="A CEL boolean evaluated after the body finishes."
+                  hint={t('editor.aCelBooleanEvaluatedAfterTheBodyFinishes')}
                 />
                 <label className="field">
-                  When the limit is reached
+                  {t('editor.whenTheLimitIsReached')}
                   <select
                     value={String(config.onLimit)}
                     onChange={(event) => editConfig('onLimit', event.target.value)}
                   >
-                    <option value="fail">Fail the run</option>
-                    <option value="return_last">Return the last result</option>
+                    <option value="fail">{t('editor.failTheRun')}</option>
+                    <option value="return_last">{t('editor.returnTheLastResult')}</option>
                   </select>
                 </label>
                 <details className="field-details">
-                  <summary>State carried between iterations</summary>
+                  <summary>{t('editor.stateCarriedBetweenIterations')}</summary>
                   <JsonField
-                    label="Loop state"
+                    label={t('editor.loopState')}
                     value={config.state}
                     onSave={(value) => editConfig('state', value)}
                     validate={(value) =>
                       !!value && typeof value === 'object' && !Array.isArray(value)
                     }
-                    hint="Each state value declares schema, initial binding and next binding."
+                    hint={t('editor.eachStateValueDeclaresSchemaInitialBindingAnd')}
                   />
                 </details>
               </>
@@ -533,13 +549,13 @@ export default function Inspector({
             {['foreach', 'loop'].includes(node.type) ? (
               <>
                 <button className="button full" onClick={onBody}>
-                  Edit body graph
+                  {t('editor.editBodyGraph')}
                   <ArrowRight size={15} />
                 </button>
                 <details className="field-details">
-                  <summary>Inputs passed to the body</summary>
+                  <summary>{t('editor.inputsPassedToTheBody')}</summary>
                   <JsonField
-                    label="Body input bindings"
+                    label={t('editor.bodyInputBindings')}
                     value={config.with}
                     onSave={(value) => editConfig('with', value)}
                     validate={(value) =>
@@ -547,8 +563,8 @@ export default function Inspector({
                     }
                     hint={
                       node.type === 'foreach'
-                        ? 'Bind body input names to args, iteration.item or iteration.index.'
-                        : 'Bind body input names to args, state or iteration.index.'
+                        ? t('editor.bindBodyInputNamesToArgsIterationItem')
+                        : t('editor.bindBodyInputNamesToArgsStateOr')
                     }
                   />
                 </details>
@@ -557,9 +573,9 @@ export default function Inspector({
             {node.type === 'pipeline' ? (
               <>
                 <label className="field">
-                  Child pipeline file
+                  {t('editor.childPipelineFile')}
                   <select
-                    aria-label="Child pipeline file"
+                    aria-label={t('editor.childPipelineFile')}
                     value={String(config.file)}
                     onChange={(event) => editConfig('file', event.target.value)}
                   >
@@ -569,34 +585,34 @@ export default function Inspector({
                         <option key={file}>{file}</option>
                       ))}
                   </select>
-                  <small>Add the child package in Files first.</small>
+                  <small>{t('editor.addTheChildPackageInFilesFirst')}</small>
                 </label>
                 <JsonField
-                  label="Child permissions"
+                  label={t('editor.childPermissions')}
                   value={config.permissions}
                   onSave={(value) => editConfig('permissions', value)}
                   validate={(value) =>
                     !!value && typeof value === 'object' && !Array.isArray(value)
                   }
-                  hint="Explicit model, MCP, sandbox and secret permissions for the child."
+                  hint={t('editor.explicitModelMcpSandboxAndSecretPermissionsFor')}
                 />
               </>
             ) : null}
             <button className="button full setup-next" onClick={() => setTab('ports')}>
-              Connect inputs & define outputs
+              {t('editor.connectInputsDefineOutputs')}
               <ArrowRight size={15} />
             </button>
             <details className="field-details">
-              <summary>Run conditions & advanced options</summary>
+              <summary>{t('editor.runConditionsAdvancedOptions')}</summary>
               <TextField
-                label="Run condition (CEL)"
+                label={t('editor.runConditionCel')}
                 value={node.when ?? ''}
                 optional
                 onSave={(value) => onEdit('when', value || undefined)}
-                hint="Leave blank to run whenever inputs are ready."
+                hint={t('editor.leaveBlankToRunWheneverInputsAreReady')}
               />
               <TextField
-                label="Wait for blocks"
+                label={t('editor.waitForBlocks')}
                 value={(node.needs ?? []).join(', ')}
                 optional
                 onSave={(value) =>
@@ -610,11 +626,11 @@ export default function Inspector({
                       : undefined,
                   )
                 }
-                hint="Comma-separated block IDs. This waits without transferring data."
+                hint={t('editor.commaSeparatedBlockIdsThisWaitsWithoutTransferring')}
               />
               <button className="text-button" onClick={onSource}>
                 <Braces size={14} />
-                Open YAML
+                {t('editor.openYaml')}
               </button>
             </details>
           </>
@@ -646,13 +662,13 @@ export default function Inspector({
             />
             {['switch', 'foreach', 'loop', 'pipeline'].includes(node.type) ? (
               <p className="setup-hint">
-                These outputs come from{' '}
-                {node.type === 'pipeline'
-                  ? 'the child pipeline exports'
-                  : node.type === 'switch'
-                    ? 'the selected route'
-                    : 'the body graph exports'}
-                . Edit them at their source.
+                {t(
+                  node.type === 'pipeline'
+                    ? 'editor.theseOutputsComeFromTheChildPipelineExports'
+                    : node.type === 'switch'
+                      ? 'editor.theseOutputsComeFromTheSelectedRouteEdit'
+                      : 'editor.theseOutputsComeFromTheBodyGraphExports',
+                )}
               </p>
             ) : null}
           </>

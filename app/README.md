@@ -19,6 +19,21 @@ bun run desktop:dev
 Browser preview: `bun run dev` at `http://127.0.0.1:1420`. Stop it before starting native
 development, since both use the same Vite port.
 
+## Interface language
+
+Choose **Settings → Language** (**Настройки → Язык**) to switch between English and Russian. The
+initial language follows the browser or webview language: Russian for `ru`/`ru-*`, English
+otherwise. The preference is saved with the local workspace and included in workspace backups. Older
+workspaces and backups without a language keep their data and use that initial default.
+
+Translation changes interface labels, help, accessibility text, frontend validation messages and
+date/size formatting. Pipeline YAML, names, prompts, model output, engine diagnostics and artifact
+contents retain their original text.
+
+The catalogs are [en.json](src/locales/en.json) and [ru.json](src/locales/ru.json). Components refer
+to stable keys such as `t('settings.language')`; English phrases are catalog values. See
+[the contribution guide](../CONTRIBUTING.md#interface-translations) for adding translations.
+
 ## Connect a real engine
 
 Prepare PostgreSQL, Temporal, Docker/helper and Ollama using the
@@ -65,10 +80,10 @@ cargo test --locked --manifest-path src-tauri/Cargo.toml
 bun run desktop:build
 ```
 
-Default browser tests cover authoring, demos and a contract fixture. Two extra acceptance tests use
-a real engine: Ollama output/history replay, and a human review followed by a child pipeline and
-binary artifact round-trip. The engine must have the bundled `local` profile and allow the preview
-origin:
+Default browser tests cover authoring, demos, interface language switching and a contract fixture.
+Two extra acceptance tests use a real engine: Ollama output/history replay, and a human review
+followed by a child pipeline and binary artifact round-trip. The engine must have the bundled
+`local` profile and allow the preview origin:
 
 ```sh
 KNOTRA_E2E_ENDPOINT=http://127.0.0.1:8787 bun run test:e2e

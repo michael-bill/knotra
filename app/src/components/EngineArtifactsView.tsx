@@ -1,15 +1,19 @@
+import { useI18n } from '../lib/i18n';
 import { useEffect, useState } from 'react';
 import { Download, Search, FileBox } from 'lucide-react';
 import { base64, decodeText } from '../lib/bytes';
 import { engineError, exportEngineArtifact, downloadArtifact } from '../lib/engine/client';
 import type { EngineController } from '../lib/engine/useEngine';
-import { Empty, time, size } from './ui';
+import { Empty, size } from './ui';
 
 export function EngineArtifactsView({ engine }: { engine: EngineController }) {
+  const { t, locale, message } = useI18n();
   const [selected, setSelected] = useState('');
   const [query, setQuery] = useState('');
   const [preview, setPreview] = useState('');
+  const [previewNotice, setPreviewNotice] = useState('');
   const [error, setError] = useState('');
+  const [localError, setLocalError] = useState(false);
   const [busy, setBusy] = useState(false);
   const files = engine.artifacts.filter((artifact) =>
     `${artifact.name} ${artifact.id} ${artifact.origin.runId ?? ''}`
@@ -20,10 +24,12 @@ export function EngineArtifactsView({ engine }: { engine: EngineController }) {
   useEffect(() => {
     let current = true;
     setPreview('');
+    setPreviewNotice('');
     setError('');
+    setLocalError(false);
     setBusy(false);
     if (artifact && !engine.info)
-      setPreview('Reconnect to the engine to verify and preview these bytes.');
+      setPreviewNotice('Reconnect to the engine to verify and preview these bytes.');
     if (artifact && engine.info) {
       setBusy(true);
       void downloadArtifact(artifact.id)
@@ -32,12 +38,15 @@ export function EngineArtifactsView({ engine }: { engine: EngineController }) {
             try {
               setPreview(decodeText(result.content));
             } catch {
-              setPreview('Binary artifact. Export to inspect the preserved bytes.');
+              setPreviewNotice('Binary artifact. Export to inspect the preserved bytes.');
             }
           }
         })
         .catch((error) => {
-          if (current) setError(engineError(error).message);
+          if (current) {
+            setError(engineError(error).message);
+            setLocalError(false);
+          }
         })
         .finally(() => {
           if (current) setBusy(false);
@@ -51,11 +60,11 @@ export function EngineArtifactsView({ engine }: { engine: EngineController }) {
     <section className="page">
       <header className="page-heading">
         <div>
-          <h1>Engine artifacts</h1>
-          <p>Registered immutable files with checked sizes, hashes and provenance.</p>
+          <h1>{t('execution.engineArtifacts')}</h1>
+          <p>{t('execution.registeredImmutableFilesWithCheckedSizesHashesAnd')}</p>
         </div>
         <label className="button">
-          Upload input file
+          {t('execution.uploadInputFile')}
           <input
             hidden
             type="file"
@@ -65,8 +74,13 @@ export function EngineArtifactsView({ engine }: { engine: EngineController }) {
               event.target.value = '';
               if (!file) return;
               setError('');
+              setLocalError(false);
+              let localFailure = false;
               try {
-                if (file.size > 64 * 1024 * 1024) throw new Error('Artifact exceeds 64 MiB.');
+                if (file.size > 64 * 1024 * 1024) {
+                  localFailure = true;
+                  throw new Error('Artifact exceeds 64 MiB.');
+                }
                 await engine.command({
                   op: 'upload',
                   file: {
@@ -78,9 +92,10 @@ export function EngineArtifactsView({ engine }: { engine: EngineController }) {
                 });
               } catch (error) {
                 setError(engineError(error).message);
+                setLocalError(localFailure);
               }
             }}
-            aria-label="Upload engine artifact"
+            aria-label={t('execution.uploadEngineArtifact')}
           />
         </label>
       </header>
@@ -88,8 +103,8 @@ export function EngineArtifactsView({ engine }: { engine: EngineController }) {
         <label className="search-field">
           <Search size={16} />
           <input
-            aria-label="Search engine artifacts"
-            placeholder="Search files…"
+            aria-label={t('execution.searchEngineArtifacts')}
+            placeholder={t('execution.searchFiles')}
             value={query}
             onChange={(event) => setQuery(event.target.value)}
           />
@@ -97,7 +112,7 @@ export function EngineArtifactsView({ engine }: { engine: EngineController }) {
       </div>
       {error ? (
         <p className="form-error" role="alert">
-          {error}
+          {localError ? t('execution.artifactExceeds64Mib') : error}
         </p>
       ) : null}
       {files.length ? (
@@ -114,9 +129,9 @@ export function EngineArtifactsView({ engine }: { engine: EngineController }) {
                 </div>
                 <div className="artifact-info">
                   <strong>{file.name}</strong>
-                  <span>{file.origin.runId ?? 'Uploaded input'}</span>
+                  <span>{file.origin.runId ?? t('execution.uploadedInput')}</span>
                   <small>
-                    {size(file.size)} · {file.mediaType}
+                    {size(file.size, locale)} · {file.mediaType}
                   </small>
                 </div>
               </button>
@@ -130,13 +145,14 @@ export function EngineArtifactsView({ engine }: { engine: EngineController }) {
                   className="button small-button"
                   disabled={!engine.info || busy || !!error}
                   onClick={() => {
-                    void exportEngineArtifact(artifact.id).catch((error) =>
-                      setError(engineError(error).message),
-                    );
+                    void exportEngineArtifact(artifact.id).catch((error) => {
+                      setError(engineError(error).message);
+                      setLocalError(false);
+                    });
                   }}
                 >
                   <Download size={14} />
-                  Export
+                  {t('common.export')}
                 </button>
               </div>
               <div className="detail-field">
@@ -144,16 +160,22 @@ export function EngineArtifactsView({ engine }: { engine: EngineController }) {
                 <code className="hash">{artifact.sha256}</code>
               </div>
               <div className="detail-field">
-                <span>Origin</span>
+                <span>{t('execution.origin')}</span>
                 <code>{JSON.stringify(artifact.origin, null, 2)}</code>
               </div>
-              <pre className="artifact-text">{busy ? 'Verifying bytes…' : preview}</pre>
+              <pre className="artifact-text">
+                {busy
+                  ? t('execution.verifyingBytes')
+                  : previewNotice
+                    ? message(previewNotice)
+                    : preview}
+              </pre>
             </aside>
           ) : null}
         </div>
       ) : (
-        <Empty icon={<FileBox />} title="No engine artifacts">
-          Upload input files or inspect declared outputs from completed runs.
+        <Empty icon={<FileBox />} title={t('execution.noEngineArtifacts')}>
+          {t('execution.uploadInputFilesOrInspectDeclaredOutputsFrom')}
         </Empty>
       )}
     </section>

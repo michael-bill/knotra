@@ -1,3 +1,5 @@
+import { editorDataTypeLabel } from '../lib/editorLabels';
+import { useI18n } from '../lib/i18n';
 import { useEffect, useRef, useState } from 'react';
 import { Plus, Trash2, Settings2 } from 'lucide-react';
 import { sources } from '../lib/connections';
@@ -26,6 +28,7 @@ export default function WorkflowSetup({
     value: Record<string, Record<string, unknown>>,
   ) => void;
 }) {
+  const { t, message } = useI18n();
   const resourcePanel = useRef<HTMLElement>(null);
   useEffect(() => {
     if (showResources) resourcePanel.current?.scrollIntoView({ block: 'start' });
@@ -41,15 +44,17 @@ export default function WorkflowSetup({
   return (
     <aside className="inspector setup-inspector">
       <header className="inspector-header">
-        <span className="eyebrow">{scope.length ? 'BODY GRAPH' : 'WORKFLOW SETTINGS'}</span>
+        <span className="eyebrow">
+          {t(scope.length ? 'editor.bodyGraph' : 'editor.workflowSettings')}
+        </span>
         <Settings2 size={16} />
       </header>
       <div className="inspector-content">
         {!scope.length ? (
           <label className="field">
-            Workflow title
+            {t('editor.workflowTitle')}
             <input
-              aria-label="Workflow title"
+              aria-label={t('editor.workflowTitle')}
               defaultValue={pipeline.metadata.title ?? pipeline.metadata.name}
               key={pipeline.metadata.title}
               onBlur={(event) => {
@@ -58,23 +63,18 @@ export default function WorkflowSetup({
             />
           </label>
         ) : (
-          <p className="setup-hint">
-            Inputs and exports belong to this body graph. Use the parent block’s body bindings to
-            pass values in.
-          </p>
+          <p className="setup-hint">{t('editor.inputsAndExportsBelongToThisBodyGraph')}</p>
         )}
         <section className="port-editor">
-          <h3>Workflow inputs</h3>
-          <p className="setup-hint">
-            Starting values for a run. Blocks can choose these as their input sources.
-          </p>
+          <h3>{t('editor.workflowInputs')}</h3>
+          <p className="setup-hint">{t('editor.startingValuesForARunBlocksCanChoose')}</p>
           {Object.entries(graph.inputs ?? {}).map(([name, port]) => (
             <div className="port-editor-card" key={name}>
               <div className="inline spread">
                 <strong>{name}</strong>
                 <button
                   className="icon-button"
-                  aria-label={`Remove workflow input ${name}`}
+                  aria-label={t('editor.removeWorkflowInputName', { name })}
                   onClick={() => {
                     const next = { ...graph.inputs };
                     delete next[name];
@@ -85,11 +85,13 @@ export default function WorkflowSetup({
                 </button>
               </div>
               {port.artifact ? (
-                <small>File · {port.artifact.mediaTypes.join(', ')}</small>
+                <small>
+                  {t('editor.file')} · {port.artifact.mediaTypes.join(', ')}
+                </small>
               ) : (
                 <>
                   <label className="field">
-                    Input type
+                    {t('editor.inputType')}
                     <select
                       value={port.schemaRef ? '$custom' : portDataType(port)}
                       onChange={(event) => {
@@ -105,19 +107,22 @@ export default function WorkflowSetup({
                     >
                       {port.schemaRef || portDataType(port) === '$custom' ? (
                         <option value="$custom">
-                          Custom schema{port.schemaRef ? ` · ${port.schemaRef}` : ''}
+                          {t('editor.customSchema')}
+                          {port.schemaRef ? ` · ${port.schemaRef}` : ''}
                         </option>
                       ) : null}
                       {['string', 'object', 'array', 'integer', 'number', 'boolean', 'JSON'].map(
                         (type) => (
-                          <option key={type}>{type}</option>
+                          <option key={type} value={type}>
+                            {editorDataTypeLabel(type, t)}
+                          </option>
                         ),
                       )}
                     </select>
                   </label>
                   {'default' in port ? (
                     <JsonField
-                      label={`Default for ${name}`}
+                      label={t('editor.defaultForName', { name })}
                       value={port.default}
                       onSave={(value) =>
                         onGraphEdit('inputs', {
@@ -125,13 +130,13 @@ export default function WorkflowSetup({
                           [name]: { ...port, default: value },
                         })
                       }
-                      hint="JSON value; strings use quotes."
+                      hint={t('editor.jsonValueStringsUseQuotes')}
                     />
                   ) : null}
                 </>
               )}
               <details className="field-details">
-                <summary>Schema & details</summary>
+                <summary>{t('editor.schemaDetails')}</summary>
                 <pre>
                   {JSON.stringify(
                     port.schema ?? port.artifact ?? { schemaRef: port.schemaRef },
@@ -144,7 +149,7 @@ export default function WorkflowSetup({
           ))}
           <div className="port-add-form">
             <label className="field">
-              New workflow input
+              {t('editor.newWorkflowInput')}
               <input
                 value={input}
                 onChange={(event) => setInput(event.target.value)}
@@ -152,10 +157,12 @@ export default function WorkflowSetup({
               />
             </label>
             <label className="field">
-              Data type
+              {t('editor.dataType')}
               <select value={type} onChange={(event) => setType(event.target.value)}>
                 {['string', 'object', 'array', 'integer', 'number', 'boolean'].map((type) => (
-                  <option key={type}>{type}</option>
+                  <option key={type} value={type}>
+                    {editorDataTypeLabel(type, t)}
+                  </option>
                 ))}
               </select>
             </label>
@@ -178,13 +185,13 @@ export default function WorkflowSetup({
               }}
             >
               <Plus size={13} />
-              Add workflow input
+              {t('editor.addWorkflowInput')}
             </button>
           </div>
         </section>
         <section className="port-editor">
-          <h3>Workflow outputs</h3>
-          <p className="setup-hint">The results returned when this graph finishes.</p>
+          <h3>{t('editor.workflowOutputs')}</h3>
+          <p className="setup-hint">{t('editor.theResultsReturnedWhenThisGraphFinishes')}</p>
           {Object.entries(graph.outputs ?? {}).map(([name, port]) => (
             <div className="port-editor-card" key={name}>
               <div className="inline spread">
@@ -192,7 +199,7 @@ export default function WorkflowSetup({
                 <button
                   className="icon-button"
                   disabled={Object.keys(graph.outputs ?? {}).length <= 1}
-                  aria-label={`Remove workflow output ${name}`}
+                  aria-label={t('editor.removeWorkflowOutputName', { name })}
                   onClick={() => {
                     const next = { ...graph.outputs };
                     delete next[name];
@@ -215,7 +222,7 @@ export default function WorkflowSetup({
           ))}
           <div className="port-add-form">
             <label className="field">
-              New workflow output
+              {t('editor.newWorkflowOutput')}
               <input
                 value={output}
                 onChange={(event) => setOutput(event.target.value)}
@@ -223,12 +230,14 @@ export default function WorkflowSetup({
               />
             </label>
             <label className="field">
-              Export from
+              {t('editor.exportFrom')}
               <select value={source} onChange={(event) => setSource(event.target.value)}>
-                <option value="">Choose a result</option>
+                <option value="">{t('editor.chooseAResult')}</option>
                 {options.map((option) => (
                   <option key={option.value} value={option.value}>
-                    {option.label}
+                    {option.node
+                      ? option.label
+                      : t('editor.workflowInputName', { name: option.name })}
                   </option>
                 ))}
               </select>
@@ -256,16 +265,14 @@ export default function WorkflowSetup({
               }}
             >
               <Plus size={13} />
-              Add workflow output
+              {t('editor.addWorkflowOutput')}
             </button>
           </div>
         </section>
         {!scope.length ? (
           <section className="workflow-resources" ref={resourcePanel}>
-            <h3>Resources</h3>
-            <p className="setup-hint">
-              Aliases used by blocks. Connection and profile IDs must match your engine profile.
-            </p>
+            <h3>{t('navigation.resources')}</h3>
+            <p className="setup-hint">{t('editor.aliasesUsedByBlocksConnectionAndProfileIds')}</p>
             {(['models', 'mcp', 'sandboxes'] as const).map((kind) => (
               <ResourceList
                 initiallyOpen={showResources}
@@ -279,7 +286,7 @@ export default function WorkflowSetup({
         ) : null}
         {error ? (
           <p className="form-error" role="alert">
-            {error}
+            {message(error)}
           </p>
         ) : null}
       </div>
@@ -298,6 +305,7 @@ function ResourceList({
   resources: Record<string, Record<string, unknown>>;
   onSave: (value: Record<string, Record<string, unknown>>) => void;
 }) {
+  const { t, message } = useI18n();
   const [expanded, setExpanded] = useState(!!initiallyOpen);
   const [alias, setAlias] = useState('');
   const [connection, setConnection] = useState('');
@@ -310,14 +318,20 @@ function ResourceList({
       onToggle={(event) => setExpanded(event.currentTarget.open)}
     >
       <summary>
-        {kind === 'mcp' ? 'MCP servers' : kind === 'sandboxes' ? 'Sandboxes' : 'Models'} (
-        {Object.keys(resources).length})
+        {t(
+          kind === 'mcp'
+            ? 'editor.mcpServers'
+            : kind === 'sandboxes'
+              ? 'resources.sandboxes'
+              : 'resources.models',
+        )}{' '}
+        ({Object.keys(resources).length})
       </summary>
       {Object.entries(resources).map(([name, resource]) => (
         <label className="field" key={name}>
-          {name} · {field} ID
+          {name} · {t(field === 'profile' ? 'editor.profileId' : 'editor.connectionId')}
           <input
-            aria-label={`${name} · ${field} ID`}
+            aria-label={`${name} · ${t(field === 'profile' ? 'editor.profileId' : 'editor.connectionId')}`}
             defaultValue={String(resource[field])}
             key={String(resource[field])}
             onBlur={(event) => {
@@ -328,19 +342,25 @@ function ResourceList({
         </label>
       ))}
       <label className="field">
-        New {kind === 'models' ? 'model' : kind === 'mcp' ? 'server' : 'sandbox'} alias
+        {t(
+          kind === 'models'
+            ? 'editor.newModelAlias'
+            : kind === 'mcp'
+              ? 'editor.newServerAlias'
+              : 'editor.newSandboxAlias',
+        )}
         <input
           value={alias}
           onChange={(event) => setAlias(event.target.value)}
-          placeholder="e.g. researcher"
+          placeholder={t('editor.eGResearcher')}
         />
       </label>
       <label className="field">
-        {field === 'profile' ? 'Profile' : 'Connection'} ID
+        {t(field === 'profile' ? 'editor.profileId2' : 'editor.connectionId2')}
         <input
           value={connection}
           onChange={(event) => setConnection(event.target.value)}
-          placeholder="ID in the trusted engine profile"
+          placeholder={t('editor.idInTheTrustedEngineProfile')}
         />
       </label>
       <button
@@ -361,11 +381,11 @@ function ResourceList({
         }}
       >
         <Plus size={13} />
-        Add alias
+        {t('editor.addAlias')}
       </button>
       {error ? (
         <p className="form-error" role="alert">
-          {error}
+          {message(error)}
         </p>
       ) : null}
     </details>

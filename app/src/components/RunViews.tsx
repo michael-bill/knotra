@@ -1,3 +1,5 @@
+import { useI18n } from '../lib/i18n';
+import { demoStatusLabels, executionTabLabels } from '../lib/executionLabels';
 import { useState } from 'react';
 import {
   ArrowLeft,
@@ -38,6 +40,7 @@ export function RunsView({
   onReview: (id: string) => void;
   onStart: () => void;
 }) {
+  const { t, locale } = useI18n();
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState('all');
   const [tab, setTab] = useState('timeline');
@@ -49,9 +52,9 @@ export function RunsView({
         <div className="run-heading">
           <button className="text-button" onClick={() => onSelect(undefined)}>
             <ArrowLeft size={15} />
-            All runs
+            {t('execution.allRuns')}
           </button>
-          <span className="demo-tag">DEMO RUN</span>
+          <span className="demo-tag">{t('execution.demoRun')}</span>
         </div>
         <header className="page-heading">
           <div>
@@ -59,7 +62,7 @@ export function RunsView({
             <p>
               {run.title}
               <span className="separator">/</span>
-              {time(run.createdAt)}
+              {time(run.createdAt, locale)}
               <span className="separator">/</span>
               <code>{run.id.slice(0, 8)}</code>
             </p>
@@ -68,20 +71,20 @@ export function RunsView({
             <Status status={run.status} />
             {run.status === 'waiting_human' ? (
               <button className="button primary" onClick={() => onReview(run.id)}>
-                Review request
+                {t('execution.reviewRequest')}
                 <ArrowUpRight size={15} />
               </button>
             ) : null}
             {['running', 'waiting_human'].includes(run.status) ? (
               <button className="button" onClick={() => onCancel(run.id)}>
                 <XCircle size={15} />
-                Cancel
+                {t('common.cancel')}
               </button>
             ) : null}
           </div>
         </header>
         <div className="notice small">
-          This guided demo uses sample outputs. No providers, tools or sandbox commands are called.
+          {t('execution.thisGuidedDemoUsesSampleOutputsNoProviders')}
         </div>
         <div className="run-content">
           {pipeline ? (
@@ -91,9 +94,13 @@ export function RunsView({
           ) : null}
           <div className="run-bottom">
             <div className="underline-tabs">
-              {['timeline', 'inputs', 'outputs', 'snapshot'].map((t) => (
-                <button key={t} className={tab === t ? 'active' : ''} onClick={() => setTab(t)}>
-                  {t[0].toUpperCase() + t.slice(1)}
+              {['timeline', 'inputs', 'outputs', 'snapshot'].map((tabName) => (
+                <button
+                  key={tabName}
+                  className={tab === tabName ? 'active' : ''}
+                  onClick={() => setTab(tabName)}
+                >
+                  {t(executionTabLabels[tabName] ?? tabName)}
                 </button>
               ))}
             </div>
@@ -103,7 +110,7 @@ export function RunsView({
                   <div key={e.id} className="timeline-event">
                     <span className="timeline-marker" />
                     <time>
-                      {new Date(e.at).toLocaleTimeString([], {
+                      {new Date(e.at).toLocaleTimeString(locale === 'ru' ? 'ru-RU' : 'en-US', {
                         hour: '2-digit',
                         minute: '2-digit',
                         second: '2-digit',
@@ -118,7 +125,11 @@ export function RunsView({
               </div>
             ) : tab === 'snapshot' ? (
               <div className="snapshot-editor">
-                <SourceEditor source={run.source} readOnly label="Immutable run snapshot" />
+                <SourceEditor
+                  source={run.source}
+                  readOnly
+                  label={t('execution.immutableRunSnapshot')}
+                />
               </div>
             ) : (
               <pre className="json-view">
@@ -139,46 +150,46 @@ export function RunsView({
       <header className="page-heading">
         <div>
           <div className="breadcrumb">
-            Workspace
+            {t('resources.workspace')}
             <ChevronRight size={13} />
-            History
+            {t('execution.history')}
           </div>
-          <h1>Run history</h1>
-          <p>Follow the work, inspect the outputs, and pick up where you left off.</p>
+          <h1>{t('execution.runHistory')}</h1>
+          <p>{t('execution.followTheWorkInspectTheOutputsAndPick')}</p>
         </div>
         <button className="button primary" onClick={onStart}>
           <Play size={15} />
-          Try the guided demo
+          {t('execution.tryTheGuidedDemo')}
         </button>
       </header>
       <div className="summary-cards">
         <div>
-          <span>Total runs</span>
+          <span>{t('execution.totalRuns')}</span>
           <strong>{runs.length}</strong>
-          <small>Local demo history</small>
+          <small>{t('execution.localDemoHistory')}</small>
         </div>
         <div>
-          <span>In progress</span>
+          <span>{t('execution.inProgress')}</span>
           <strong>{runs.filter((r) => r.status === 'running').length}</strong>
-          <small>Work is moving forward</small>
+          <small>{t('execution.workIsMovingForward')}</small>
         </div>
         <div>
-          <span>Needs your attention</span>
+          <span>{t('execution.needsYourAttention')}</span>
           <strong>{runs.filter((r) => r.status === 'waiting_human').length}</strong>
-          <small>Human review requests</small>
+          <small>{t('execution.humanReviewRequests')}</small>
         </div>
         <div>
-          <span>Completed</span>
+          <span>{t('execution.completed')}</span>
           <strong>{runs.filter((r) => r.status === 'succeeded').length}</strong>
-          <small>Outputs ready to inspect</small>
+          <small>{t('execution.outputsReadyToInspect')}</small>
         </div>
       </div>
       <div className="list-toolbar runs-toolbar">
         <label className="search-field">
           <Search size={16} />
           <input
-            aria-label="Search runs"
-            placeholder="Search runs…"
+            aria-label={t('execution.searchRuns')}
+            placeholder={t('execution.searchRuns2')}
             value={search}
             onChange={(e) => setSearch(e.target.value)}
           />
@@ -186,15 +197,15 @@ export function RunsView({
         <label className="status-filter">
           <ListFilter size={16} aria-hidden="true" />
           <select
-            aria-label="Filter runs by status"
+            aria-label={t('execution.filterRunsByStatus')}
             value={filter}
             onChange={(e) => setFilter(e.target.value)}
           >
-            <option value="all">All statuses</option>
-            <option value="running">Running</option>
-            <option value="waiting_human">Needs review</option>
-            <option value="succeeded">Completed</option>
-            <option value="cancelled">Cancelled</option>
+            <option value="all">{t(demoStatusLabels.all)}</option>
+            <option value="running">{t(demoStatusLabels.running)}</option>
+            <option value="waiting_human">{t(demoStatusLabels.waiting_human)}</option>
+            <option value="succeeded">{t(demoStatusLabels.succeeded)}</option>
+            <option value="cancelled">{t(demoStatusLabels.cancelled)}</option>
           </select>
           <ChevronDown size={15} aria-hidden="true" />
         </label>
@@ -202,10 +213,10 @@ export function RunsView({
       {filtered.length ? (
         <div className="run-table">
           <div className="table-header">
-            <span>PIPELINE / TOPIC</span>
-            <span>STATUS</span>
-            <span>STARTED</span>
-            <span>MODE</span>
+            <span>{t('execution.pipelineTopic')}</span>
+            <span>{t('execution.status')}</span>
+            <span>{t('execution.started')}</span>
+            <span>{t('execution.mode')}</span>
           </div>
           {filtered.map((r) => (
             <button className="table-row" key={r.id} onClick={() => onSelect(r.id)}>
@@ -221,9 +232,9 @@ export function RunsView({
                 </span>
               </span>
               <Status status={r.status} />
-              <span className="muted small">{time(r.createdAt)}</span>
+              <span className="muted small">{time(r.createdAt, locale)}</span>
               <span className="inline">
-                <span className="demo-tag">Demo</span>
+                <span className="demo-tag">{t('execution.demo')}</span>
                 <ChevronRight size={15} />
               </span>
             </button>
@@ -232,19 +243,19 @@ export function RunsView({
       ) : (
         <Empty
           icon={<Clock3 size={30} />}
-          title={runs.length ? 'No matching runs' : 'No runs yet'}
+          title={runs.length ? t('execution.noMatchingRuns') : t('execution.noRunsYet')}
           action={
             !runs.length ? (
               <button className="button" onClick={onStart}>
-                Explore the demo
+                {t('execution.exploreTheDemo')}
                 <ArrowUpRight size={15} />
               </button>
             ) : undefined
           }
         >
           {runs.length
-            ? 'Try a different search or status filter.'
-            : 'Start a Research brief demo to see events, human review and artifacts in one place.'}
+            ? t('execution.tryADifferentSearchOrStatusFilter')
+            : t('execution.startAResearchBriefDemoToSeeEvents')}
         </Empty>
       )}
     </section>
@@ -260,12 +271,14 @@ export function InboxView({
   onRespond: (id: string, request: string, response: Record<string, Json>) => void;
   onRun: (id: string) => void;
 }) {
+  const { t, locale, message } = useI18n();
   const waiting = runs.filter((r) => r.status === 'waiting_human');
   const [selected, setSelected] = useState<string>();
   const [feedback, setFeedback] = useState('');
   const [advanced, setAdvanced] = useState(false);
   const [json, setJson] = useState('{\n  "feedback": "Looks good. Ready to share."\n}');
   const [error, setError] = useState('');
+  const [jsonError, setJsonError] = useState(false);
   const run = waiting.find((r) => r.id === selected) ?? waiting[0];
   function submit() {
     if (!run?.requestId) return;
@@ -274,8 +287,10 @@ export function InboxView({
       onRespond(run.id, run.requestId, response);
       setFeedback('');
       setError('');
+      setJsonError(false);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
+      setJsonError(e instanceof SyntaxError);
     }
   }
   return (
@@ -283,15 +298,17 @@ export function InboxView({
       <header className="page-heading">
         <div>
           <div className="breadcrumb">
-            Workspace
+            {t('resources.workspace')}
             <ChevronRight size={13} />
-            Human in the loop
+            {t('execution.humanInTheLoop')}
           </div>
-          <h1>Human review</h1>
-          <p>Review the context. Your response belongs to one specific saved request.</p>
+          <h1>{t('execution.humanReview')}</h1>
+          <p>{t('execution.reviewTheContextYourResponseBelongsToOne')}</p>
         </div>
         <span className="count-pill">
-          {waiting.length} {waiting.length === 1 ? 'open request' : 'open requests'}
+          {t(waiting.length === 1 ? 'execution.countOpenRequest' : 'execution.countOpenRequests', {
+            count: waiting.length,
+          })}
         </span>
       </header>
       {run ? (
@@ -311,25 +328,25 @@ export function InboxView({
                   <Inbox size={17} />
                 </span>
                 <strong>{r.topic}</strong>
-                <small>Research brief · review</small>
-                <time>{time(r.updatedAt)}</time>
-                <span className="demo-tag">Demo</span>
+                <small>{t('execution.researchBriefReview')}</small>
+                <time>{time(r.updatedAt, locale)}</time>
+                <span className="demo-tag">{t('execution.demo')}</span>
               </button>
             ))}
           </div>
           <div className="review-card">
             <header>
               <div>
-                <span className="eyebrow">HUMAN REVIEW</span>
-                <h2>Review the generated brief</h2>
+                <span className="eyebrow">{t('execution.humanReview2')}</span>
+                <h2>{t('execution.reviewTheGeneratedBrief')}</h2>
               </div>
               <button className="text-button" onClick={() => onRun(run.id)}>
-                View run
+                {t('execution.viewRun')}
                 <ArrowUpRight size={14} />
               </button>
             </header>
             <p className="review-prompt">
-              Review the brief and return your feedback. Your response is saved with this run.
+              {t('execution.reviewTheBriefAndReturnYourFeedbackYour')}
             </p>
             <div className="brief-preview">
               {briefFor(run)
@@ -350,15 +367,15 @@ export function InboxView({
             </div>
             <div className="response-form">
               <div className="inline spread">
-                <label htmlFor="review-feedback">Your feedback</label>
+                <label htmlFor="review-feedback">{t('execution.yourFeedback')}</label>
                 <button className="text-button small" onClick={() => setAdvanced(!advanced)}>
                   <Braces size={13} />
-                  {advanced ? 'Simple response' : 'JSON response'}
+                  {advanced ? t('execution.simpleResponse') : t('execution.jsonResponse')}
                 </button>
               </div>
               {advanced ? (
                 <textarea
-                  aria-label="Review JSON response"
+                  aria-label={t('execution.reviewJsonResponse')}
                   rows={5}
                   value={json}
                   onChange={(e) => setJson(e.target.value)}
@@ -367,7 +384,7 @@ export function InboxView({
               ) : (
                 <textarea
                   id="review-feedback"
-                  placeholder="What should be kept, clarified or improved?"
+                  placeholder={t('execution.whatShouldBeKeptClarifiedOrImproved')}
                   rows={4}
                   value={feedback}
                   onChange={(e) => setFeedback(e.target.value)}
@@ -375,13 +392,18 @@ export function InboxView({
               )}
               {error ? (
                 <p className="form-error" role="alert">
-                  {error}
+                  {jsonError
+                    ? t('execution.invalidJsonMessage', { message: error })
+                    : error
+                        .split('\n')
+                        .map((line) => message(line))
+                        .join('\n')}
                 </p>
               ) : null}
               <div className="response-footer">
                 <small>
                   <Fingerprint size={13} />
-                  Request {run.requestId?.slice(0, 8)}
+                  {t('execution.requestId', { id: run.requestId?.slice(0, 8) ?? '' })}
                 </small>
                 <button
                   className="button primary"
@@ -389,16 +411,15 @@ export function InboxView({
                   disabled={!advanced && !feedback.trim()}
                 >
                   <Check size={16} />
-                  Submit response
+                  {t('execution.submitResponse')}
                 </button>
               </div>
             </div>
           </div>
         </div>
       ) : (
-        <Empty icon={<Inbox size={30} />} title="You're all caught up.">
-          When a pipeline reaches a human node, the saved request will appear here. Demo requests
-          survive a reload.
+        <Empty icon={<Inbox size={30} />} title={t('execution.youReAllCaughtUp')}>
+          {t('execution.whenAPipelineReachesAHumanNodeThe')}
         </Empty>
       )}
     </section>
@@ -412,6 +433,7 @@ export function ArtifactsView({
   runs: DemoRun[];
   onExport: (artifact: Artifact) => void;
 }) {
+  const { t, locale } = useI18n();
   const artifacts = runs.flatMap((r) => r.artifacts.map((a) => ({ ...a, run: r })));
   const [selected, setSelected] = useState<string>();
   const [query, setQuery] = useState('');
@@ -424,26 +446,28 @@ export function ArtifactsView({
       <header className="page-heading">
         <div>
           <div className="breadcrumb">
-            Workspace
+            {t('resources.workspace')}
             <ChevronRight size={13} />
-            Outputs
+            {t('execution.outputs')}
           </div>
-          <h1>Artifacts</h1>
-          <p>Declared files, preserved bytes, and a traceable origin.</p>
+          <h1>{t('navigation.artifacts')}</h1>
+          <p>{t('execution.declaredFilesPreservedBytesAndATraceableOrigin')}</p>
         </div>
-        <span className="count-pill">{artifacts.length} artifacts</span>
+        <span className="count-pill">
+          {t('execution.countArtifacts', { count: artifacts.length })}
+        </span>
       </header>
       <div className="list-toolbar">
         <label className="search-field">
           <Search size={16} />
           <input
-            placeholder="Search artifacts…"
-            aria-label="Search artifacts"
+            placeholder={t('execution.searchArtifacts2')}
+            aria-label={t('execution.searchArtifacts')}
             value={query}
             onChange={(e) => setQuery(e.target.value)}
           />
         </label>
-        <span className="small muted">Sample artifacts from demo runs</span>
+        <span className="small muted">{t('execution.sampleArtifactsFromDemoRuns')}</span>
       </div>
       {filtered.length ? (
         <div className="artifact-layout">
@@ -462,11 +486,11 @@ export function ArtifactsView({
                   <strong>{a.name}</strong>
                   <span>{a.run.topic}</span>
                   <small>
-                    {size(a.size)} · {a.mediaType}
+                    {size(a.size, locale)} · {a.mediaType}
                   </small>
                 </div>
                 <div className="artifact-footer">
-                  <span className="demo-tag">Demo</span>
+                  <span className="demo-tag">{t('execution.demo')}</span>
                   <ArrowUpRight size={15} />
                 </div>
               </button>
@@ -478,7 +502,7 @@ export function ArtifactsView({
                 <h3>{artifact.name}</h3>
                 <button className="button small-button" onClick={() => onExport(artifact)}>
                   <Download size={14} />
-                  Export
+                  {t('common.export')}
                 </button>
               </div>
               <div className="detail-field">
@@ -486,9 +510,9 @@ export function ArtifactsView({
                 <code className="hash">{artifact.sha256}</code>
               </div>
               <div className="detail-field">
-                <span>Origin</span>
+                <span>{t('execution.origin')}</span>
                 <strong>{artifact.run.topic}</strong>
-                <small>Demo run · {artifact.run.id.slice(0, 8)}</small>
+                <small>{t('execution.demoRunId', { id: artifact.run.id.slice(0, 8) })}</small>
               </div>
               <pre className="artifact-text">{artifact.content}</pre>
             </aside>
@@ -497,11 +521,15 @@ export function ArtifactsView({
       ) : (
         <Empty
           icon={<FileText size={30} />}
-          title={artifacts.length ? 'No matching artifacts' : 'Your outputs live here'}
+          title={
+            artifacts.length
+              ? t('execution.noMatchingArtifacts')
+              : t('execution.yourOutputsLiveHere')
+          }
         >
           {artifacts.length
-            ? 'Try a different file name or research topic.'
-            : 'Complete a Research brief demo and its Markdown artifact will appear here, with bytes, size and a SHA-256 hash.'}
+            ? t('execution.tryADifferentFileNameOrResearchTopic')
+            : t('execution.completeAResearchBriefDemoAndItsMarkdown')}
         </Empty>
       )}
     </section>

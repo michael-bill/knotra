@@ -90,6 +90,24 @@ KNOTRA_E2E_ENDPOINT=http://127.0.0.1:8787 \
   cargo test --locked --manifest-path src-tauri/Cargo.toml real_engine -- --ignored
 ```
 
+## Interface translations
+
+The frontend keeps English and Russian interface text in `app/src/locales/en.json` and
+`app/src/locales/ru.json`. Add the same stable semantic key to both catalogs, then render it with
+`t('settings.language')` from `useI18n()`. Use named parameters, for example
+`t('shell.countPendingReviews', { count })`, and preserve their names in every translation. Enum
+label maps refer to these keys while keeping protocol values unchanged. CodeMirror phrase lookups
+retain the library's original English tokens and map them to catalog keys.
+
+Only interface text is translated. Render user-defined names, YAML, prompts, model responses, engine
+diagnostics and artifact bytes verbatim. The `message()` adapter is reserved for messages from
+frontend validators; it must not translate engine or user content. Dates and sizes use the selected
+interface locale.
+
+Run frontend unit and browser tests after changing translations. They check catalog coverage,
+matching placeholders, legacy workspace compatibility, persistence, accessibility, editor search and
+preservation of authoring data, demo history and the engine cache during language switching.
+
 ## Integration tests
 
 Start development infrastructure and build sandbox dependencies:

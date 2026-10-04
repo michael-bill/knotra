@@ -1,3 +1,4 @@
+import { useI18n } from '../lib/i18n';
 import { useState } from 'react';
 import { Inbox } from 'lucide-react';
 import { Validator } from '@cfworker/json-schema';
@@ -13,6 +14,7 @@ export function EngineInboxView({
   engine: EngineController;
   onRun: (id: string) => void;
 }) {
+  const { t, locale } = useI18n();
   const [selected, setSelected] = useState('');
   const requests = engine.requests.filter((request) => request.status === 'open');
   const request = requests.find((request) => request.id === selected) ?? requests[0];
@@ -20,10 +22,12 @@ export function EngineInboxView({
     <section className="page inbox-page">
       <header className="page-heading">
         <div>
-          <h1>Engine inbox</h1>
-          <p>Each response is addressed to a saved request and checked by the engine.</p>
+          <h1>{t('execution.engineInbox')}</h1>
+          <p>{t('execution.eachResponseIsAddressedToASavedRequest')}</p>
         </div>
-        <span className="count-pill">{requests.length} open requests</span>
+        <span className="count-pill">
+          {t('execution.countOpenRequests', { count: requests.length })}
+        </span>
       </header>
       {request ? (
         <div className="inbox-layout">
@@ -37,15 +41,15 @@ export function EngineInboxView({
                 <Inbox size={17} />
                 <strong>{request.instanceId}</strong>
                 <small>{request.runId}</small>
-                <time>{time(request.createdAt)}</time>
+                <time>{time(request.createdAt, locale)}</time>
               </button>
             ))}
           </div>
           <EngineResponse key={request.id} request={request} engine={engine} onRun={onRun} />
         </div>
       ) : (
-        <Empty icon={<Inbox />} title="No open engine requests">
-          Saved human requests appear here when the engine pauses a node for your response.
+        <Empty icon={<Inbox />} title={t('execution.noOpenEngineRequests')}>
+          {t('execution.savedHumanRequestsAppearHereWhenTheEngine')}
         </Empty>
       )}
     </section>
@@ -61,18 +65,28 @@ function EngineResponse({
   engine: EngineController;
   onRun: (id: string) => void;
 }) {
+  const { t, locale, message } = useI18n();
   const [value, setValue] = useState('{}');
   const [error, setError] = useState('');
+  const [localError, setLocalError] = useState('');
+  const [jsonError, setJsonError] = useState(false);
   const [busy, setBusy] = useState(false);
   async function submit() {
     setError('');
+    setLocalError('');
+    setJsonError(false);
     setBusy(true);
+    let localFailure = '';
     try {
       const outputs = JSON.parse(value);
-      if (!outputs || typeof outputs !== 'object' || Array.isArray(outputs))
+      if (!outputs || typeof outputs !== 'object' || Array.isArray(outputs)) {
+        localFailure = 'Response must be an object of output ports.';
         throw new Error('Response must be an object of output ports.');
-      if (!new Validator(request.responseSchema, '2020-12', false).validate(outputs).valid)
+      }
+      if (!new Validator(request.responseSchema, '2020-12', false).validate(outputs).valid) {
+        localFailure = 'Response does not match the requested JSON schema.';
         throw new Error('Response does not match the requested JSON schema.');
+      }
       await engine.command({
         op: 'respond',
         requestId: request.id,
@@ -81,6 +95,8 @@ function EngineResponse({
       });
     } catch (error) {
       setError(engineError(error).message);
+      setLocalError(localFailure);
+      setJsonError(error instanceof SyntaxError);
     } finally {
       setBusy(false);
     }
@@ -89,25 +105,27 @@ function EngineResponse({
     <div className="review-card">
       <header>
         <div>
-          <span className="eyebrow">HUMAN REQUEST</span>
+          <span className="eyebrow">{t('execution.humanRequest')}</span>
           <h2>{request.instanceId}</h2>
         </div>
         <button className="text-button" onClick={() => onRun(request.runId)}>
-          View run
+          {t('execution.viewRun')}
         </button>
       </header>
       <p className="review-prompt">{request.prompt}</p>
-      <p className="small muted">Deadline: {time(request.deadline)}</p>
+      <p className="small muted">
+        {t('execution.deadlineTime', { time: time(request.deadline, locale) })}
+      </p>
       <pre className="json-view">{JSON.stringify(request.inputs, null, 2)}</pre>
       <details>
-        <summary>Response schema</summary>
+        <summary>{t('execution.responseSchema')}</summary>
         <pre className="json-view">{JSON.stringify(request.responseSchema, null, 2)}</pre>
       </details>
       <div className="response-form">
         <label className="field">
-          Response output ports
+          {t('execution.responseOutputPorts')}
           <textarea
-            aria-label="Engine review response"
+            aria-label={t('execution.engineReviewResponse')}
             className="code-input"
             rows={7}
             value={value}
@@ -116,11 +134,15 @@ function EngineResponse({
         </label>
         {error ? (
           <p className="form-error" role="alert">
-            {error}
+            {localError
+              ? message(localError)
+              : jsonError
+                ? t('execution.invalidJsonMessage', { message: error })
+                : error}
           </p>
         ) : null}
         <div className="response-footer">
-          <small>Request {request.id}</small>
+          <small>{t('execution.requestId', { id: request.id })}</small>
           <button
             className="button primary"
             disabled={
@@ -132,7 +154,7 @@ function EngineResponse({
             }
             onClick={() => void submit()}
           >
-            Submit response
+            {t('execution.submitResponse')}
           </button>
         </div>
       </div>

@@ -56,6 +56,15 @@ import {
   respondDemo,
 } from './lib/demo';
 import { ThemeContext } from './lib/theme';
+import {
+  LocaleContext,
+  preferredLocale,
+  translate,
+  translateMessage,
+  useTranslation,
+  type TranslationValues,
+  type MessageKey,
+} from './lib/i18n';
 import { loadWorkspace, saveState, readBackup, type State } from './lib/storage';
 import { parsePipeline, validatePipeline, validPath } from './lib/validation';
 import { base64, decodeText, textBytes, unbase64 } from './lib/bytes';
@@ -82,12 +91,12 @@ import {
 } from './components/EngineViews';
 
 const WorkspaceView = lazy(() => import('./components/WorkspaceView'));
-const navigation: { id: Section; title: string; icon: typeof Workflow }[] = [
-  { id: 'pipelines', title: 'Pipelines', icon: Workflow },
-  { id: 'runs', title: 'Runs', icon: History },
-  { id: 'inbox', title: 'Inbox', icon: Inbox },
-  { id: 'artifacts', title: 'Artifacts', icon: FileBox },
-  { id: 'connections', title: 'Resources', icon: Cable },
+const navigation: { id: Section; title: MessageKey; icon: typeof Workflow }[] = [
+  { id: 'pipelines', title: 'navigation.pipelines', icon: Workflow },
+  { id: 'runs', title: 'navigation.runs', icon: History },
+  { id: 'inbox', title: 'navigation.inbox', icon: Inbox },
+  { id: 'artifacts', title: 'navigation.artifacts', icon: FileBox },
+  { id: 'connections', title: 'navigation.resources', icon: Cable },
 ];
 
 type Dialog =
@@ -105,6 +114,7 @@ type Dialog =
 export default function App() {
   const [initial, setInitial] = useState<State>();
   const [error, setError] = useState('');
+  const locale = preferredLocale();
   useEffect(() => {
     void loadWorkspace()
       .then(setInitial)
@@ -113,10 +123,10 @@ export default function App() {
   if (!initial)
     return (
       <div className="loading" role={error ? 'alert' : 'status'}>
-        {error || 'Opening local workspace…'}
+        {error ? translateMessage(error, locale) : translate('shell.openingLocalWorkspace', locale)}
         {error ? (
           <button className="button" onClick={() => location.reload()}>
-            Retry
+            {translate('common.retry', locale)}
           </button>
         ) : null}
       </div>
@@ -130,9 +140,16 @@ function LoadedApp({ initial }: { initial: State }) {
   const [addScope, setAddScope] = useState<string[]>([]);
   const [openResources, setOpenResources] = useState<'models' | 'mcp' | 'sandboxes' | 'secrets'>();
   const [state, setState] = useState<State>(initial);
+  const t = useTranslation(state.locale);
   const [section, setSection] = useState<Section>('pipelines');
   const [dialog, setDialog] = useState<Dialog>();
-  const [toast, setToast] = useState('');
+  const [toast, setToast] = useState<{
+    message: string;
+    values?: TranslationValues;
+    raw?: boolean;
+  }>({
+    message: '',
+  });
   const [query, setQuery] = useState('');
   const [topic, setTopic] = useState('Reliable AI workflows');
   const [activeRun, setActiveRun] = useState<string>();
@@ -143,6 +160,10 @@ function LoadedApp({ initial }: { initial: State }) {
   useLayoutEffect(() => {
     document.documentElement.dataset.theme = state.theme;
   }, [state.theme]);
+  useLayoutEffect(() => {
+    document.documentElement.lang = state.locale;
+    document.title = t('app.title');
+  }, [state.locale, t]);
   const fileInput = useRef<HTMLInputElement>(null);
   const folderInput = useRef<HTMLInputElement>(null);
   const stateRef = useRef(state);
@@ -160,18 +181,22 @@ function LoadedApp({ initial }: { initial: State }) {
       new Map(
         state.workspaces.map((w) => {
           const p = parsePipeline(w.source);
-          return [w.id, p?.metadata.title ?? p?.metadata.name ?? 'Pipeline draft'];
+          return [w.id, p?.metadata.title ?? p?.metadata.name ?? t('editor.pipelineDraft')];
         }),
       ),
-    [state.workspaces],
+    [state.workspaces, t],
   );
   const [runMode, setRunMode] = useState<'demo' | 'engine'>('demo');
   const closeDialog = useCallback(() => setDialog(undefined), []);
-  const notify = useCallback((message: string) => setToast(message), []);
+  const notify = useCallback(
+    (message: string, values?: TranslationValues) => setToast({ message, values }),
+    [],
+  );
+  const notifyRaw = useCallback((message: string) => setToast({ message, raw: true }), []);
   useLayoutEffect(() => {
     document.querySelector('.main-content')?.scrollTo(0, 0);
   }, [section, runMode, activeRun]);
-  const engine = useEngine(notify);
+  const engine = useEngine(notifyRaw);
   const waiting =
     state.runs.filter((r) => r.status === 'waiting_human').length +
     (engine.info ? engine.requests.filter((request) => request.status === 'open').length : 0);
@@ -182,13 +207,13 @@ function LoadedApp({ initial }: { initial: State }) {
     const timer = setTimeout(
       () => {
         void saveState(state).catch(() =>
-          setToast('Workspace storage is unavailable. Export a backup to preserve your work.'),
+          notify('messages.workspaceStorageIsUnavailableExportABackupTo'),
         );
       },
       desktop ? 0 : 250,
     );
     return () => clearTimeout(timer);
-  }, [state]);
+  }, [state, notify]);
   useEffect(() => {
     const save = () => {
       void saveState(stateRef.current).catch(() => {});
@@ -208,7 +233,7 @@ function LoadedApp({ initial }: { initial: State }) {
           await saveState(stateRef.current);
           await window.destroy();
         } catch {
-          notify('Could not save the workspace. Export a backup before closing.');
+          notify('messages.couldNotSaveTheWorkspaceExportABackup');
         }
       });
       if (disposed) unlisten();
@@ -220,8 +245,8 @@ function LoadedApp({ initial }: { initial: State }) {
     };
   }, [notify]);
   useEffect(() => {
-    if (!toast) return;
-    const timer = setTimeout(() => setToast(''), 6000);
+    if (!toast.message) return;
+    const timer = setTimeout(() => setToast({ message: '' }), 6000);
     return () => clearTimeout(timer);
   }, [toast]);
   useEffect(() => {
@@ -267,7 +292,7 @@ function LoadedApp({ initial }: { initial: State }) {
         current.id === w.id ? { ...current, savedSource: current.source } : current,
       ),
     }));
-    notify('Draft saved in this local workspace.');
+    notify('messages.draftSavedInThisLocalWorkspace');
   }, [notify]);
   useEffect(() => {
     const key = (e: KeyboardEvent) => {
@@ -327,7 +352,7 @@ function LoadedApp({ initial }: { initial: State }) {
     setState((s) => ({ ...s, workspaces: [...s.workspaces, w], activeId: w.id }));
     setSection('pipelines');
     closeDialog();
-    notify('Pipeline package added to your local workspace.');
+    notify('messages.pipelinePackageAddedToYourLocalWorkspace');
   }
   function selectExample(id: string) {
     setOpenResources(undefined);
@@ -475,7 +500,7 @@ function LoadedApp({ initial }: { initial: State }) {
           declared.files,
           name,
         );
-        if (path) notify(`Package exported to ${path}`);
+        if (path) notify('messages.packageExportedToPath', { path });
       } else {
         const entries = Object.fromEntries(
           [
@@ -492,7 +517,7 @@ function LoadedApp({ initial }: { initial: State }) {
         a.download = name + '.zip';
         a.click();
         setTimeout(() => URL.revokeObjectURL(url), 1000);
-        notify('Complete pipeline package exported as ZIP.');
+        notify('messages.completePipelinePackageExportedAsZip');
       }
     } catch (e) {
       notify(e instanceof Error ? e.message : String(e));
@@ -533,7 +558,7 @@ function LoadedApp({ initial }: { initial: State }) {
           : run,
       ),
     }));
-    notify('Review response accepted. The demo is continuing.');
+    notify('messages.reviewResponseAcceptedTheDemoIsContinuing');
   }
   function addNode(kind: NodeKind) {
     if (!workspace || !validation.pipeline) return;
@@ -548,7 +573,7 @@ function LoadedApp({ initial }: { initial: State }) {
     for (const parent of addScope) {
       const outer = graph.nodes[parent];
       if (!outer || !['foreach', 'loop'].includes(outer.type)) {
-        notify('The selected body is no longer available.');
+        notify('messages.theSelectedBodyIsNoLongerAvailable');
         return;
       }
       path.push('nodes', parent, outer.type, 'body');
@@ -598,9 +623,9 @@ function LoadedApp({ initial }: { initial: State }) {
       ),
     }));
     closeDialog();
-    notify(
-      `${nodeMeta[kind].label} node added. Choose its model or tool in Setup, then connect its inputs.`,
-    );
+    notify('messages.kindNodeAddedChooseItsModelOrTool', {
+      kind: nodeMeta[kind].label,
+    });
   }
   async function exportArtifact(artifact: Artifact) {
     try {
@@ -620,624 +645,660 @@ function LoadedApp({ initial }: { initial: State }) {
   }
   return (
     <ThemeContext.Provider value={state.theme}>
-      <div className={`app-shell ${state.compact ? 'compact' : ''}`}>
-        <aside className="app-sidebar">
-          <div className="sidebar-brand-row">
-            <button
-              className="brand"
-              aria-label="Knotra workspace"
-              onClick={() => navigate('pipelines')}
-            >
-              <img src="/knotra.svg" alt="" />
-              <span>knotra</span>
-            </button>
-            <button
-              className="icon-button nav-toggle"
-              aria-label={state.compact ? 'Expand navigation' : 'Collapse navigation'}
-              aria-expanded={!state.compact}
-              title={state.compact ? 'Expand navigation' : 'Collapse navigation'}
-              onClick={() => setState((s) => ({ ...s, compact: !s.compact }))}
-            >
-              {state.compact ? <PanelLeftOpen size={17} /> : <PanelLeftClose size={17} />}
-            </button>
-          </div>
-          <button
-            className="sidebar-search"
-            onClick={() => {
-              setQuery('');
-              setDialog('search');
-            }}
-          >
-            <Search size={16} />
-            <span>Find anything</span>
-            <kbd>⌘ K</kbd>
-          </button>
-          <nav aria-label="Main navigation">
-            {navigation.map(({ id, title, icon: Icon }) => (
+      <LocaleContext.Provider value={state.locale}>
+        <div className={`app-shell ${state.compact ? 'compact' : ''}`}>
+          <aside className="app-sidebar">
+            <div className="sidebar-brand-row">
               <button
-                key={id}
-                aria-label={title}
-                aria-current={section === id ? 'page' : undefined}
-                className={section === id ? 'active' : ''}
-                onClick={() => navigate(id)}
-                title={title}
+                className="brand"
+                aria-label={t('shell.knotraWorkspace')}
+                onClick={() => navigate('pipelines')}
               >
-                <Icon size={18} />
-                <span>{title}</span>
-                {id === 'inbox' && waiting ? <i className="nav-alert">{waiting}</i> : null}
-              </button>
-            ))}
-          </nav>
-          <div className="sidebar-section">
-            <span>YOUR PIPELINES</span>
-            <button
-              className="icon-button"
-              aria-label="Create pipeline"
-              onClick={() => setDialog('library')}
-            >
-              <Plus size={15} />
-            </button>
-          </div>
-          <div className="sidebar-pipelines">
-            {state.workspaces.map((w) => (
-              <button
-                className={workspace?.id === w.id && section === 'pipelines' ? 'selected' : ''}
-                key={w.id}
-                onClick={() => selectWorkspace(w.id)}
-                title={names.get(w.id)}
-              >
-                <span className="pipeline-dot" />
-                <span>{names.get(w.id)}</span>
-                {w.source !== w.savedSource ? <i className="unsaved-dot" /> : null}
-              </button>
-            ))}
-          </div>
-          <button className="sidebar-create" onClick={() => setDialog('library')}>
-            <Plus size={16} />
-            <span>New pipeline</span>
-          </button>
-          <div className="sidebar-bottom">
-            <button
-              className={section === 'settings' ? 'active' : ''}
-              onClick={() => navigate('settings')}
-              title="Workspace settings"
-            >
-              <Settings2 size={18} />
-              <span>Settings</span>
-            </button>
-            <div className="sidebar-environment">
-              <span className="dot green" />
-              <span>
-                Local workspace
-                <small>{engine.info ? 'Engine connected' : 'Offline authoring'}</small>
-              </span>
-            </div>
-          </div>
-        </aside>
-        <main className="main">
-          <header className="app-header">
-            <div className="workspace-location">
-              <span>Personal workspace</span>
-              <ChevronRight size={13} />
-              <strong>
-                {section === 'connections'
-                  ? 'Resources'
-                  : section[0].toUpperCase() + section.slice(1)}
-              </strong>
-            </div>
-            <div className="header-actions">
-              <span className="runtime-label">{desktop ? 'Desktop' : 'Browser preview'}</span>
-              <button className="button" disabled={busy} onClick={openImport}>
-                <FolderOpen size={15} />
-                <span>{busy ? 'Working…' : 'Open package'}</span>
+                <img src="/knotra.svg" alt="" />
+                <span>knotra</span>
               </button>
               <button
-                className="icon-button notification-button"
-                aria-label={waiting ? `${waiting} pending reviews` : 'Review inbox'}
-                onClick={() => navigate('inbox')}
+                className="icon-button nav-toggle"
+                aria-label={t(
+                  state.compact ? 'shell.expandNavigation' : 'shell.collapseNavigation',
+                )}
+                aria-expanded={!state.compact}
+                title={t(state.compact ? 'shell.expandNavigation' : 'shell.collapseNavigation')}
+                onClick={() => setState((s) => ({ ...s, compact: !s.compact }))}
               >
-                <Bell size={18} />
-                {waiting ? <i /> : null}
+                {state.compact ? <PanelLeftOpen size={17} /> : <PanelLeftClose size={17} />}
               </button>
             </div>
-          </header>
-          <div
-            className={`main-content ${['runs', 'inbox', 'artifacts'].includes(section) ? 'execution-view' : ''}`}
-          >
-            {['runs', 'inbox', 'artifacts'].includes(section) ? (
-              <>
-                <div className="engine-mode-tabs underline-tabs" aria-label="Run mode">
-                  <button
-                    className={runMode === 'engine' ? 'active' : ''}
-                    onClick={() => setRunMode('engine')}
-                  >
-                    Engine
-                  </button>
-                  <button
-                    className={runMode === 'demo' ? 'active' : ''}
-                    onClick={() => setRunMode('demo')}
-                  >
-                    Guided demo
-                  </button>
-                </div>
-                {runMode === 'engine' ? (
-                  <EngineBanner engine={engine} onSettings={() => navigate('settings')} />
-                ) : null}
-              </>
-            ) : null}
-            {section === 'pipelines' ? (
-              <Suspense fallback={<div className="loading">Opening workspace…</div>}>
-                <WorkspaceView
-                  resourcesRequested={openResources}
-                  key={workspace?.id ?? 'empty'}
-                  workspace={workspace}
-                  validation={validation}
-                  engineConnected={!!engine.info && !engine.error}
-                  onEngineRun={() => setDialog('engine-run')}
-                  demo={workspace ? demoAvailable(workspace) : false}
-                  onChange={(source, files, positions) => {
-                    if (!workspace) return;
-                    setState((s) => ({
-                      ...s,
-                      workspaces: s.workspaces.map((w) =>
-                        w.id === workspace.id
-                          ? {
-                              ...w,
-                              source,
-                              files: files ?? w.files,
-                              positions: positions ?? w.positions,
-                              updatedAt: new Date().toISOString(),
-                            }
-                          : w,
-                      ),
-                    }));
-                  }}
-                  onSave={saveDraft}
-                  onExport={() => void exportCurrent()}
-                  onRun={() => setDialog('run')}
-                  onLibrary={() => setDialog('library')}
-                  onAddNode={(scope) => {
-                    setAddScope(scope);
-                    setDialog('node');
-                  }}
-                  onDelete={() => setDialog('delete')}
-                  onNotify={notify}
-                />
-              </Suspense>
-            ) : section === 'runs' && runMode === 'engine' ? (
-              <EngineRunsView
-                engine={engine}
-                activeId={activeRun}
-                onSelect={setActiveRun}
-                onReview={() => setSection('inbox')}
-              />
-            ) : section === 'runs' ? (
-              <RunsView
-                runs={state.runs}
-                activeId={activeRun}
-                onSelect={setActiveRun}
-                onCancel={(id) =>
-                  setState((s) => ({
-                    ...s,
-                    runs: s.runs.map((r) => (r.id === id ? cancelDemo(r) : r)),
-                  }))
-                }
-                onReview={(id) => {
-                  setActiveRun(id);
-                  setSection('inbox');
-                }}
-                onStart={startDialog}
-              />
-            ) : section === 'inbox' && runMode === 'engine' ? (
-              <EngineInboxView
-                engine={engine}
-                onRun={(id) => {
-                  setActiveRun(id);
-                  setSection('runs');
-                }}
-              />
-            ) : section === 'inbox' ? (
-              <InboxView
-                runs={state.runs}
-                onRespond={respond}
-                onRun={(id) => {
-                  setActiveRun(id);
-                  setSection('runs');
-                }}
-              />
-            ) : section === 'artifacts' && runMode === 'engine' ? (
-              <EngineArtifactsView engine={engine} />
-            ) : section === 'artifacts' ? (
-              <ArtifactsView runs={state.runs} onExport={exportArtifact} />
-            ) : section === 'connections' ? (
-              <ConnectionsView
-                engine={engine}
-                pipeline={validation.pipeline}
-                onSource={(kind) => {
-                  setOpenResources(kind);
-                  setSection('pipelines');
-                }}
-              />
-            ) : (
-              <SettingsView
-                onRestore={() => backupInput.current?.click()}
-                engine={engine}
-                key={state.engineUrl}
-                engineUrl={state.engineUrl}
-                desktop={desktop}
-                theme={state.theme}
-                onTheme={(theme) => setState((s) => ({ ...s, theme }))}
-                onSaveUrl={(engineUrl) => {
-                  if (engineUrl !== state.engineUrl)
-                    void engine.disconnect().catch((error) => notify(String(error)));
-                  setState((s) => ({ ...s, engineUrl }));
-                }}
-                onBackup={() => {
-                  void exportFile(
-                    'knotra-workspace-backup.json',
-                    JSON.stringify(state, null, 2),
-                    'application/json',
-                  ).catch((error) => notify(String(error)));
-                }}
-                onNotify={notify}
-              />
-            )}
-          </div>
-        </main>
-        <input
-          ref={backupInput}
-          hidden
-          type="file"
-          accept=".json,application/json"
-          aria-label="Restore workspace backup"
-          onChange={async (event) => {
-            const file = event.target.files?.[0];
-            event.target.value = '';
-            if (!file) return;
-            try {
-              if (file.size > 96 * 1024 * 1024) throw new Error('Workspace backup exceeds 96 MiB.');
-              setRestoring(readBackup(await file.text()));
-              setDialog('restore');
-            } catch (error) {
-              notify(error instanceof Error ? error.message : String(error));
-            }
-          }}
-        />
-        {dialog === 'restore' && restoring ? (
-          <Modal
-            title="Restore workspace backup?"
-            subtitle="Review the backup before replacing your local authoring workspace."
-            onClose={closeDialog}
-          >
-            <div className="modal-body">
-              <p>
-                {restoring.workspaces.length} pipeline drafts · {restoring.runs.length} demo runs ·{' '}
-                {restoring.theme} theme
-              </p>
-              <p>
-                Your current drafts and demo history will be replaced. Engine execution and its
-                command journal are preserved separately.
-              </p>
-            </div>
-            <div className="modal-footer">
-              <button className="button" onClick={closeDialog}>
-                Keep current workspace
-              </button>
-              <button
-                className="button primary"
-                onClick={async () => {
-                  try {
-                    await saveState(restoring);
-                    await engine.disconnect();
-                    setState(restoring);
-                    setActiveRun(undefined);
-                    setSection('pipelines');
-                    setRunMode('demo');
-                    setRestoring(undefined);
-                    closeDialog();
-                    notify('Workspace backup restored.');
-                  } catch (error) {
-                    notify(error instanceof Error ? error.message : String(error));
-                  }
-                }}
-              >
-                Restore backup
-              </button>
-            </div>
-          </Modal>
-        ) : null}
-        {dialog === 'engine-run' && workspace && engine.info ? (
-          <EngineRunDialog
-            workspace={{ ...workspace, ...allowedFiles(workspace) }}
-            engine={engine}
-            onClose={closeDialog}
-            onStarted={(id) => {
-              setActiveRun(id);
-              setRunMode('engine');
-              setSection('runs');
-            }}
-          />
-        ) : null}
-        {dialog === 'library' ? (
-          <Modal
-            title="Build your next workflow."
-            subtitle="Start with a template, then connect the pieces."
-            onClose={closeDialog}
-            wide
-          >
-            <div className="library-grid">
-              {examples.map((e) => (
-                <button key={e.id} className="template-card" onClick={() => selectExample(e.id)}>
-                  <span className={`node-icon tint-${e.id === 'research' ? 'green' : 'violet'}`}>
-                    {e.id === 'research' ? (
-                      <Workflow size={21} />
-                    ) : (
-                      <NodeIcon
-                        kind={
-                          (e.id === 'subpipeline'
-                            ? 'pipeline'
-                            : e.id === 'artifact-mount'
-                              ? 'code'
-                              : e.id) as NodeKind
-                        }
-                        size={21}
-                      />
-                    )}
-                  </span>
-                  <h3>{e.title}</h3>
-                  <p>{e.description}</p>
-                  <span className="template-kind">
-                    {e.kind}
-                    <ArrowUpRight size={14} />
-                  </span>
+            <button
+              className="sidebar-search"
+              onClick={() => {
+                setQuery('');
+                setDialog('search');
+              }}
+            >
+              <Search size={16} />
+              <span>{t('shell.findAnything')}</span>
+              <kbd>⌘ K</kbd>
+            </button>
+            <nav aria-label={t('navigation.main')}>
+              {navigation.map(({ id, title, icon: Icon }) => (
+                <button
+                  key={id}
+                  aria-label={t(title)}
+                  aria-current={section === id ? 'page' : undefined}
+                  className={section === id ? 'active' : ''}
+                  onClick={() => navigate(id)}
+                  title={t(title)}
+                >
+                  <Icon size={18} />
+                  <span>{t(title)}</span>
+                  {id === 'inbox' && waiting ? <i className="nav-alert">{waiting}</i> : null}
                 </button>
               ))}
-            </div>
-            <div className="modal-footer">
-              <span>Examples follow the repository’s notation v1 fixtures.</span>
+            </nav>
+            <div className="sidebar-section">
+              <span>{t('shell.yourPipelines')}</span>
               <button
-                className="button"
-                onClick={() => {
-                  const p = structuredClone(
-                    parsePipeline(examples.find((e) => e.id === 'human')!.source)!,
-                  );
-                  p.metadata = {
-                    name: 'untitled-pipeline',
-                    title: 'Untitled pipeline',
-                    description: 'Your next process starts here.',
-                  };
-                  addWorkspace({ source: stringify(p), entrypoint: 'pipeline.yaml', files: [] });
-                }}
+                className="icon-button"
+                aria-label={t('editor.createPipeline')}
+                onClick={() => setDialog('library')}
               >
                 <Plus size={15} />
-                Start from scratch
               </button>
             </div>
-          </Modal>
-        ) : null}
-        {dialog === 'node' ? (
-          <Modal
-            title="Add a node"
-            subtitle="Choose a block. Set it up in the right panel, then connect its named inputs and outputs."
-            onClose={closeDialog}
-            wide
-          >
-            <div className="node-palette">
-              {Object.entries(nodeMeta).map(([kind, meta]) => (
-                <button key={kind} onClick={() => addNode(kind as NodeKind)}>
-                  <span className={`node-icon tint-${meta.color}`}>
-                    <NodeIcon kind={kind as NodeKind} />
-                  </span>
-                  <div>
-                    <strong>{meta.label}</strong>
-                    <span>{meta.detail}</span>
-                  </div>
-                  <Plus size={16} />
+            <div className="sidebar-pipelines">
+              {state.workspaces.map((w) => (
+                <button
+                  className={workspace?.id === w.id && section === 'pipelines' ? 'selected' : ''}
+                  key={w.id}
+                  onClick={() => selectWorkspace(w.id)}
+                  title={names.get(w.id)}
+                >
+                  <span className="pipeline-dot" />
+                  <span>{names.get(w.id)}</span>
+                  {w.source !== w.savedSource ? <i className="unsaved-dot" /> : null}
                 </button>
               ))}
             </div>
-          </Modal>
-        ) : null}
-        {dialog === 'run' ? (
-          <Modal
-            title="Run your workflow"
-            subtitle="A guided Research brief demo, with sample outputs."
-            onClose={closeDialog}
-          >
-            <div className="modal-body">
-              <div className="notice">
-                <Sparkles size={19} />
-                <p>
-                  This demo simulates five steps, pauses for your review, and produces a sample
-                  Markdown file. It does not execute YAML or contact any services.
-                </p>
+            <button className="sidebar-create" onClick={() => setDialog('library')}>
+              <Plus size={16} />
+              <span>{t('shell.newPipeline')}</span>
+            </button>
+            <div className="sidebar-bottom">
+              <button
+                className={section === 'settings' ? 'active' : ''}
+                onClick={() => navigate('settings')}
+                title={t('resources.workspaceSettings')}
+              >
+                <Settings2 size={18} />
+                <span>{t('navigation.settings')}</span>
+              </button>
+              <div className="sidebar-environment">
+                <span className="dot green" />
+                <span>
+                  {t('shell.localWorkspace')}
+                  <small>
+                    {t(engine.info ? 'shell.engineConnected' : 'shell.offlineAuthoring')}
+                  </small>
+                </span>
               </div>
-              <label className="field">
-                Research topic
-                <input
-                  autoFocus
-                  aria-label="Research topic"
-                  value={topic}
-                  onChange={(e) => setTopic(e.target.value)}
-                  placeholder="What would you like to explore?"
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' && topic.trim()) startRun();
+            </div>
+          </aside>
+          <main className="main">
+            <header className="app-header">
+              <div className="workspace-location">
+                <span>{t('shell.personalWorkspace')}</span>
+                <ChevronRight size={13} />
+                <strong>
+                  {t(
+                    section === 'settings'
+                      ? 'navigation.settings'
+                      : navigation.find((item) => item.id === section)!.title,
+                  )}
+                </strong>
+              </div>
+              <div className="header-actions">
+                <span className="runtime-label">
+                  {t(desktop ? 'resources.desktop' : 'shell.browserPreview')}
+                </span>
+                <button className="button" disabled={busy} onClick={openImport}>
+                  <FolderOpen size={15} />
+                  <span>{t(busy ? 'shell.working' : 'common.openPackage')}</span>
+                </button>
+                <button
+                  className="icon-button notification-button"
+                  aria-label={
+                    waiting
+                      ? t('shell.countPendingReviews', { count: waiting })
+                      : t('shell.reviewInbox')
+                  }
+                  onClick={() => navigate('inbox')}
+                >
+                  <Bell size={18} />
+                  {waiting ? <i /> : null}
+                </button>
+              </div>
+            </header>
+            <div
+              className={`main-content ${['runs', 'inbox', 'artifacts'].includes(section) ? 'execution-view' : ''}`}
+            >
+              {['runs', 'inbox', 'artifacts'].includes(section) ? (
+                <>
+                  <div className="engine-mode-tabs underline-tabs" aria-label={t('shell.runMode')}>
+                    <button
+                      className={runMode === 'engine' ? 'active' : ''}
+                      onClick={() => setRunMode('engine')}
+                    >
+                      {t('resources.engine')}
+                    </button>
+                    <button
+                      className={runMode === 'demo' ? 'active' : ''}
+                      onClick={() => setRunMode('demo')}
+                    >
+                      {t('shell.guidedDemo')}
+                    </button>
+                  </div>
+                  {runMode === 'engine' ? (
+                    <EngineBanner engine={engine} onSettings={() => navigate('settings')} />
+                  ) : null}
+                </>
+              ) : null}
+              {section === 'pipelines' ? (
+                <Suspense fallback={<div className="loading">{t('shell.openingWorkspace')}</div>}>
+                  <WorkspaceView
+                    resourcesRequested={openResources}
+                    key={workspace?.id ?? 'empty'}
+                    workspace={workspace}
+                    validation={validation}
+                    engineConnected={!!engine.info && !engine.error}
+                    onEngineRun={() => setDialog('engine-run')}
+                    demo={workspace ? demoAvailable(workspace) : false}
+                    onChange={(source, files, positions) => {
+                      if (!workspace) return;
+                      setState((s) => ({
+                        ...s,
+                        workspaces: s.workspaces.map((w) =>
+                          w.id === workspace.id
+                            ? {
+                                ...w,
+                                source,
+                                files: files ?? w.files,
+                                positions: positions ?? w.positions,
+                                updatedAt: new Date().toISOString(),
+                              }
+                            : w,
+                        ),
+                      }));
+                    }}
+                    onSave={saveDraft}
+                    onExport={() => void exportCurrent()}
+                    onRun={() => setDialog('run')}
+                    onLibrary={() => setDialog('library')}
+                    onAddNode={(scope) => {
+                      setAddScope(scope);
+                      setDialog('node');
+                    }}
+                    onDelete={() => setDialog('delete')}
+                    onNotify={notify}
+                  />
+                </Suspense>
+              ) : section === 'runs' && runMode === 'engine' ? (
+                <EngineRunsView
+                  engine={engine}
+                  activeId={activeRun}
+                  onSelect={setActiveRun}
+                  onReview={() => setSection('inbox')}
+                />
+              ) : section === 'runs' ? (
+                <RunsView
+                  runs={state.runs}
+                  activeId={activeRun}
+                  onSelect={setActiveRun}
+                  onCancel={(id) =>
+                    setState((s) => ({
+                      ...s,
+                      runs: s.runs.map((r) => (r.id === id ? cancelDemo(r) : r)),
+                    }))
+                  }
+                  onReview={(id) => {
+                    setActiveRun(id);
+                    setSection('inbox');
+                  }}
+                  onStart={startDialog}
+                />
+              ) : section === 'inbox' && runMode === 'engine' ? (
+                <EngineInboxView
+                  engine={engine}
+                  onRun={(id) => {
+                    setActiveRun(id);
+                    setSection('runs');
                   }}
                 />
-              </label>
-              <div className="run-steps">
-                {['Discover', 'Research', 'Draft', 'Review', 'Publish'].map((name, i) => (
-                  <span key={name}>
-                    <em>{i + 1}</em>
-                    {name}
-                    {i < 4 ? <ChevronRight size={12} /> : null}
-                  </span>
+              ) : section === 'inbox' ? (
+                <InboxView
+                  runs={state.runs}
+                  onRespond={respond}
+                  onRun={(id) => {
+                    setActiveRun(id);
+                    setSection('runs');
+                  }}
+                />
+              ) : section === 'artifacts' && runMode === 'engine' ? (
+                <EngineArtifactsView engine={engine} />
+              ) : section === 'artifacts' ? (
+                <ArtifactsView runs={state.runs} onExport={exportArtifact} />
+              ) : section === 'connections' ? (
+                <ConnectionsView
+                  engine={engine}
+                  pipeline={validation.pipeline}
+                  onSource={(kind) => {
+                    setOpenResources(kind);
+                    setSection('pipelines');
+                  }}
+                />
+              ) : (
+                <SettingsView
+                  onRestore={() => backupInput.current?.click()}
+                  engine={engine}
+                  key={state.engineUrl}
+                  engineUrl={state.engineUrl}
+                  desktop={desktop}
+                  theme={state.theme}
+                  language={state.locale}
+                  onLanguage={(locale) => setState((s) => ({ ...s, locale }))}
+                  onTheme={(theme) => setState((s) => ({ ...s, theme }))}
+                  onSaveUrl={(engineUrl) => {
+                    if (engineUrl !== state.engineUrl)
+                      void engine.disconnect().catch((error) => notifyRaw(String(error)));
+                    setState((s) => ({ ...s, engineUrl }));
+                  }}
+                  onBackup={() => {
+                    void exportFile(
+                      'knotra-workspace-backup.json',
+                      JSON.stringify(state, null, 2),
+                      'application/json',
+                    ).catch((error) => notify(String(error)));
+                  }}
+                  onNotify={notify}
+                />
+              )}
+            </div>
+          </main>
+          <input
+            ref={backupInput}
+            hidden
+            type="file"
+            accept=".json,application/json"
+            aria-label={t('shell.restoreWorkspaceBackup')}
+            onChange={async (event) => {
+              const file = event.target.files?.[0];
+              event.target.value = '';
+              if (!file) return;
+              try {
+                if (file.size > 96 * 1024 * 1024)
+                  throw new Error('Workspace backup exceeds 96 MiB.');
+                setRestoring(readBackup(await file.text()));
+                setDialog('restore');
+              } catch (error) {
+                notify(error instanceof Error ? error.message : String(error));
+              }
+            }}
+          />
+          {dialog === 'restore' && restoring ? (
+            <Modal
+              title={t('shell.restoreWorkspaceBackup2')}
+              subtitle={t('shell.reviewTheBackupBeforeReplacingYourLocalAuthoring')}
+              onClose={closeDialog}
+            >
+              <div className="modal-body">
+                <p>
+                  {t('shell.draftsPipelineDraftsRunsDemoRunsThemeTheme', {
+                    drafts: restoring.workspaces.length,
+                    runs: restoring.runs.length,
+                    theme: t(restoring.theme === 'light' ? 'shell.light' : 'shell.dark'),
+                  })}
+                </p>
+                <p>{t('shell.yourCurrentDraftsAndDemoHistoryWillBe')}</p>
+              </div>
+              <div className="modal-footer">
+                <button className="button" onClick={closeDialog}>
+                  {t('shell.keepCurrentWorkspace')}
+                </button>
+                <button
+                  className="button primary"
+                  onClick={async () => {
+                    try {
+                      await saveState(restoring);
+                      await engine.disconnect();
+                      setState(restoring);
+                      setActiveRun(undefined);
+                      setSection('pipelines');
+                      setRunMode('demo');
+                      setRestoring(undefined);
+                      closeDialog();
+                      notify('messages.workspaceBackupRestored');
+                    } catch (error) {
+                      notify(error instanceof Error ? error.message : String(error));
+                    }
+                  }}
+                >
+                  {t('shell.restoreBackup')}
+                </button>
+              </div>
+            </Modal>
+          ) : null}
+          {dialog === 'engine-run' && workspace && engine.info ? (
+            <EngineRunDialog
+              workspace={{ ...workspace, ...allowedFiles(workspace) }}
+              engine={engine}
+              onClose={closeDialog}
+              onStarted={(id) => {
+                setActiveRun(id);
+                setRunMode('engine');
+                setSection('runs');
+              }}
+            />
+          ) : null}
+          {dialog === 'library' ? (
+            <Modal
+              title={t('library.title')}
+              subtitle={t('shell.startWithATemplateThenConnectThePieces')}
+              onClose={closeDialog}
+              wide
+            >
+              <div className="library-grid">
+                {examples.map((e) => (
+                  <button key={e.id} className="template-card" onClick={() => selectExample(e.id)}>
+                    <span className={`node-icon tint-${e.id === 'research' ? 'green' : 'violet'}`}>
+                      {e.id === 'research' ? (
+                        <Workflow size={21} />
+                      ) : (
+                        <NodeIcon
+                          kind={
+                            (e.id === 'subpipeline'
+                              ? 'pipeline'
+                              : e.id === 'artifact-mount'
+                                ? 'code'
+                                : e.id) as NodeKind
+                          }
+                          size={21}
+                        />
+                      )}
+                    </span>
+                    <h3>{t(e.titleKey)}</h3>
+                    <p>{t(e.descriptionKey)}</p>
+                    <span className="template-kind">
+                      {t(e.kindKey)}
+                      <ArrowUpRight size={14} />
+                    </span>
+                  </button>
                 ))}
               </div>
-            </div>
-            <div className="modal-footer">
-              <span>Each run preserves its own source snapshot.</span>
-              <button className="button primary" onClick={startRun} disabled={!topic.trim()}>
-                <ArrowRight size={15} />
-                Start demo
-              </button>
-            </div>
-          </Modal>
-        ) : null}
-        {dialog === 'search' ? (
-          <Modal title="Jump to anything" onClose={closeDialog}>
-            <div className="command-search">
-              <Search size={19} />
-              <input
-                autoFocus
-                aria-label="Search workspace"
-                placeholder="Search pipelines or views…"
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-              />
-            </div>
-            <div className="command-results">
-              {state.workspaces
-                .filter((w) => names.get(w.id)?.toLowerCase().includes(query.toLowerCase()))
-                .map((w) => (
-                  <button key={w.id} onClick={() => selectWorkspace(w.id)}>
-                    <Workflow size={17} />
-                    <span>{names.get(w.id)}</span>
-                    <small>Pipeline</small>
-                  </button>
-                ))}
-              {[...navigation, { id: 'settings' as const, title: 'Settings', icon: Settings2 }]
-                .filter((n) => n.title.toLowerCase().includes(query.toLowerCase()))
-                .map(({ id, title, icon: Icon }) => (
-                  <button
-                    key={id}
-                    onClick={() => {
-                      navigate(id);
-                      closeDialog();
-                    }}
-                  >
-                    <Icon size={17} />
-                    <span>{title}</span>
-                    <small>View</small>
-                  </button>
-                ))}
-            </div>
-            <div className="modal-footer">
-              <span>
-                ⌘/Ctrl K · Find<span className="separator">/</span>⌘/Ctrl S · Save
-                <span className="separator">/</span>⌘/Ctrl N · Create
-              </span>
-            </div>
-          </Modal>
-        ) : null}
-        {dialog === 'delete' ? (
-          <Modal title="Remove this pipeline?" onClose={closeDialog}>
-            <div className="modal-body">
-              <p>
-                This removes <strong>{workspace ? names.get(workspace.id) : 'the pipeline'}</strong>{' '}
-                from your local workspace. Existing demo runs keep their own snapshots. Files on
-                disk are unchanged.
-              </p>
-            </div>
-            <div className="modal-footer">
-              <button className="button" onClick={closeDialog}>
-                Keep pipeline
-              </button>
-              <button
-                className="button danger"
-                onClick={() => {
-                  setState((s) => {
-                    const workspaces = s.workspaces.filter((w) => w.id !== workspace?.id);
-                    return { ...s, workspaces, activeId: workspaces[0]?.id ?? '' };
-                  });
-                  closeDialog();
-                }}
-              >
-                Remove pipeline
-              </button>
-            </div>
-          </Modal>
-        ) : null}
-        {dialog === 'import' ? (
-          <Modal
-            title="Import a workflow"
-            subtitle="Open an entrypoint YAML, a complete folder, or an exported ZIP package."
-            onClose={closeDialog}
-          >
-            <div className="import-options">
-              <button onClick={() => fileInput.current?.click()}>
-                <Upload size={25} />
-                <strong>Select files or ZIP</strong>
-                <span>Include the YAML and declared supporting files</span>
-              </button>
-              <button onClick={() => folderInput.current?.click()}>
-                <FolderOpen size={25} />
-                <strong>Select package folder</strong>
-                <span>Only declared files are added to the workspace</span>
-              </button>
-            </div>
-          </Modal>
-        ) : null}
-        {dialog === 'entrypoint' ? (
-          <Modal
-            title="Choose the entrypoint."
-            subtitle="The package contains more than one pipeline document."
-            onClose={closeDialog}
-          >
-            <div className="modal-body">
-              <label className="field">
-                Entrypoint
-                <select value={pickedEntry} onChange={(e) => setPickedEntry(e.target.value)}>
-                  {entries.map((path) => (
-                    <option key={path}>{path}</option>
-                  ))}
-                </select>
-              </label>
-            </div>
-            <div className="modal-footer">
-              <span>All file paths remain relative to the package root.</span>
-              <button className="button primary" onClick={confirmEntry}>
-                Open package
-                <ArrowRight size={15} />
-              </button>
-            </div>
-          </Modal>
-        ) : null}
-        <input
-          hidden
-          ref={fileInput}
-          aria-label="Import pipeline package"
-          type="file"
-          multiple
-          accept=".yaml,.yml,.zip,.txt,.json,.py,.md"
-          onChange={(e) => {
-            void importBrowser([...(e.target.files ?? [])]);
-            e.target.value = '';
-          }}
-        />
-        <input
-          hidden
-          ref={folderInput}
-          type="file"
-          {...{ webkitdirectory: '', directory: '' }}
-          onChange={(e) => {
-            void importBrowser([...(e.target.files ?? [])]);
-            e.target.value = '';
-          }}
-        />
-        {toast ? (
-          <div className="toast" role="status">
-            <span>{toast}</span>
-            <button
-              className="icon-button"
-              aria-label="Dismiss notification"
-              onClick={() => setToast('')}
+              <div className="modal-footer">
+                <span>{t('shell.examplesFollowTheRepositorySNotationV1Fixtures')}</span>
+                <button
+                  className="button"
+                  onClick={() => {
+                    const p = structuredClone(
+                      parsePipeline(examples.find((e) => e.id === 'human')!.source)!,
+                    );
+                    p.metadata = {
+                      name: 'untitled-pipeline',
+                      title: 'Untitled pipeline',
+                      description: 'Your next process starts here.',
+                    };
+                    addWorkspace({ source: stringify(p), entrypoint: 'pipeline.yaml', files: [] });
+                  }}
+                >
+                  <Plus size={15} />
+                  {t('shell.startFromScratch')}
+                </button>
+              </div>
+            </Modal>
+          ) : null}
+          {dialog === 'node' ? (
+            <Modal
+              title={t('shell.addANode')}
+              subtitle={t('shell.chooseABlockSetItUpInThe')}
+              onClose={closeDialog}
+              wide
             >
-              <X size={16} />
-            </button>
-          </div>
-        ) : null}
-      </div>
+              <div className="node-palette">
+                {Object.entries(nodeMeta).map(([kind, meta]) => (
+                  <button key={kind} onClick={() => addNode(kind as NodeKind)}>
+                    <span className={`node-icon tint-${meta.color}`}>
+                      <NodeIcon kind={kind as NodeKind} />
+                    </span>
+                    <div>
+                      <strong>{t(meta.label)}</strong>
+                      <span>{t(meta.detail)}</span>
+                    </div>
+                    <Plus size={16} />
+                  </button>
+                ))}
+              </div>
+            </Modal>
+          ) : null}
+          {dialog === 'run' ? (
+            <Modal
+              title={t('shell.runYourWorkflow')}
+              subtitle={t('shell.aGuidedResearchBriefDemoWithSampleOutputs')}
+              onClose={closeDialog}
+            >
+              <div className="modal-body">
+                <div className="notice">
+                  <Sparkles size={19} />
+                  <p>{t('shell.thisDemoSimulatesFiveStepsPausesForYour')}</p>
+                </div>
+                <label className="field">
+                  {t('shell.researchTopic')}
+                  <input
+                    autoFocus
+                    aria-label={t('shell.researchTopic')}
+                    value={topic}
+                    onChange={(e) => setTopic(e.target.value)}
+                    placeholder={t('shell.whatWouldYouLikeToExplore')}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && topic.trim()) startRun();
+                    }}
+                  />
+                </label>
+                <div className="run-steps">
+                  {[
+                    'shell.discover',
+                    'shell.research',
+                    'editor.draft',
+                    'shell.review',
+                    'shell.publish',
+                  ].map((name, i) => (
+                    <span key={name}>
+                      <em>{i + 1}</em>
+                      {t(name)}
+                      {i < 4 ? <ChevronRight size={12} /> : null}
+                    </span>
+                  ))}
+                </div>
+              </div>
+              <div className="modal-footer">
+                <span>{t('shell.eachRunPreservesItsOwnSourceSnapshot')}</span>
+                <button className="button primary" onClick={startRun} disabled={!topic.trim()}>
+                  <ArrowRight size={15} />
+                  {t('shell.startDemo')}
+                </button>
+              </div>
+            </Modal>
+          ) : null}
+          {dialog === 'search' ? (
+            <Modal title={t('shell.jumpToAnything')} onClose={closeDialog}>
+              <div className="command-search">
+                <Search size={19} />
+                <input
+                  autoFocus
+                  aria-label={t('shell.searchWorkspace')}
+                  placeholder={t('shell.searchPipelinesOrViews')}
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                />
+              </div>
+              <div className="command-results">
+                {state.workspaces
+                  .filter((w) => names.get(w.id)?.toLowerCase().includes(query.toLowerCase()))
+                  .map((w) => (
+                    <button key={w.id} onClick={() => selectWorkspace(w.id)}>
+                      <Workflow size={17} />
+                      <span>{names.get(w.id)}</span>
+                      <small>{t('editor.pipeline')}</small>
+                    </button>
+                  ))}
+                {[
+                  ...navigation,
+                  { id: 'settings' as const, title: 'navigation.settings', icon: Settings2 },
+                ]
+                  .filter((n) => t(n.title).toLowerCase().includes(query.toLowerCase()))
+                  .map(({ id, title, icon: Icon }) => (
+                    <button
+                      key={id}
+                      onClick={() => {
+                        navigate(id);
+                        closeDialog();
+                      }}
+                    >
+                      <Icon size={17} />
+                      <span>{t(title)}</span>
+                      <small>{t('shell.view')}</small>
+                    </button>
+                  ))}
+              </div>
+              <div className="modal-footer">
+                <span>
+                  {t('shell.ctrlKFind')}
+                  <span className="separator">/</span>
+                  {t('shell.ctrlSSave')}
+                  <span className="separator">/</span>
+                  {t('shell.ctrlNCreate')}
+                </span>
+              </div>
+            </Modal>
+          ) : null}
+          {dialog === 'delete' ? (
+            <Modal title={t('shell.removeThisPipeline')} onClose={closeDialog}>
+              <div className="modal-body">
+                <p>
+                  {t('shell.thisRemoves')}{' '}
+                  <strong>{workspace ? names.get(workspace.id) : t('shell.thePipeline')}</strong>{' '}
+                  {t('shell.fromYourLocalWorkspaceExistingDemoRunsKeep')}
+                </p>
+              </div>
+              <div className="modal-footer">
+                <button className="button" onClick={closeDialog}>
+                  {t('shell.keepPipeline')}
+                </button>
+                <button
+                  className="button danger"
+                  onClick={() => {
+                    setState((s) => {
+                      const workspaces = s.workspaces.filter((w) => w.id !== workspace?.id);
+                      return { ...s, workspaces, activeId: workspaces[0]?.id ?? '' };
+                    });
+                    closeDialog();
+                  }}
+                >
+                  {t('shell.removePipeline')}
+                </button>
+              </div>
+            </Modal>
+          ) : null}
+          {dialog === 'import' ? (
+            <Modal
+              title={t('shell.importAWorkflow')}
+              subtitle={t('shell.openAnEntrypointYamlACompleteFolderOr')}
+              onClose={closeDialog}
+            >
+              <div className="import-options">
+                <button onClick={() => fileInput.current?.click()}>
+                  <Upload size={25} />
+                  <strong>{t('shell.selectFilesOrZip')}</strong>
+                  <span>{t('shell.includeTheYamlAndDeclaredSupportingFiles')}</span>
+                </button>
+                <button onClick={() => folderInput.current?.click()}>
+                  <FolderOpen size={25} />
+                  <strong>{t('shell.selectPackageFolder')}</strong>
+                  <span>{t('shell.onlyDeclaredFilesAreAddedToTheWorkspace')}</span>
+                </button>
+              </div>
+            </Modal>
+          ) : null}
+          {dialog === 'entrypoint' ? (
+            <Modal
+              title={t('shell.chooseTheEntrypoint')}
+              subtitle={t('shell.thePackageContainsMoreThanOnePipelineDocument')}
+              onClose={closeDialog}
+            >
+              <div className="modal-body">
+                <label className="field">
+                  {t('shell.entrypoint')}
+                  <select value={pickedEntry} onChange={(e) => setPickedEntry(e.target.value)}>
+                    {entries.map((path) => (
+                      <option key={path}>{path}</option>
+                    ))}
+                  </select>
+                </label>
+              </div>
+              <div className="modal-footer">
+                <span>{t('shell.allFilePathsRemainRelativeToThePackage')}</span>
+                <button className="button primary" onClick={confirmEntry}>
+                  {t('common.openPackage')}
+                  <ArrowRight size={15} />
+                </button>
+              </div>
+            </Modal>
+          ) : null}
+          <input
+            hidden
+            ref={fileInput}
+            aria-label={t('shell.importPipelinePackage')}
+            type="file"
+            multiple
+            accept=".yaml,.yml,.zip,.txt,.json,.py,.md"
+            onChange={(e) => {
+              void importBrowser([...(e.target.files ?? [])]);
+              e.target.value = '';
+            }}
+          />
+          <input
+            hidden
+            ref={folderInput}
+            type="file"
+            {...{ webkitdirectory: '', directory: '' }}
+            onChange={(e) => {
+              void importBrowser([...(e.target.files ?? [])]);
+              e.target.value = '';
+            }}
+          />
+          {toast.message ? (
+            <div className="toast" role="status">
+              <span>
+                {toast.raw
+                  ? toast.message
+                  : translateMessage(
+                      toast.message,
+                      state.locale,
+                      toast.values?.kind
+                        ? { ...toast.values, kind: t(String(toast.values.kind)) }
+                        : toast.values,
+                    )}
+              </span>
+              <button
+                className="icon-button"
+                aria-label={t('shell.dismissNotification')}
+                onClick={() => setToast({ message: '' })}
+              >
+                <X size={16} />
+              </button>
+            </div>
+          ) : null}
+        </div>
+      </LocaleContext.Provider>
     </ThemeContext.Provider>
   );
 }

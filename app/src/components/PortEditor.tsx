@@ -1,7 +1,8 @@
+import { useI18n } from '../lib/i18n';
 import { useState } from 'react';
 import { Plus, Trash2, Link2, Unplug } from 'lucide-react';
 import { compatible, connectionError, sources } from '../lib/connections';
-import { portType } from '../lib/graph';
+import { editorDataTypeLabel, editorPortTypeLabel } from '../lib/editorLabels';
 import { record, type Binding, type Graph, type Json, type Port } from '../lib/types';
 
 export function seedValue(port: Port): Json {
@@ -48,6 +49,7 @@ export function JsonField({
   validate?: (value: any) => boolean;
   hint?: string;
 }) {
+  const { message } = useI18n();
   const [error, setError] = useState('');
   return (
     <label className="field">
@@ -65,14 +67,20 @@ export function JsonField({
             setError('');
             if (JSON.stringify(parsed) !== JSON.stringify(value)) onSave(parsed);
           } catch (e) {
-            setError(e instanceof Error ? e.message : 'Enter valid JSON.');
+            setError(
+              e instanceof SyntaxError
+                ? 'Enter valid JSON.'
+                : e instanceof Error
+                  ? e.message
+                  : 'Enter valid JSON.',
+            );
           }
         }}
       />
       {hint ? <small>{hint}</small> : null}
       {error ? (
         <span className="form-error" role="alert">
-          {error}
+          {message(error)}
         </span>
       ) : null}
     </label>
@@ -94,6 +102,7 @@ export function BindingEditor({
   nodeId?: string;
   onChange: (binding: Binding) => void;
 }) {
+  const { t, message } = useI18n();
   const binding = port.bind ?? {};
   const current =
     binding.from ?? (binding.expr ? '$expression' : binding.coalesce ? '$advanced' : '$value');
@@ -102,9 +111,9 @@ export function BindingEditor({
   return (
     <div className="binding-editor">
       <label className="field">
-        Source for {name}
+        {t('editor.sourceForName', { name })}
         <select
-          aria-label={`Source for ${name}`}
+          aria-label={t('editor.sourceForName', { name })}
           value={current}
           onChange={(event) => {
             const value = event.target.value;
@@ -116,11 +125,13 @@ export function BindingEditor({
         >
           {!port.artifact ? (
             <>
-              <option value="$value">Use a value (no connection)</option>
-              <option value="$expression">Calculate with CEL</option>
+              <option value="$value">{t('editor.useAValueNoConnection')}</option>
+              <option value="$expression">{t('editor.calculateWithCel')}</option>
             </>
           ) : null}
-          {binding.coalesce ? <option value="$advanced">Fallback sources (coalesce)</option> : null}
+          {binding.coalesce ? (
+            <option value="$advanced">{t('editor.fallbackSourcesCoalesce')}</option>
+          ) : null}
           {custom ? <option value={binding.from}>{binding.from}</option> : null}
           {options.map((option) => {
             const error =
@@ -139,9 +150,14 @@ export function BindingEditor({
                   ? 'Different data type'
                   : undefined;
             return (
-              <option key={option.value} value={option.value} disabled={!!error} title={error}>
-                {option.label}
-                {error ? ' (incompatible)' : ''}
+              <option
+                key={option.value}
+                value={option.value}
+                disabled={!!error}
+                title={error ? message(error) : undefined}
+              >
+                {option.node ? option.label : t('editor.workflowInputName', { name: option.name })}
+                {error ? ` (${t('editor.incompatible')})` : ''}
               </option>
             );
           })}
@@ -151,28 +167,34 @@ export function BindingEditor({
         <div className="binding-status">
           <Link2 size={12} />
           <span>
-            {binding.from.startsWith('inputs.') ? 'Workflow input' : 'Connected output'}:{' '}
-            <code>{binding.from}</code>
+            {t(
+              binding.from.startsWith('inputs.')
+                ? 'editor.workflowInput'
+                : 'editor.connectedOutput',
+            )}
+            : <code>{binding.from}</code>
           </span>
         </div>
       ) : (
         <div className="binding-status">
           <Unplug size={12} />
           <span>
-            {binding.expr
-              ? 'Computed input'
-              : binding.coalesce
-                ? 'First available result'
-                : 'Value supplied directly'}
+            {t(
+              binding.expr
+                ? 'editor.computedInput'
+                : binding.coalesce
+                  ? 'editor.firstAvailableResult'
+                  : 'editor.valueSuppliedDirectly',
+            )}
           </span>
         </div>
       )}
       {'value' in binding ? (
         typeof binding.value === 'string' ? (
           <label className="field">
-            Value for {name}
+            {t('editor.valueForName', { name })}
             <textarea
-              aria-label={`Value for ${name}`}
+              aria-label={t('editor.valueForName', { name })}
               rows={2}
               defaultValue={binding.value}
               key={String(binding.value)}
@@ -183,18 +205,18 @@ export function BindingEditor({
           </label>
         ) : (
           <JsonField
-            label={`Value for ${name}`}
+            label={t('editor.valueForName', { name })}
             value={binding.value}
             onSave={(value) => onChange({ value })}
-            hint="Enter a JSON value matching the input type."
+            hint={t('editor.enterAJsonValueMatchingTheInputType')}
           />
         )
       ) : null}
       {binding.expr ? (
         <label className="field">
-          Expression for {name}
+          {t('editor.expressionForName', { name })}
           <textarea
-            aria-label={`Expression for ${name}`}
+            aria-label={t('editor.expressionForName', { name })}
             className="code-input"
             rows={2}
             defaultValue={binding.expr}
@@ -204,26 +226,26 @@ export function BindingEditor({
                 onChange({ expr: event.target.value });
             }}
           />
-          <small>Use inputs and nodes in this graph. The engine checks CEL types.</small>
+          <small>{t('editor.useInputsAndNodesInThisGraphThe')}</small>
         </label>
       ) : null}
       {binding.coalesce ? (
         <JsonField
-          label={`Fallback bindings for ${name}`}
+          label={t('editor.fallbackBindingsForName', { name })}
           value={binding.coalesce}
           validate={(value) => Array.isArray(value) && value.length >= 2}
           onSave={(coalesce) => onChange({ coalesce })}
-          hint="An ordered array of at least two bindings."
+          hint={t('editor.anOrderedArrayOfAtLeastTwoBindings')}
         />
       ) : null}
       {binding.from && !port.artifact ? (
         <details className="field-details">
-          <summary>Select part of the output</summary>
+          <summary>{t('editor.selectPartOfTheOutput')}</summary>
           <label className="field">
-            JSON pointer
+            {t('editor.jsonPointer')}
             <input
-              aria-label="JSON pointer"
-              placeholder="/field or /items/0"
+              aria-label={t('editor.jsonPointer')}
+              placeholder={t('editor.fieldOrItems0')}
               defaultValue={binding.path ?? ''}
               key={binding.from + (binding.path ?? '')}
               onBlur={(event) => {
@@ -263,6 +285,7 @@ export default function PortEditor({
   allowFiles?: boolean;
   schemas?: string[];
 }) {
+  const { t, message } = useI18n();
   const [adding, setAdding] = useState(false);
   const [name, setName] = useState('');
   const [type, setType] = useState('string');
@@ -312,34 +335,39 @@ export default function PortEditor({
   return (
     <section className="port-editor">
       <div className="port-section-title">
-        <h3>{direction === 'inputs' ? 'Inputs' : 'Outputs'}</h3>
+        <h3>{t(direction === 'inputs' ? 'execution.inputs' : 'execution.outputs')}</h3>
         {editable && canAdd ? (
           <button className="text-button" onClick={() => setAdding(!adding)}>
             <Plus size={13} />
-            Add {direction === 'inputs' ? 'input' : 'output'}
+            {t(direction === 'inputs' ? 'editor.addInput' : 'editor.addOutput')}
           </button>
         ) : null}
       </div>
       <p className="setup-hint">
-        {direction === 'inputs'
-          ? 'Choose what this block receives and where it comes from.'
-          : 'Name the results that other blocks can use.'}
+        {t(
+          direction === 'inputs'
+            ? 'editor.chooseWhatThisBlockReceivesAndWhereIt'
+            : 'editor.nameTheResultsThatOtherBlocksCanUse',
+        )}
       </p>
       {Object.entries(ports).map(([name, port]) => (
         <div className="port-editor-card" key={name}>
           <div className="inline spread">
             <strong>{name}</strong>
             <span className="inline">
-              <span className="type-label">{portType(port)}</span>
+              <span className="type-label">{editorPortTypeLabel(port, t)}</span>
               {editable ? (
                 <button
                   className="icon-button"
-                  aria-label={`Remove ${direction === 'inputs' ? 'input' : 'output'} ${name}`}
+                  aria-label={t(
+                    direction === 'inputs' ? 'editor.removeInputName' : 'editor.removeOutputName',
+                    { name },
+                  )}
                   disabled={Object.keys(ports).length <= minimum}
                   title={
                     Object.keys(ports).length <= minimum
-                      ? 'This block requires at least one output'
-                      : 'Remove port'
+                      ? t('editor.thisBlockRequiresAtLeastOneOutput')
+                      : t('editor.removePort')
                   }
                   onClick={() => {
                     const next = { ...ports };
@@ -354,7 +382,7 @@ export default function PortEditor({
           </div>
           {editable ? (
             <label className="field">
-              Type of {name}
+              {t('editor.typeOfName', { name })}
               <select
                 value={portDataType(port)}
                 onChange={(event) => {
@@ -369,32 +397,38 @@ export default function PortEditor({
                   onChange({ ...ports, [name]: next });
                 }}
               >
-                <option value="JSON">Any JSON</option>
+                <option value="JSON">{t('editor.anyJson')}</option>
                 {portDataType(port) === '$custom' ? (
-                  <option value="$custom">Custom schema · {portType(port)}</option>
+                  <option value="$custom">
+                    {t('editor.customSchema')} · {editorPortTypeLabel(port, t)}
+                  </option>
                 ) : null}
                 {['string', 'number', 'integer', 'boolean', 'object', 'array', 'null'].map(
                   (type) => (
-                    <option key={type}>{type}</option>
+                    <option key={type} value={type}>
+                      {editorDataTypeLabel(type, t)}
+                    </option>
                   ),
                 )}
-                {allowFiles ? <option value="file">File</option> : null}
+                {allowFiles ? <option value="file">{t('editor.file')}</option> : null}
                 {schemas.length || port.schemaRef ? (
-                  <option value="reference">Schema alias</option>
+                  <option value="reference">{t('editor.schemaAlias')}</option>
                 ) : null}
               </select>
             </label>
           ) : null}
           {port.schemaRef && editable ? (
             <label className="field">
-              Schema alias
+              {t('editor.schemaAlias')}
               <select
                 value={port.schemaRef}
                 disabled={!schemas.length}
                 onChange={(event) => update(name, { schemaRef: event.target.value })}
               >
                 {!schemas.includes(port.schemaRef) ? (
-                  <option value={port.schemaRef}>{port.schemaRef} (not declared)</option>
+                  <option value={port.schemaRef}>
+                    {port.schemaRef} ({t('editor.notDeclared')})
+                  </option>
                 ) : null}
                 {schemas.map((schema) => (
                   <option key={schema}>{schema}</option>
@@ -414,9 +448,9 @@ export default function PortEditor({
           ) : null}
           {port.artifact && editable ? (
             <label className="field">
-              Media type
+              {t('editor.mediaType')}
               <input
-                aria-label="Media type"
+                aria-label={t('editor.mediaType')}
                 defaultValue={port.artifact.mediaTypes.join(', ')}
                 key={port.artifact.mediaTypes.join()}
                 placeholder="text/plain"
@@ -438,9 +472,9 @@ export default function PortEditor({
           ) : null}
           {port.collect && editable ? (
             <label className="field">
-              Collect file from
+              {t('editor.collectFileFrom')}
               <input
-                aria-label="Collect file from"
+                aria-label={t('editor.collectFileFrom')}
                 defaultValue={port.collect.path}
                 key={port.collect.path}
                 onBlur={(event) => {
@@ -452,9 +486,9 @@ export default function PortEditor({
           ) : null}
           {port.artifact && direction === 'inputs' ? (
             <label className="field">
-              Mount path (optional)
+              {t('editor.mountPathOptional')}
               <input
-                aria-label="Mount path (optional)"
+                aria-label={t('editor.mountPathOptional')}
                 defaultValue={port.mount ?? ''}
                 key={port.mount ?? ''}
                 onBlur={(event) => {
@@ -467,10 +501,10 @@ export default function PortEditor({
             </label>
           ) : null}
           <details className="field-details">
-            <summary>Schema & details</summary>
+            <summary>{t('editor.schemaDetails')}</summary>
             {editable && !port.artifact && !port.schemaRef ? (
               <JsonField
-                label={`Schema for ${name}`}
+                label={t('editor.schemaForName', { name })}
                 value={port.schema ?? { schemaRef: port.schemaRef }}
                 validate={(value) =>
                   typeof value === 'boolean' ||
@@ -481,7 +515,7 @@ export default function PortEditor({
                   delete next.schemaRef;
                   onChange({ ...ports, [name]: next });
                 }}
-                hint="JSON Schema, or true to accept any JSON."
+                hint={t('editor.jsonSchemaOrTrueToAcceptAnyJson')}
               />
             ) : (
               <pre>
@@ -495,35 +529,43 @@ export default function PortEditor({
           </details>
         </div>
       ))}
-      {!Object.keys(ports).length ? <p className="setup-hint">No {direction} yet.</p> : null}
+      {!Object.keys(ports).length ? (
+        <p className="setup-hint">
+          {t(direction === 'inputs' ? 'editor.noInputsYet' : 'editor.noOutputsYet')}
+        </p>
+      ) : null}
       {adding ? (
         <div className="port-add-form">
           <label className="field">
-            Port name
+            {t('editor.portName')}
             <input
-              aria-label={`New ${direction === 'inputs' ? 'input' : 'output'} name`}
+              aria-label={t(
+                direction === 'inputs' ? 'editor.newInputName' : 'editor.newOutputName',
+              )}
               value={name}
               onChange={(event) => setName(event.target.value)}
-              placeholder="e.g. summary"
+              placeholder={t('editor.eGSummary')}
             />
           </label>
           <label className="field">
-            Data type
+            {t('editor.dataType')}
             <select value={type} onChange={(event) => setType(event.target.value)}>
               {['string', 'object', 'array', 'integer', 'number', 'boolean', 'JSON'].map((type) => (
-                <option key={type}>{type}</option>
+                <option key={type} value={type}>
+                  {editorDataTypeLabel(type, t)}
+                </option>
               ))}
-              {allowFiles ? <option value="file">File</option> : null}
+              {allowFiles ? <option value="file">{t('editor.file')}</option> : null}
             </select>
           </label>
           <button className="button small-button" onClick={add}>
-            Create port
+            {t('editor.createPort')}
           </button>
         </div>
       ) : null}
       {error ? (
         <p className="form-error" role="alert">
-          {error}
+          {message(error)}
         </p>
       ) : null}
     </section>

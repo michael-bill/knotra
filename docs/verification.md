@@ -4,6 +4,28 @@ The implementation is checked at three levels: deterministic contract and workfl
 integration tests against PostgreSQL and Docker, and complete executions through the public CLI/API
 with real services.
 
+## Interface localization on 4 October 2026
+
+The frontend now uses separate English and Russian JSON catalogs with stable semantic keys. The
+selected language is saved with the workspace, and older workspaces/backups retain their content
+while falling back to the browser or webview language. Authoring data and engine messages are
+preserved; application-authored frontend validation messages are translated for display. Unknown
+library/parser error details stay verbatim.
+
+All 88 frontend unit tests passed, including catalog key coverage, matching named parameters,
+verbatim interpolation and legacy backup compatibility. All 51 browser scenarios passed with the
+real engine endpoint enabled, including both Ollama/human execution scenarios. Two language
+scenarios check live switching, reload persistence, accessible names, editor search, theme keyboard
+focus, malformed engine URLs and empty resource tabs. They also compare saved authoring content,
+demo history and engine cache bytes before and after switching. A pipeline named
+`navigation.settings` remains that literal name in both languages.
+
+The TypeScript/Vite production build, repository Prettier check and macOS application bundle build
+passed. A manual run through the Russian interface completed with the unchanged model output
+`Hello, Knotra!` and a 15-byte artifact (run `19e413be-0555-4c5a-b560-309c8e249b7e`). The initially
+stopped development engine was restarted before the final acceptance run. No backend code, SQL
+migrations, pipeline fixtures or dependency lockfiles changed for localization.
+
 ## Desktop consistency re-review on 4 October 2026
 
 A second review compared desktop behavior and documentation with the implemented Go API. It found

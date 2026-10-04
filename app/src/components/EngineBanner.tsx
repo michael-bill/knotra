@@ -1,5 +1,7 @@
 import { RefreshCw } from 'lucide-react';
 import type { EngineController } from '../lib/engine/useEngine';
+import { useI18n } from '../lib/i18n';
+import { executionCommandLabels } from '../lib/executionLabels';
 
 export function EngineBanner({
   engine,
@@ -8,13 +10,21 @@ export function EngineBanner({
   engine: EngineController;
   onSettings: () => void;
 }) {
+  const { t } = useI18n();
   return (
     <div className="engine-banner">
       <span className={`dot ${engine.info ? 'green' : 'amber'}`} />
       <span>
         {engine.info
-          ? `Engine ${engine.info.version} · ${engine.error ? 'Unavailable · cached data' : engine.syncing ? 'Syncing…' : 'Connected'}`
-          : 'Connect an engine to execute your workflows.'}
+          ? t('execution.engineVersionStatus', {
+              version: engine.info.version,
+              status: engine.error
+                ? t('execution.unavailableCachedData')
+                : engine.syncing
+                  ? t('execution.syncing')
+                  : t('resources.connected'),
+            })
+          : t('execution.connectAnEngineToExecuteYourWorkflows')}
       </span>
       <button
         className="text-button"
@@ -23,25 +33,24 @@ export function EngineBanner({
         {engine.info ? (
           <>
             <RefreshCw size={14} />
-            Refresh
+            {t('common.refresh')}
           </>
         ) : (
-          'Connect in Settings'
+          t('execution.connectInSettings')
         )}
       </button>
       {engine.error ? (
         <p className="form-error" role="alert">
           {engine.error}
-          {engine.info ? ' Showing the last received data.' : ''}
+          {engine.info ? ` ${t('execution.showingTheLastReceivedData')}` : ''}
         </p>
       ) : null}
       {engine.pending.length ? (
         <div className="pending-operations">
-          <strong>{engine.pending.length} command(s) awaiting confirmation</strong>
-          <p>
-            Reconcile these saved commands with their original operation IDs before creating
-            replacements.
-          </p>
+          <strong>
+            {t('execution.countCommandSAwaitingConfirmation', { count: engine.pending.length })}
+          </strong>
+          <p>{t('execution.reconcileTheseSavedCommandsWithTheirOriginalOperation')}</p>
           {engine.pending.map((operation) => (
             <button
               className="button small-button"
@@ -50,7 +59,10 @@ export function EngineBanner({
                 void engine.command(operation.request).catch(() => {});
               }}
             >
-              Reconcile {operation.request.op} · {operation.id.slice(0, 8)}
+              {t('execution.reconcileOperationId', {
+                operation: t(executionCommandLabels[operation.request.op] ?? operation.request.op),
+                id: operation.id.slice(0, 8),
+              })}
             </button>
           ))}
         </div>

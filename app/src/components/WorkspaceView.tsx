@@ -1,3 +1,5 @@
+import { editorLayerKeys } from '../lib/editorLabels';
+import { useI18n } from '../lib/i18n';
 import { useRef, useState, useMemo, useEffect } from 'react';
 import { parseDocument } from 'yaml';
 import {
@@ -66,6 +68,7 @@ export default function WorkspaceView({
   onNotify: (message: string) => void;
   demo: boolean;
 }) {
+  const { t, locale, message } = useI18n();
   const [showPorts, setShowPorts] = useState(false);
   const [view, setView] = useState<'graph' | 'source' | 'files'>(
     resourcesRequested === 'secrets' ? 'source' : 'graph',
@@ -131,7 +134,12 @@ export default function WorkspaceView({
     const check = validatePipeline(source, workspace.files, workspace.entrypoint);
     if (!check.pipeline) {
       onNotify(
-        `Change not saved: ${check.diagnostics.find((d) => d.severity === 'error')?.message ?? 'invalid block configuration'}`,
+        t('editor.changeNotSavedMessage', {
+          message: message(
+            check.diagnostics.find((d) => d.severity === 'error')?.message ??
+              t('editor.invalidBlockConfiguration'),
+          ),
+        }),
       );
       return;
     }
@@ -141,7 +149,7 @@ export default function WorkspaceView({
     if (!graph) return;
     const error = connectionError(graph, connection, importedGraphs);
     if (error) {
-      onNotify(error);
+      onNotify(message(error));
       return;
     }
     mutate((doc, path) =>
@@ -152,7 +160,10 @@ export default function WorkspaceView({
     setSelected(connection.target);
     setShowPorts(true);
     onNotify(
-      `${connection.source}.${connection.sourcePort} connected to ${connection.target}.${connection.targetPort}.`,
+      t('editor.sourceConnectedToTarget', {
+        source: `${connection.source}.${connection.sourcePort}`,
+        target: `${connection.target}.${connection.targetPort}`,
+      }),
     );
   }
   function openBody(id: string) {
@@ -167,15 +178,15 @@ export default function WorkspaceView({
     return (
       <Empty
         icon={<Workflow />}
-        title="Make room for your next idea"
+        title={t('editor.makeRoomForYourNextIdea')}
         action={
           <button className="button primary" onClick={onLibrary}>
             <Plus size={16} />
-            Create pipeline
+            {t('editor.createPipeline')}
           </button>
         }
       >
-        Start from a contract example or open an existing package.
+        {t('editor.startFromAContractExampleOrOpenAn')}
       </Empty>
     );
   const file = workspace.files.find((f) => f.path === selectedFile);
@@ -191,60 +202,64 @@ export default function WorkspaceView({
       <header className="workspace-header">
         <div className="workspace-title">
           <h1 title={pipeline?.metadata.description}>
-            <span>{pipeline?.metadata.title ?? pipeline?.metadata.name ?? 'Pipeline draft'}</span>
+            <span>
+              {pipeline?.metadata.title ?? pipeline?.metadata.name ?? t('editor.pipelineDraft')}
+            </span>
           </h1>
           {workspace.source !== workspace.savedSource ? (
             <span
               className="unsaved-dot title-unsaved"
-              title="Unsaved draft"
-              aria-label="Unsaved draft"
+              title={t('editor.unsavedDraft')}
+              aria-label={t('editor.unsavedDraft')}
             />
           ) : null}
           <span className="heading-version">
-            {pipeline?.metadata.version ? `v${pipeline.metadata.version}` : 'Draft'}
+            {pipeline?.metadata.version ? `v${pipeline.metadata.version}` : t('editor.draft')}
           </span>
         </div>
         <div className="heading-actions">
           <button
             className="button small-button"
             onClick={onSave}
-            title="Save local draft (⌘/Ctrl+S)"
+            title={t('editor.saveLocalDraftCtrlS')}
           >
             <Save size={14} />
-            Save
+            {t('common.save')}
           </button>
           <button className="button small-button" onClick={onExport}>
             <Download size={14} />
-            Export
+            {t('common.export')}
           </button>
           <button
             className="button small-button primary"
             onClick={onEngineRun}
             disabled={!engineConnected || errors.length > 0}
-            title={
-              engineConnected ? 'Check and start on your engine' : 'Connect an engine in Settings'
-            }
+            title={t(
+              engineConnected
+                ? 'editor.checkAndStartOnYourEngine'
+                : 'editor.connectAnEngineInSettings',
+            )}
           >
             <Play size={14} />
-            Run
+            {t('common.run')}
           </button>
           <button
             className="button small-button primary"
             onClick={onRun}
             disabled={!demo || errors.length > 0}
-            title={
+            title={t(
               demo
-                ? 'Run the guided demo with sample outputs'
-                : 'The unchanged Research brief template offers a guided demo.'
-            }
+                ? 'editor.runTheGuidedDemoWithSampleOutputs'
+                : 'editor.theUnchangedResearchBriefTemplateOffersAGuided',
+            )}
           >
             <Play size={14} fill="currentColor" />
-            Run demo
+            {t('editor.runDemo')}
           </button>
         </div>
       </header>
       <div className="workspace-toolbar">
-        <div className="segmented" role="tablist" aria-label="Pipeline view">
+        <div className="segmented" role="tablist" aria-label={t('editor.pipelineView')}>
           <button
             role="tab"
             aria-selected={view === 'graph'}
@@ -252,7 +267,7 @@ export default function WorkspaceView({
             onClick={() => setView('graph')}
           >
             <Workflow size={15} />
-            Canvas
+            {t('editor.canvas')}
           </button>
           <button
             role="tab"
@@ -261,7 +276,7 @@ export default function WorkspaceView({
             onClick={() => setView('source')}
           >
             <Braces size={15} />
-            Code
+            {t('editor.code')}
           </button>
           <button
             role="tab"
@@ -270,13 +285,12 @@ export default function WorkspaceView({
             onClick={() => setView('files')}
           >
             <FolderOpen size={15} />
-            Files<span className="counter">{workspace.files.length + 1}</span>
+            {t('editor.files')}
+            <span className="counter">{workspace.files.length + 1}</span>
           </button>
         </div>
         <div className="inline">
-          <span className="editor-guidance">
-            Drag an output to an input · Select a block to set it up
-          </span>
+          <span className="editor-guidance">{t('editor.dragAnOutputToAnInputSelectA')}</span>
           <button
             className="button small-button"
             onClick={() => {
@@ -286,10 +300,12 @@ export default function WorkspaceView({
             disabled={!pipeline}
           >
             <Settings2 size={14} />
-            Workflow
+            {t('editor.workflow')}
           </button>
           <span className="small muted node-count">
-            {pipeline ? Object.keys(pipeline.spec.nodes).length : '—'} nodes
+            {t('editor.countNodes', {
+              count: pipeline ? Object.keys(pipeline.spec.nodes).length : '—',
+            })}
           </span>
           <button
             className="button small-button"
@@ -297,13 +313,13 @@ export default function WorkspaceView({
             disabled={!pipeline}
           >
             <Plus size={15} />
-            Add node
+            {t('editor.addNode')}
           </button>
           <button
             className="icon-button"
             onClick={onDelete}
-            aria-label="Delete pipeline"
-            title="Delete pipeline"
+            aria-label={t('editor.deletePipeline')}
+            title={t('editor.deletePipeline')}
           >
             <Trash2 size={15} />
           </button>
@@ -319,12 +335,12 @@ export default function WorkspaceView({
             }}
           >
             <ArrowLeft size={14} />
-            Parent graph
+            {t('editor.parentGraph')}
           </button>
           <span>
             {scope.join(' / ')}
             <ChevronRight size={12} />
-            body
+            {t('editor.body')}
           </span>
         </div>
       ) : null}
@@ -417,14 +433,14 @@ export default function WorkspaceView({
           ) : (
             <Empty
               icon={<Braces />}
-              title="The YAML needs a little attention"
+              title={t('editor.theYamlNeedsALittleAttention')}
               action={
                 <button className="button" onClick={() => setView('source')}>
-                  Open YAML editor
+                  {t('editor.openYamlEditor')}
                 </button>
               }
             >
-              Fix the parse or structural errors below to see the graph.
+              {t('editor.fixTheParseOrStructuralErrorsBelowTo')}
             </Empty>
           )
         ) : view === 'source' ? (
@@ -436,19 +452,19 @@ export default function WorkspaceView({
             </div>
             <SourceEditor source={workspace.source} onChange={onChange} />
             <div className="editor-status">
-              {workspace.source.split('\n').length} lines
-              <span>YAML is the source of truth. Changes update the graph.</span>
+              {t('editor.countLines', { count: workspace.source.split('\n').length })}
+              <span>{t('editor.yamlIsTheSourceOfTruthChangesUpdate')}</span>
             </div>
           </div>
         ) : (
           <div className="files-view">
             <div className="file-list">
               <div className="file-list-title">
-                PACKAGE FILES
+                {t('editor.packageFiles')}
                 <button
                   className="icon-button"
                   onClick={() => upload.current?.click()}
-                  aria-label="Add package file"
+                  aria-label={t('editor.addPackageFile')}
                 >
                   <Plus size={16} />
                 </button>
@@ -459,7 +475,7 @@ export default function WorkspaceView({
               >
                 <FileText size={16} />
                 <span>{workspace.entrypoint}</span>
-                <small>entry</small>
+                <small>{t('editor.entry')}</small>
               </button>
               {workspace.files.map((f) => (
                 <button
@@ -472,7 +488,8 @@ export default function WorkspaceView({
                 </button>
               ))}
               <p>
-                Only files declared in <code>spec.files</code> belong to the exported package.
+                {t('editor.onlyFilesDeclaredIn')} <code>spec.files</code>{' '}
+                {t('editor.belongToTheExportedPackage')}
               </p>
               <input
                 ref={upload}
@@ -495,7 +512,7 @@ export default function WorkspaceView({
                           ) || f.path === workspace.entrypoint,
                       )
                     )
-                      throw new Error('A file with this name already exists.');
+                      throw new Error(t('editor.aFileWithThisNameAlreadyExists'));
                     if (pipeline) {
                       const doc = parseDocument(workspace.source);
                       doc.setIn(
@@ -503,7 +520,7 @@ export default function WorkspaceView({
                         [...(pipeline.spec.files ?? []), ...files.map((f) => f.path)],
                       );
                       onChange(doc.toString(), [...workspace.files, ...files]);
-                    } else onNotify('Fix the pipeline structure before adding files.');
+                    } else onNotify(t('editor.fixThePipelineStructureBeforeAddingFiles'));
                   } catch (error) {
                     onNotify(String(error));
                   }
@@ -519,12 +536,12 @@ export default function WorkspaceView({
                   <div className="editor-file">
                     <FileText size={14} />
                     {file.path}
-                    <span>{size(unbase64(file.content).length)} · UTF-8</span>
+                    <span>{size(unbase64(file.content).length, locale)} · UTF-8</span>
                   </div>
                   <SourceEditor
                     key={file.path}
                     source={text}
-                    label="Package file contents"
+                    label="editor.packageFileContents"
                     onChange={(value) =>
                       onChange(
                         workspace.source,
@@ -536,10 +553,10 @@ export default function WorkspaceView({
                   />
                 </>
               ) : (
-                <Empty icon={<File />} title={selectedFile ?? 'Select a file'}>
+                <Empty icon={<File />} title={selectedFile ?? t('editor.selectAFile')}>
                   {file
-                    ? `${size(unbase64(file.content).length)} · Binary file preserved with the package`
-                    : 'Choose a package file to inspect its contents.'}
+                    ? `${size(unbase64(file.content).length, locale)} · ${t('editor.binaryFilePreservedWithThePackage')}`
+                    : t('editor.chooseAPackageFileToInspectItsContents')}
                 </Empty>
               )}
             </div>
@@ -549,7 +566,8 @@ export default function WorkspaceView({
       {removeNode ? (
         <div className="inline-confirm">
           <span>
-            Remove <strong>{selected}</strong>? Existing references will need to be updated in YAML.
+            {t('editor.remove')} <strong>{selected}</strong>
+            {t('editor.existingReferencesWillNeedToBeUpdatedIn')}
           </span>
           <button
             className="button danger small-button"
@@ -559,11 +577,11 @@ export default function WorkspaceView({
               setSelected('');
             }}
           >
-            Remove node
+            {t('editor.removeNode')}
           </button>
           <button
             className="icon-button"
-            aria-label="Keep node"
+            aria-label={t('editor.keepNode')}
             onClick={() => setRemoveNode(false)}
           >
             <X size={17} />
@@ -579,12 +597,19 @@ export default function WorkspaceView({
           {errors.length ? <AlertTriangle size={16} /> : <CheckCircle2 size={16} />}
           <strong>
             {errors.length
-              ? `${errors.length} ${errors.length === 1 ? 'issue' : 'issues'} to resolve`
-              : 'Local checks passed'}
+              ? t(
+                  errors.length === 1
+                    ? 'editor.countIssueToResolve'
+                    : 'editor.countIssuesToResolve',
+                  {
+                    count: errors.length,
+                  },
+                )
+              : t('editor.localChecksPassed')}
           </strong>
-          <span>Engine checks pending</span>
+          <span>{t('editor.engineChecksPending')}</span>
           <ChevronRight size={14} className={diagnosticsOpen ? 'rotated' : ''} />
-          <small>{diagnosticsOpen ? 'Hide' : 'Show'} diagnostics</small>
+          <small>{t(diagnosticsOpen ? 'editor.hideDiagnostics' : 'editor.showDiagnostics')}</small>
         </button>
         {diagnosticsOpen ? (
           <div className="diagnostics" role="log">
@@ -593,10 +618,10 @@ export default function WorkspaceView({
                 <span>{d.severity === 'error' ? <AlertTriangle size={14} /> : <ShieldIcon />}</span>
                 <div>
                   <strong>{d.code}</strong>
-                  <p>{d.message}</p>
+                  <p>{message(d.message)}</p>
                   <code>
                     {d.path}
-                    {d.line ? `:${d.line}` : ''} · {d.layer}
+                    {d.line ? `:${d.line}` : ''} · {t(editorLayerKeys[d.layer])}
                   </code>
                 </div>
               </div>

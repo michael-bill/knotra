@@ -4,6 +4,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { desktop } from './native';
 import { initialWorkspaces } from './examples';
 import type { Theme } from './theme';
+import { normalizeLocale, preferredLocale, type Locale } from './i18n';
 import type { DemoRun, Workspace } from './types';
 
 const KEY = 'knotra.workspace.v1';
@@ -17,6 +18,7 @@ export interface State {
   engineUrl: string;
   compact: boolean;
   theme: Theme;
+  locale: Locale;
 }
 
 export function freshState(): State {
@@ -29,6 +31,7 @@ export function freshState(): State {
     engineUrl: 'http://127.0.0.1:8787',
     compact: false,
     theme: 'dark',
+    locale: preferredLocale(),
   };
 }
 
@@ -49,7 +52,11 @@ export function loadState(): State {
       )
     )
       throw new Error('Invalid workspace data.');
-    return { ...value, theme: value.theme === 'light' ? 'light' : 'dark' };
+    return {
+      ...value,
+      theme: value.theme === 'light' ? 'light' : 'dark',
+      locale: normalizeLocale(value.locale),
+    };
   } catch {
     return freshState();
   }
@@ -203,5 +210,6 @@ export function readBackup(text: string): State {
     engineUrl,
     compact: value.compact === true,
     theme: value.theme === 'light' ? 'light' : 'dark',
+    locale: normalizeLocale(value.locale),
   };
 }
