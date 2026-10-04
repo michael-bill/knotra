@@ -7,12 +7,14 @@ import {
 } from '../lib/executionLabels';
 import { useEffect, useState } from 'react';
 import { ArrowLeft, Play, Search, XCircle } from 'lucide-react';
-import { engineError, storedEvents, watchRun } from '../lib/engine/client';
+import { engineError, eventWindow, storedEvents, watchRun } from '../lib/engine/client';
 import type { EngineEvent, EngineRun } from '../lib/engine/types';
 import type { EngineController } from '../lib/engine/useEngine';
 import { Empty, Modal, Status, time } from './ui';
 import { Diagnostics } from './EngineDiagnostics';
 import SourceEditor from './SourceEditor';
+import EngineExecutionView from './EngineExecutionView';
+import { EngineCompareView, EngineReplayView } from './EngineHistoryView';
 
 export function EngineRunsView({
   engine,
@@ -131,7 +133,7 @@ function EngineRunDetail({
   onReview: () => void;
 }) {
   const { t, locale, message } = useI18n();
-  const [tab, setTab] = useState('instances');
+  const [tab, setTab] = useState('graph');
   const [events, setEvents] = useState<EngineEvent[]>([]);
   const [stream, setStream] = useState('Connecting…');
   const [resolution, setResolution] = useState('');
@@ -156,10 +158,10 @@ function EngineRunDetail({
       .then((events) => {
         if (!stopped)
           setEvents((current) =>
-            [
+            eventWindow([
               ...events,
               ...current.filter((event) => !events.some((saved) => saved.id === event.id)),
-            ].slice(-1000),
+            ]),
           );
       })
       .catch(() => {});
@@ -172,9 +174,12 @@ function EngineRunDetail({
         setEvents((events) =>
           events.some((event) => event.id === message.event.id)
             ? events
-            : [...events, message.event].slice(-1000),
+            : eventWindow([...events, message.event]),
         );
-        if (!timer)
+        // Token and tool observations update the inspector directly. Projection events
+        // trigger authoritative snapshots without refetching every catalog on each token.
+        const observation = /^(model|tool|agent|output)\./.test(message.event.type);
+        if (!observation && !timer)
           timer = setTimeout(() => {
             timer = undefined;
             void refresh();
@@ -287,18 +292,49 @@ function EngineRunDetail({
       </header>
       <Diagnostics diagnostics={run.diagnostics} />
       <div className="underline-tabs">
-        {['instances', 'timeline', 'inputs', 'outputs', 'snapshot'].map((tabName) => (
+        {[
+          'graph',
+          'replay',
+          'compare',
+          'instances',
+          'timeline',
+          'inputs',
+          'outputs',
+          'snapshot',
+        ].map((tabName) => (
           <button
             key={tabName}
             className={tab === tabName ? 'active' : ''}
             onClick={() => setTab(tabName)}
           >
-            {t(executionTabLabels[tabName] ?? tabName)}
+            {t(
+              tabName === 'graph'
+                ? 'observe.graph'
+                : ['replay', 'compare'].includes(tabName)
+                  ? `history.${tabName}`
+                  : (executionTabLabels[tabName] ?? tabName),
+            )}
           </button>
         ))}
       </div>
-      <div className="engine-run-content">
-        {tab === 'snapshot' ? (
+      <div className={`engine-run-content ${tab === 'graph' ? 'engine-observer-content' : ''}`}>
+        {tab === 'graph' ? (
+          <EngineExecutionView
+            run={run}
+            events={events}
+            connection={streamLabel}
+            connected={!!engine.info}
+            onReview={onReview}
+            onResolve={(id) => {
+              setResolutionError('');
+              setResolution(id);
+            }}
+          />
+        ) : tab === 'replay' ? (
+          <EngineReplayView run={run} connected={!!engine.info} onLive={() => setTab('graph')} />
+        ) : tab === 'compare' ? (
+          <EngineCompareView run={run} runs={engine.runs} connected={!!engine.info} />
+        ) : tab === 'snapshot' ? (
           <SourceEditor
             source={run.package.source}
             readOnly

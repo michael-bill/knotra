@@ -17,6 +17,7 @@ import (
 type counters struct{ nodes, active int }
 
 type runtime struct {
+	observability       bool
 	in                  RunInput
 	cancel              workflow.CancelFunc
 	state               Snapshot
@@ -39,12 +40,15 @@ type runtime struct {
 }
 
 type graphContext struct {
-	pipeline    string
-	document    *contract.Pipeline
-	path        string
-	scopes      []BudgetScope
-	permissions *contract.Permissions
-	deadline    time.Time
+	parentInstanceID string
+	iterationIndex   *int
+	graphPath        string
+	pipeline         string
+	document         *contract.Pipeline
+	path             string
+	scopes           []BudgetScope
+	permissions      *contract.Permissions
+	deadline         time.Time
 }
 
 // Workflow runs a compiled, immutable plan. Register it under WorkflowName.
@@ -82,6 +86,7 @@ func Workflow(ctx workflow.Context, input RunInput) (RunResult, error) {
 		},
 		budgets: map[string]*counters{}, humans: map[string][]HumanSignal{}, resolutions: map[string][]ResolutionSignal{}, paused: map[string]bool{}, publishing: map[string]bool{}, projected: map[string]bool{}, loops: map[string]LoopCheckpoint{}, foreachResults: map[string]map[int]contract.Values{}}
 	r.restore(input.Checkpoint)
+	r.observability = workflow.GetVersion(ctx, "instance-observability", workflow.DefaultVersion, 1) != workflow.DefaultVersion
 	if err := workflow.SetQueryHandler(ctx, SnapshotQuery, func() (Snapshot, error) { return r.state, nil }); err != nil {
 		return RunResult{}, err
 	}
@@ -259,6 +264,14 @@ func (r *runtime) emit(ctx workflow.Context, event Projection) error {
 	defer func() { r.storageActive--; r.considerCheckpoint(ctx) }()
 	r.sequence++
 	event.RunID, event.Sequence, event.Time = r.in.RunID, r.sequence, workflow.Now(ctx)
+	if r.observability && event.Kind == "node" {
+		if node := r.state.Nodes[event.InstanceID]; node != nil {
+			event.ParentInstanceID, event.IterationIndex = node.ParentInstanceID, node.IterationIndex
+			event.GraphPath, event.NodeType = node.GraphPath, node.NodeType
+			event.Inputs, event.DataTruncated = node.Inputs, node.DataTruncated
+			event.StartedAt, event.FinishedAt = node.StartedAt, node.FinishedAt
+		}
+	}
 	summary := "Persist run status: " + event.Status
 	if event.Kind == "node" {
 		summary = "Persist node " + event.NodeID + ": " + event.Status

@@ -93,6 +93,15 @@ type ExecuteResult struct {
 // Projection is an idempotent event: (RunID, Sequence) is its unique key.
 // The storage activity must preserve an existing event on duplicate delivery.
 type Projection struct {
+	ParentInstanceID string          `json:"parentInstanceId,omitempty"`
+	IterationIndex   *int            `json:"iterationIndex,omitempty"`
+	GraphPath        string          `json:"graphPath,omitempty"`
+	NodeType         string          `json:"nodeType,omitempty"`
+	Inputs           contract.Values `json:"inputs,omitempty"`
+	DataTruncated    bool            `json:"dataTruncated,omitempty"`
+	StartedAt        *time.Time      `json:"startedAt,omitempty"`
+	FinishedAt       *time.Time      `json:"finishedAt,omitempty"`
+
 	RunID      string          `json:"runId"`
 	Sequence   int64           `json:"sequence"`
 	Time       time.Time       `json:"time"`
@@ -158,6 +167,16 @@ type CancelSignal struct {
 }
 
 type NodeSnapshot struct {
+	ParentInstanceID string          `json:"parentInstanceId,omitempty"`
+	IterationIndex   *int            `json:"iterationIndex,omitempty"`
+	GraphPath        string          `json:"graphPath,omitempty"`
+	NodeType         string          `json:"nodeType,omitempty"`
+	Inputs           contract.Values `json:"inputs,omitempty"`
+	DataTruncated    bool            `json:"dataTruncated,omitempty"`
+	StartedAt        *time.Time      `json:"startedAt,omitempty"`
+	FinishedAt       *time.Time      `json:"finishedAt,omitempty"`
+	Reason           string          `json:"reason,omitempty"`
+
 	ID            string          `json:"id"`
 	NodeID        string          `json:"nodeId"`
 	Pipeline      string          `json:"pipeline"`

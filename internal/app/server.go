@@ -403,6 +403,17 @@ type executionHooks struct {
 	request   engine.ExecuteRequest
 }
 
+func (h *executionHooks) Observe(ctx context.Context, event adapters.ExecutionEvent) error {
+	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
+	defer cancel()
+	return h.store.Observe(ctx, protocol.Event{
+		RunID: h.request.RunID, InstanceID: h.request.InstanceID,
+		AttemptID:   fmt.Sprintf("%s.a%d", h.request.InstanceID, h.request.Attempt),
+		OperationID: event.OperationID, Type: event.Type, Message: event.Type,
+		Data: event.Data,
+	})
+}
+
 func (h *executionHooks) Reserve(ctx context.Context, kind string) error {
 	return h.store.Reserve(ctx, h.request.RunID, kind, h.request.Scopes)
 }

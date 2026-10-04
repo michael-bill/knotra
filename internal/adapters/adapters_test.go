@@ -113,7 +113,7 @@ func TestLLMStrictOutputAndReplay(t *testing.T) {
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 			t.Error(err)
 		}
-		if string(body["stream"]) != "false" || body["format"] == nil {
+		if string(body["stream"]) != "true" || body["format"] == nil {
 			t.Error("model request lacks deterministic protocol fields")
 		}
 		fmt.Fprint(w, `{"message":{"role":"assistant","content":"{\"answer\":42}"},"done":true,"done_reason":"stop"}`)
@@ -350,6 +350,8 @@ func TestDockerCodeAndArtifacts(t *testing.T) {
 
 func TestDockerAgentFileFinish(t *testing.T) {
 	r := integrationRunner(t)
+	hooks := newObservationHooks()
+	r.Hooks = hooks
 	turn := 0
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 		turn++
@@ -387,5 +389,25 @@ func TestDockerAgentFileFinish(t *testing.T) {
 
 	if turn != 2 {
 		t.Fatal("agent result was not replayed")
+	}
+	iterations, tools, outputs := 0, 0, 0
+	for _, event := range hooks.snapshot() {
+		switch event.Type {
+		case "agent.iteration":
+			iterations++
+		case "tool.completed":
+			if event.Data["name"] != "files.write" || event.Data["result"] == nil {
+				t.Fatalf("tool result is missing from cycle: %#v", event)
+			}
+			tools++
+		case "output.completed":
+			if event.Data["valid"] != true {
+				t.Fatalf("agent output validation missing: %#v", event)
+			}
+			outputs++
+		}
+	}
+	if iterations != 2 || tools != 1 || outputs != 1 {
+		t.Fatalf("incomplete or duplicated agent cycle: iterations=%d tools=%d outputs=%d", iterations, tools, outputs)
 	}
 }

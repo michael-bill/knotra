@@ -54,7 +54,17 @@ func (s *Store) Project(ctx context.Context, p engine.Projection) error {
 				}
 			}
 		}
-		inst := protocol.Instance{ID: p.InstanceID, NodeID: p.NodeID, Scope: p.Pipeline, Status: p.Status}
+		inst := protocol.Instance{
+			ID: p.InstanceID, NodeID: p.NodeID, Scope: p.Pipeline, Status: p.Status,
+			ParentInstanceID: p.ParentInstanceID, IterationIndex: p.IterationIndex,
+			GraphPath: p.GraphPath, NodeType: p.NodeType,
+			StartedAt: p.StartedAt, FinishedAt: p.FinishedAt, UpdatedAt: &p.Time,
+			Reason: shortEventText(p.Reason), DataTruncated: p.DataTruncated,
+		}
+		var inputTruncated, outputTruncated bool
+		inst.Inputs, inputTruncated = observationContext(p.Inputs)
+		inst.Outputs, outputTruncated = observationContext(p.Outputs)
+		inst.DataTruncated = inst.DataTruncated || inputTruncated || outputTruncated
 		if p.Attempt > 0 {
 			inst.AttemptID = fmt.Sprintf("%s.a%d", p.InstanceID, p.Attempt)
 		}
@@ -129,7 +139,30 @@ func (s *Store) Project(ctx context.Context, p engine.Projection) error {
 		Type:       p.Kind,
 		Message:    p.Status,
 		InstanceID: p.InstanceID,
-		Data:       map[string]any{"status": p.Status, "reason": shortEventText(p.Reason)},
+		Data: map[string]any{
+			"status": p.Status, "reason": shortEventText(p.Reason),
+			"nodeId": p.NodeID, "scope": p.Pipeline,
+			"parentInstanceId": p.ParentInstanceID, "iterationIndex": p.IterationIndex,
+			"graphPath": p.GraphPath, "nodeType": p.NodeType,
+		},
+	}
+	if p.Kind == "node" {
+		data := ev.Data.(map[string]any)
+		inputs, inputTruncated := observationContext(p.Inputs)
+		outputs, outputTruncated := observationContext(p.Outputs)
+		if inputs != nil {
+			data["inputs"] = inputs
+		}
+		if outputs != nil {
+			data["outputs"] = outputs
+		}
+		data["dataTruncated"] = p.DataTruncated || inputTruncated || outputTruncated
+		if p.StartedAt != nil {
+			data["startedAt"] = p.StartedAt
+		}
+		if p.FinishedAt != nil {
+			data["finishedAt"] = p.FinishedAt
+		}
 	}
 	if p.Failure != nil {
 		ev.Message = shortEventText(p.Failure.Message)

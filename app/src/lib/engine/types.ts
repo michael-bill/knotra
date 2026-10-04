@@ -69,6 +69,17 @@ export interface EngineInstance {
   status: EngineStatus;
   attemptId?: string;
   error?: EngineDiagnostic;
+  parentInstanceId?: string;
+  iterationIndex?: number;
+  graphPath?: string;
+  nodeType?: string;
+  inputs?: { values: Record<string, Json>; artifacts: Record<string, Json> };
+  outputs?: { values: Record<string, Json>; artifacts: Record<string, Json> };
+  dataTruncated?: boolean;
+  startedAt?: string;
+  finishedAt?: string;
+  updatedAt?: string;
+  reason?: string;
 }
 
 export interface EngineRun {
@@ -137,6 +148,7 @@ export type EngineCall =
   | { op: 'info' | 'definitions' | 'profiles' | 'resources' }
   | { op: 'runs' | 'requests' | 'artifacts'; cursor: string | null }
   | { op: 'run'; runId: string }
+  | { op: 'history'; runId: string; instanceId?: string; cursor: string | null }
   | { op: 'definition'; definitionId: string }
   | { op: 'artifact'; artifactId: string }
   | {

@@ -1031,6 +1031,62 @@
           }
         }
       }
+    },
+    "/runs/{runId}/history": {
+      "get": {
+        "operationId": "get_run_history",
+        "summary": "Page durable execution history, optionally for one node instance",
+        "parameters": [
+          {
+            "name": "runId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "description": "Last event ID from the same run; excluded from this page."
+          },
+          {
+            "name": "instanceId",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "description": "Optional exact node instance filter."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Up to 100 events in committed cursor order; a full final page can be followed by an empty page.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EventPage"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Run or cursor unavailable.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -1307,6 +1363,45 @@
           },
           "error": {
             "$ref": "#/components/schemas/Diagnostic"
+          },
+          "parentInstanceId": {
+            "type": "string"
+          },
+          "graphPath": {
+            "type": "string"
+          },
+          "nodeType": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "iterationIndex": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Zero-based item/iteration index under the immediate foreach or loop parent."
+          },
+          "dataTruncated": {
+            "type": "boolean",
+            "description": "One or more input/output ports were omitted from the bounded preview."
+          },
+          "startedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "finishedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "inputs": {
+            "$ref": "#/components/schemas/ContextEnvelope"
+          },
+          "outputs": {
+            "$ref": "#/components/schemas/ContextEnvelope"
           }
         },
         "required": ["id", "nodeId", "scope", "status"]
@@ -1660,6 +1755,37 @@
           }
         },
         "required": ["id", "mediaType", "size", "sha256"]
+      },
+      "ContextEnvelope": {
+        "type": "object",
+        "properties": {
+          "values": {
+            "type": "object",
+            "additionalProperties": true
+          },
+          "artifacts": {
+            "type": "object",
+            "additionalProperties": true
+          }
+        },
+        "required": ["values", "artifacts"],
+        "description": "Bound node port context. Artifact descriptors exclude sandbox paths; may omit oversized ports when dataTruncated is true."
+      },
+      "EventPage": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "maxItems": 100,
+            "items": {
+              "$ref": "#/components/schemas/Event"
+            }
+          },
+          "nextCursor": {
+            "type": ["string", "null"]
+          }
+        },
+        "required": ["items", "nextCursor"]
       }
     },
     "securitySchemes": {

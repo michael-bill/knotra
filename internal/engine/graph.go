@@ -1,7 +1,9 @@
 package engine
 
 import (
+	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	"go.temporal.io/sdk/workflow"
@@ -24,6 +26,24 @@ func (r *runtime) transition(ctx workflow.Context, node *NodeSnapshot, status st
 		return nil
 	}
 	node.Status, node.Outputs, node.Failure = status, outputs, f
+	if r.observability {
+		now := workflow.Now(ctx)
+		if node.StartedAt == nil && (status == "running" || status == "waiting_human") {
+			node.StartedAt = &now
+		}
+		if terminal(status) {
+			node.FinishedAt = &now
+		}
+		if reason == "" {
+			switch status {
+			case "ready":
+				reason = "waiting for execution capacity"
+			case "waiting_human":
+				reason = "waiting for a human response"
+			}
+		}
+		node.Reason = reason
+	}
 	if status == "succeeded" {
 		r.publishing[node.ID] = true
 		defer delete(r.publishing, node.ID)
@@ -71,6 +91,12 @@ func (r *runtime) graph(ctx workflow.Context, gc graphContext, graph contract.Gr
 		if state == nil {
 			state = &NodeSnapshot{ID: instanceID, NodeID: id, Pipeline: gc.pipeline, Status: "pending"}
 		}
+		if r.observability {
+			// A continuation can upgrade a checkpoint from an older history.
+			// Recover ancestor addresses before materializing new descendants.
+			state.ParentInstanceID, state.IterationIndex = gc.parentInstanceID, gc.iterationIndex
+			state.GraphPath, state.NodeType = gc.graphPath+"/nodes/"+id, graph.Nodes[id].Type
+		}
 		if terminal(state.Status) {
 			completed++
 			values[id] = state.Outputs
@@ -85,7 +111,11 @@ func (r *runtime) graph(ctx workflow.Context, gc graphContext, graph contract.Gr
 		if r.projected[state.ID] {
 			continue
 		}
-		if err := r.emit(ctx, Projection{Kind: "node", InstanceID: state.ID, NodeID: id, Pipeline: gc.pipeline, Status: "pending"}); err != nil {
+		reason := ""
+		if r.observability && len(graph.Nodes[id].Dependencies) > 0 {
+			reason = "waiting for dependencies: " + strings.Join(graph.Nodes[id].Dependencies, ", ")
+		}
+		if err := r.emit(ctx, Projection{Kind: "node", InstanceID: state.ID, NodeID: id, Pipeline: gc.pipeline, Status: "pending", Reason: reason}); err != nil {
 			return nil, err
 		}
 		r.projected[state.ID] = true
@@ -272,6 +302,9 @@ func (r *runtime) node(
 	if args == nil {
 		return nil, "required input is missing", nil
 	}
+	if r.observability {
+		state.Inputs, state.DataTruncated = observationInputs(args)
+	}
 	if node.When != "" {
 		enabled, present, err := contract.EvalBool(node.When, contract.Scope{Inputs: inputs, Nodes: values, Args: args})
 		if err != nil {
@@ -429,4 +462,22 @@ func nodeDeadline(now, parent time.Time, node contract.Node) time.Time {
 		return parent
 	}
 	return deadline
+}
+
+// Bound extra checkpoint/projection context without changing executable values.
+// The API marks omitted ports explicitly instead of presenting partial JSON as valid.
+func observationInputs(values contract.Values) (contract.Values, bool) {
+	result := contract.Values{}
+	size, truncated := 0, false
+	for _, key := range keys(values) {
+		value := withoutArtifactPaths(contract.Values{key: values[key]})[key]
+		encoded, err := json.Marshal(value)
+		if err != nil || size+len(key)+len(encoded) > 32<<10 {
+			truncated = true
+			continue
+		}
+		size += len(key) + len(encoded)
+		result[key] = value
+	}
+	return result, truncated
 }

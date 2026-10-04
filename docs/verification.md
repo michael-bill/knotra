@@ -4,6 +4,34 @@ The implementation is checked at three levels: deterministic contract and workfl
 integration tests against PostgreSQL and Docker, and complete executions through the public CLI/API
 with real services.
 
+## Live execution inspection on 4 October 2026
+
+Real engine runs now open a live graph with per-instance states, durations, nested iteration scopes,
+waiting reasons and selectable connections. The node inspector shows streamed Ollama output, prompt
+context, agent iterations, tool arguments/results, validation and artifact previews. It separates
+retries, marks incomplete/truncated observations and preserves the longer streamed answer when a
+bounded completion preview arrives. Recorded state can be rewound without executing effects; run
+comparison matches nested instances by structural ancestry rather than runtime IDs.
+
+Adapter tests cover incremental NDJSON, cancellation, malformed/incomplete streams, operation
+journal replay, telemetry failures and credential redaction across chunk boundaries. Workflow tests
+cover legacy version gates and checkpoint continuations. PostgreSQL tests cover ordered observation
+commit/cursors, scoped pagination, bounded port previews and numbers outside the desktop safe range.
+The Go vet/race suite passed with local PostgreSQL, as did the native real-engine acceptance test.
+
+Browser acceptance uses actual local `qwen3.5:9b` for both an LLM pipeline and a multi-step agent
+that writes/reads a file and finishes through its structured output tool. It verifies live deltas
+before completion, durable node history, token timing, agent/tool cards and produced artifacts.
+Contract fixtures additionally test duplicate delivery, tool errors, waiting-resolution actions,
+historical rewind and comparisons. These checks use an isolated development database and engine on
+port 8887.
+
+The frontend unit suite passed all 105 tests, and all 60 Playwright scenarios passed with the real
+endpoint enabled. Native tests passed (26 default tests plus the opt-in real-engine test).
+TypeScript/Vite, Prettier, gofmt, rustfmt and the macOS application bundle build passed. The local
+Rust toolchain warned that debug-symbol stripping could not load `libLLVM.dylib`; bundling still
+completed successfully. Vite retains its existing large-bundle warning.
+
 ## Interface localization on 4 October 2026
 
 The frontend now uses separate English and Russian JSON catalogs with stable semantic keys. The
@@ -61,10 +89,10 @@ parse/structural fixtures passed.
 | Native opt-in acceptance                       | Passed after the final cache, precision and artifact-download corrections                      |
 | Repository formatting and documentation links  | Prettier, gofmt, rustfmt and Black passed; 23 Markdown files had no missing local link targets |
 
-Documentation distinguishes implemented run lists and timelines from the future real execution
-graph, agent message view and token streaming. Ollama remains the only implemented model provider.
-No SQL migrations or dependency lockfiles changed in this re-review. The reproduction commands below
-apply to both reviews.
+At that review, the real execution graph, agent message view and token streaming were still future
+work; the live execution inspection work above implements them. Ollama remains the only implemented
+model provider. No SQL migrations or dependency lockfiles changed in this re-review. The
+reproduction commands below apply to both reviews.
 
 ## Initial readability review on 4 October 2026
 

@@ -4,12 +4,13 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
-	"io"
 	"math"
 	"net/http"
 	"net/url"
 	"strings"
+	"time"
 
 	"github.com/michael-bill/knotra/internal/contract"
 )
@@ -43,10 +44,12 @@ type functionSpec struct {
 }
 
 type chatResponse struct {
-	Message    message `json:"message"`
-	Done       bool    `json:"done"`
-	DoneReason string  `json:"done_reason"`
-	Error      string  `json:"error"`
+	Message         message `json:"message"`
+	Done            bool    `json:"done"`
+	DoneReason      string  `json:"done_reason"`
+	Error           string  `json:"error"`
+	PromptEvalCount int64   `json:"prompt_eval_count,omitempty"`
+	EvalCount       int64   `json:"eval_count,omitempty"`
 }
 
 var ollamaOptions = map[string]bool{
@@ -204,12 +207,12 @@ func (r *Runner) chat(
 	messages []message,
 	tools []functionTool,
 	format json.RawMessage,
-) (message, error) {
+) (responseMessage message, returnErr error) {
 	c, err := modelConfig(req, alias)
 	if err != nil {
 		return message{}, err
 	}
-	body := map[string]any{"model": c.Model, "messages": messages, "stream": false}
+	body := map[string]any{"model": c.Model, "messages": messages, "stream": true}
 	if len(tools) > 0 {
 		body["tools"] = tools
 	}
@@ -232,6 +235,17 @@ func (r *Runner) chat(
 		return message{}, err
 	}
 	op := Operation{ID: operationID(req, fmt.Sprintf("model/%d", step), true), Kind: "model", Effect: "read"}
+	var duration, firstToken time.Duration
+	var startedAt time.Time
+	executed := false
+	defer func() {
+		if executed && returnErr != nil {
+			req.observation.emit(ctx, "model.failed", op.ID, map[string]any{
+				"step": step + 1, "model": c.Model, "error": returnErr.Error(),
+				"durationMs": time.Since(startedAt).Milliseconds(),
+			})
+		}
+	}()
 	response, err := r.operation(ctx, op, func() (json.RawMessage, error) {
 		key := pipeline(req).Spec.Models[alias].Connection + "/" + c.Model
 		if expected := req.Plan.ModelDigests[key]; expected != "" {
@@ -255,6 +269,16 @@ func (r *Runner) chat(
 			}
 			httpReq.Header.Set("Authorization", "Bearer "+secret)
 		}
+		visibleMessages := make([]map[string]string, 0, len(messages))
+		for _, msg := range messages {
+			visibleMessages = append(visibleMessages, map[string]string{"role": msg.Role, "content": msg.Content})
+		}
+		req.observation.emit(ctx, "model.started", op.ID, map[string]any{
+			"step": step + 1, "model": c.Model, "messages": visibleMessages,
+		})
+		started := time.Now()
+		startedAt = started
+		executed = true
 		client := r.httpClient()
 		res, err := client.Do(httpReq)
 		if err != nil {
@@ -264,14 +288,18 @@ func (r *Runner) chat(
 		if res.StatusCode != http.StatusOK {
 			return nil, fmt.Errorf("model returned HTTP %d", res.StatusCode)
 		}
-		b, err := io.ReadAll(io.LimitReader(res.Body, maxResponseBytes+1))
+		result, first, err := readChatStream(ctx, res.Body, started, req.observation, op.ID, step+1)
+		duration, firstToken = time.Since(started), first
 		if err != nil {
+			var invalid *Failure
+			if errors.As(err, &invalid) && invalid.Code == "OUTPUT_INVALID" {
+				// A fully received but invalid protocol response is still durable.
+				// Replaying it must not turn validation into another model call.
+				return json.Marshal(chatResponse{Error: "invalid model response stream"})
+			}
 			return nil, err
 		}
-		if len(b) > maxResponseBytes {
-			return nil, fmt.Errorf("model response exceeds %d bytes", maxResponseBytes)
-		}
-		return b, nil
+		return json.Marshal(result)
 	})
 	if err != nil {
 		return message{}, err
@@ -282,6 +310,14 @@ func (r *Runner) chat(
 	}
 	if !result.Done || result.DoneReason == "length" || result.Error != "" {
 		return message{}, failure("OUTPUT_INVALID", fmt.Errorf("model did not return a complete response"))
+	}
+	if executed {
+		req.observation.emit(ctx, "model.completed", op.ID, map[string]any{
+			"step": step + 1, "model": c.Model, "content": result.Message.Content,
+			"inputTokens": result.PromptEvalCount, "outputTokens": result.EvalCount,
+			"durationMs": duration.Milliseconds(), "firstTokenMs": firstToken.Milliseconds(),
+			"toolCalls": result.Message.ToolCalls, "doneReason": result.DoneReason,
+		})
 	}
 	return result.Message, nil
 }
@@ -325,7 +361,15 @@ func (r *Runner) llm(ctx context.Context, req Request) (contract.Values, error) 
 	if len(response.ToolCalls) > 0 {
 		return nil, failure("OUTPUT_INVALID", fmt.Errorf("llm returned tool calls"))
 	}
-	return jsonOutputs(req.Node.Outputs, []byte(response.Content))
+	id := operationID(req, "model/0", true)
+	req.observation.emit(ctx, "output.validating", id, map[string]any{"step": 1})
+	values, err := jsonOutputs(req.Node.Outputs, []byte(response.Content))
+	data := map[string]any{"step": 1, "valid": err == nil}
+	if err != nil {
+		data["error"] = err.Error()
+	}
+	req.observation.emit(ctx, "output.completed", id, data)
+	return values, err
 }
 
 func jsonOutputs(ports map[string]contract.Port, data []byte) (contract.Values, error) {

@@ -6,6 +6,8 @@ import (
 	"io"
 	"net/http"
 	"time"
+
+	"github.com/michael-bill/knotra/internal/protocol"
 )
 
 func (s *Server) events(w http.ResponseWriter, r *http.Request) {
@@ -30,12 +32,13 @@ func (s *Server) events(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("X-Accel-Buffering", "no")
 	_, _ = io.WriteString(w, ": connected\n\n")
 	flusher.Flush()
-	ticker := time.NewTicker(time.Second)
+	ticker := time.NewTicker(250 * time.Millisecond)
 	defer ticker.Stop()
 	heartbeat := time.NewTicker(15 * time.Second)
 	defer heartbeat.Stop()
 
 	for {
+		_ = http.NewResponseController(w).SetWriteDeadline(time.Now().Add(15 * time.Second))
 		for _, ev := range batch {
 			b, e := json.Marshal(ev)
 			if e != nil {
@@ -48,11 +51,19 @@ func (s *Server) events(w http.ResponseWriter, r *http.Request) {
 		}
 
 		flusher.Flush()
+		if len(batch) == 100 {
+			batch, e = s.Store.Events(r.Context(), id, cursor)
+			if e != nil {
+				return
+			}
+			continue
+		}
 
 		select {
 		case <-r.Context().Done():
 			return
 		case <-heartbeat.C:
+			_ = http.NewResponseController(w).SetWriteDeadline(time.Now().Add(15 * time.Second))
 			if _, e = io.WriteString(w, ": heartbeat\n\n"); e != nil {
 				return
 			}
@@ -65,4 +76,22 @@ func (s *Server) events(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+}
+
+func (s *Server) history(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if _, err := s.Store.Run(r.Context(), id); err != nil {
+		s.err(w, err)
+		return
+	}
+	items, err := s.Store.History(r.Context(), id, r.URL.Query().Get("cursor"), r.URL.Query().Get("instanceId"))
+	if err != nil {
+		s.err(w, err)
+		return
+	}
+	page := protocol.Page[protocol.Event]{Items: items}
+	if len(items) == 100 {
+		page.NextCursor = &items[len(items)-1].ID
+	}
+	s.write(w, http.StatusOK, page)
 }

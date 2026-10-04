@@ -1,7 +1,7 @@
 import { test, expect, type Page } from '@playwright/test';
 import { createServer, type Server, type IncomingMessage, type ServerResponse } from 'node:http';
 import { createHash } from 'node:crypto';
-import type { EngineRun, EngineRequest } from '../../src/lib/engine/types';
+import type { EngineRun, EngineRequest, EngineEvent } from '../../src/lib/engine/types';
 
 let uploaded: { descriptor: any; bytes: Buffer } | undefined;
 let principal = 'test-user';
@@ -22,6 +22,7 @@ let badHash = false;
 let artifactBytes = Buffer.from([0, 255, 128, 10]);
 let lastPackage: any;
 let eventNumber = 0;
+let history: EngineEvent[] = [];
 const descriptor = () => ({
   id: 'artifact-1',
   name: 'result.bin',
@@ -46,7 +47,7 @@ async function read(request: IncomingMessage) {
   return chunks.length ? JSON.parse(Buffer.concat(chunks).toString()) : {};
 }
 
-function emit(message: string) {
+function emit(message: string, detail: Partial<EngineEvent> = {}) {
   const event = {
     id: `event-${++eventNumber}`,
     runId: 'run-1',
@@ -54,7 +55,9 @@ function emit(message: string) {
     type: 'run.updated',
     message,
     instanceId: 'root/review',
+    ...detail,
   };
+  history.push(event);
   for (const stream of streams)
     if (!stream.destroyed) {
       stream.write(`id: ${event.id}\ndata: ${JSON.stringify(event)}\n\n`);
@@ -80,7 +83,15 @@ async function handle(request: IncomingMessage, response: ServerResponse) {
       engineId: 'test-engine',
       principalId: principal,
       version: 'contract-fixture',
-      capabilities: ['definitions', 'runs', 'requests', 'artifacts', 'events', 'resolution'],
+      capabilities: [
+        'definitions',
+        'runs',
+        'requests',
+        'artifacts',
+        'events',
+        'history',
+        'resolution',
+      ],
     });
   if (path === '/v1/profiles')
     return json(response, {
@@ -112,6 +123,16 @@ async function handle(request: IncomingMessage, response: ServerResponse) {
     return;
   }
   if (request.method === 'GET') {
+    if (path === '/v1/runs/run-1/history') {
+      const query = new URL(request.url!, address).searchParams;
+      const after = query.get('cursor');
+      const offset = after ? history.findIndex((event) => event.id === after) + 1 : 0;
+      const items = history
+        .slice(offset)
+        .filter((event) => !query.get('instanceId') || event.instanceId === query.get('instanceId'))
+        .slice(0, 100);
+      return json(response, { items, nextCursor: items.length === 100 ? items.at(-1)!.id : null });
+    }
     if (path === '/v1/runs') {
       const cursor = new URL(request.url!, address).searchParams.get('cursor');
       const value = cursor
@@ -330,6 +351,7 @@ test.beforeEach(async ({ page }) => {
   heldRuns = [];
   badHash = false;
   eventNumber = 0;
+  history = [];
   server = createServer((request, response) => {
     void handle(request, response).catch((error) => {
       response.destroy(error);
@@ -741,10 +763,207 @@ test('unsafe event data neither renders nor advances the durable browser cursor'
   await expect.poll(() => reconnectHeaders.length).toBeGreaterThan(before);
   expect(reconnectHeaders.at(-1)).toBe('event-1');
   await expect(page.getByText('Unsafe value must not render.', { exact: true })).toHaveCount(0);
-  const saved = await page.evaluate(() => {
+  const saved = await page.evaluate(async () => {
     const key = Object.keys(localStorage).find((key) => key.startsWith('knotra.engine.v1:'))!;
-    return JSON.parse(localStorage.getItem(key)!).cache;
+    const path = '/src/lib/engine/browserEvents.ts';
+    const { browserEventState } = await import(path);
+    return browserEventState(key, 'run-1');
   });
-  expect(saved['cursor:run-1']).toBe('event-1');
-  expect(saved['events:run-1']).toHaveLength(1);
+  expect(saved.cursor).toBe('event-1');
+  expect(saved.events).toHaveLength(1);
+});
+
+test('live graph exposes streamed LLM text, agent tool failures and durable node history', async ({
+  page,
+}, testInfo) => {
+  const source = `apiVersion: knotra/v1
+kind: Pipeline
+metadata: {name: live-observation, title: Live observation fixture}
+spec:
+  models: {writer: {connection: model_main}}
+  sandboxes: {work: {profile: python_box}}
+  nodes:
+    draft:
+      type: llm
+      llm: {model: writer, prompt: {text: Write a greeting}}
+      outputs: {text: {schema: {type: string}}}
+    verify:
+      type: agent
+      sandbox: work
+      inputs: {text: {schema: {type: string}, bind: {from: nodes.draft.outputs.text}}}
+      agent: {model: writer, maxSteps: 8, prompt: {text: Verify the greeting}}
+      outputs: {text: {schema: {type: string}}}
+  outputs: {text: {schema: {type: string}, bind: {from: nodes.verify.outputs.text}}}
+`;
+  const at = new Date().toISOString();
+  runs = [
+    {
+      id: 'run-1',
+      definitionId: 'definition-live',
+      title: 'Live observation fixture',
+      status: 'running',
+      createdAt: at,
+      updatedAt: at,
+      profile: 'local',
+      package: {
+        entrypoint: 'pipeline.yaml',
+        source,
+        files: [{ path: 'pipeline.yaml', content: Buffer.from(source).toString('base64') }],
+      },
+      inputs: {},
+      inputArtifacts: {},
+      outputs: {},
+      artifacts: [],
+      diagnostics: [],
+      availableActions: ['cancel'],
+      instances: [
+        {
+          id: 'i-draft',
+          nodeId: 'draft',
+          scope: 'pipeline.yaml',
+          nodeType: 'llm',
+          graphPath: '/nodes/draft',
+          status: 'running',
+          attemptId: 'i-draft.a1',
+          startedAt: at,
+          inputs: { values: {}, artifacts: {} },
+        },
+        {
+          id: 'i-verify',
+          nodeId: 'verify',
+          scope: 'pipeline.yaml',
+          nodeType: 'agent',
+          graphPath: '/nodes/verify',
+          status: 'pending',
+        },
+      ],
+    },
+  ];
+  await connect(page);
+  await nav(page, 'Runs');
+  await page.locator('.table-row').filter({ hasText: 'Live observation fixture' }).click();
+  await expect(page.locator('.execution-canvas .react-flow__node')).toHaveCount(2);
+  await page.locator('.react-flow__node[data-id="verify"]').click();
+  await expect(page.locator('.execution-inspector')).toContainText('Waiting for');
+  await page.locator('.react-flow__node[data-id="draft"]').click();
+  await expect.poll(() => streams.filter((stream) => !stream.destroyed).length).toBe(1);
+  const model = { instanceId: 'i-draft', attemptId: 'i-draft.a1', operationId: 'model-one' };
+  for (const status of ['pending', 'ready', 'running'])
+    emit(status, { ...model, type: 'node', data: { status } });
+  emit('model.started', {
+    ...model,
+    type: 'model.started',
+    data: {
+      step: 1,
+      model: 'qwen3.5:9b',
+      messages: [{ role: 'user', content: 'Write a greeting' }],
+    },
+  });
+  emit('model.delta', { ...model, type: 'model.delta', data: { step: 1, text: 'Hello from ' } });
+  await expect(page.locator('.execution-response pre')).toHaveText('Hello from ');
+  await expect(page.locator('.execution-operation.is-active')).toHaveCount(1);
+  await expect(page.locator('.execution-operation.is-active')).toBeInViewport();
+  await expect(page.locator('.execution-state-history summary')).toHaveText(
+    'Step state changes (3)',
+  );
+  await expect(page.locator('.execution-state-history .execution-event')).toHaveCount(0);
+  await page.locator('.execution-state-history summary').click();
+  await expect(page.locator('.execution-state-history .execution-event')).toHaveCount(3);
+  await page.locator('.execution-state-history summary').click();
+  await page.screenshot({ path: testInfo.outputPath('live-model-initial.png'), fullPage: true });
+  emit('model.delta', {
+    ...model,
+    type: 'model.delta',
+    data: { step: 1, text: 'the live model.' },
+  });
+  await expect(page.locator('.execution-response pre')).toHaveText('Hello from the live model.');
+  emit('model.delta', {
+    ...model,
+    type: 'model.delta',
+    data: { step: 1, text: '\nLive response line'.repeat(90) },
+  });
+  const response = page.locator('.execution-response pre');
+  await expect(response).toContainText('Live response line');
+  await expect.poll(() => response.evaluate((element) => element.scrollTop)).toBe(0);
+  await page.getByRole('button', { name: 'Follow execution', exact: true }).click();
+  await expect
+    .poll(() =>
+      response.evaluate(
+        (element) => element.scrollTop + element.clientHeight >= element.scrollHeight - 1,
+      ),
+    )
+    .toBe(true);
+  await page.screenshot({ path: testInfo.outputPath('live-model-follow.png'), fullPage: true });
+  await page.getByRole('button', { name: 'Follow execution', exact: true }).click();
+  await response.evaluate((element) => {
+    element.scrollTop = 0;
+  });
+  emit('model.delta', {
+    ...model,
+    type: 'model.delta',
+    data: { step: 1, text: '\nManual inspection stays in place.' },
+  });
+  await expect(response).toContainText('Manual inspection stays in place.');
+  await expect.poll(() => response.evaluate((element) => element.scrollTop)).toBe(0);
+  runs[0].instances[0] = {
+    ...runs[0].instances[0],
+    status: 'succeeded',
+    finishedAt: new Date().toISOString(),
+    outputs: { values: { text: 'Hello from the live model.' }, artifacts: {} },
+  };
+  runs[0].instances[1] = {
+    ...runs[0].instances[1],
+    status: 'running',
+    attemptId: 'i-verify.a1',
+    startedAt: new Date().toISOString(),
+    inputs: { values: { text: 'Hello from the live model.' }, artifacts: {} },
+  };
+  emit('model.completed', {
+    ...model,
+    type: 'model.completed',
+    data: {
+      step: 1,
+      model: 'qwen3.5:9b',
+      content: 'Hello from the live model.',
+      inputTokens: 12,
+      outputTokens: 8,
+      durationMs: 1200,
+      firstTokenMs: 150,
+    },
+  });
+  emit('succeeded', { type: 'node', instanceId: 'i-draft', data: { status: 'succeeded' } });
+  await expect(page.locator('.execution-inspector .status')).toHaveText('Completed');
+  await page.locator('.execution-operation-heading').click();
+  await expect(page.locator('.execution-inspector')).toContainText('Write a greeting');
+  await expect(page.locator('.execution-usage')).toContainText('12');
+  await page.locator('.react-flow__node[data-id="verify"]').click();
+  const tool = { instanceId: 'i-verify', attemptId: 'i-verify.a1', operationId: 'tool-one' };
+  emit('agent.iteration', { ...tool, type: 'agent.iteration', data: { step: 1, maxSteps: 8 } });
+  emit('tool.started', {
+    ...tool,
+    type: 'tool.started',
+    data: { step: 1, name: 'files.read', arguments: { path: 'missing.txt' } },
+  });
+  emit('tool.completed', {
+    ...tool,
+    type: 'tool.completed',
+    data: {
+      step: 1,
+      name: 'files.read',
+      result: { isError: true, error: 'File not found' },
+      durationMs: 15,
+    },
+  });
+  await expect(page.locator('.execution-inspector')).toContainText('files.read');
+  await expect(page.locator('.execution-inspector')).toContainText('File not found');
+  await page.getByRole('button', { name: 'Execution timing', exact: true }).click();
+  await expect(page.locator('.execution-waterfall-row')).toHaveCount(2);
+  await page.screenshot({ path: testInfo.outputPath('live-observation.png'), fullPage: true });
+  await page.reload();
+  await connect(page);
+  await nav(page, 'Runs');
+  await page.locator('.table-row').filter({ hasText: 'Live observation fixture' }).click();
+  await page.locator('.react-flow__node[data-id="draft"]').click();
+  await expect(page.locator('.execution-response pre')).toHaveText('Hello from the live model.');
+  expect(writes).toHaveLength(0);
 });

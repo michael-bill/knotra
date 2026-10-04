@@ -8,6 +8,7 @@ import (
 	"slices"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/michael-bill/knotra/internal/contract"
 )
@@ -221,6 +222,9 @@ func (r *Runner) agent(ctx context.Context, req Request) (contract.Values, error
 	effects := false
 
 	for step := 0; step < n.MaxSteps; step++ {
+		req.observation.emit(ctx, "agent.iteration", operationID(req, fmt.Sprintf("model/%d", step), true), map[string]any{
+			"step": step + 1, "maxSteps": n.MaxSteps,
+		})
 		response, err := r.chat(ctx, req, n.Model, step, messages, definitions, nil)
 		if err != nil {
 			return nil, preventRetry(err, effects)
@@ -235,6 +239,9 @@ func (r *Runner) agent(ctx context.Context, req Request) (contract.Values, error
 		}
 
 		if finish {
+			finishID := operationID(req, fmt.Sprintf("finish/%d", step), true)
+			started := time.Now()
+			req.observation.emit(ctx, "output.validating", finishID, map[string]any{"step": step + 1})
 			var values contract.Values
 			var validationErr error
 			if len(response.ToolCalls) != 1 {
@@ -245,6 +252,11 @@ func (r *Runner) agent(ctx context.Context, req Request) (contract.Values, error
 					values, validationErr = r.collect(ctx, req, s, values)
 				}
 			}
+			validation := map[string]any{"step": step + 1, "valid": validationErr == nil, "durationMs": time.Since(started).Milliseconds()}
+			if validationErr != nil {
+				validation["error"] = validationErr.Error()
+			}
+			req.observation.emit(ctx, "output.completed", finishID, validation)
 			if validationErr == nil {
 				data, e := json.Marshal(values)
 				if e != nil {
@@ -296,10 +308,28 @@ func (r *Runner) agent(ctx context.Context, req Request) (contract.Values, error
 			if !ok {
 				return nil, failure("PERMISSION_DENIED", fmt.Errorf("agent requested an ungranted tool %q", call.Function.Name))
 			}
+			name := tool.builtin
+			id := operationID(req, fmt.Sprintf("builtin/%d/%d", step, index), true)
+			if name == "" {
+				name = tool.alias + "." + tool.name
+				id = operationID(req, fmt.Sprintf("mcp/%s/%s/%d/%d", tool.alias, tool.name, step, index), true)
+				if tool.policy.IdempotencyArgument != "" {
+					// MCP may echo an injected idempotency value in the result.
+					req.observation.addRedaction(id)
+				}
+			}
+			started := time.Now()
+			req.observation.emit(ctx, "tool.started", id, map[string]any{
+				"step": step + 1, "name": name, "providerName": call.Function.Name, "arguments": call.Function.Arguments,
+			})
 			if err = contract.ValidateValue(
 				contract.Port{Schema: tool.definition.Function.Parameters},
 				contract.Value{JSON: call.Function.Arguments},
 			); err != nil {
+				req.observation.emit(ctx, "tool.completed", id, map[string]any{
+					"step": step + 1, "name": name, "isError": true, "error": "Invalid arguments: " + err.Error(),
+					"durationMs": time.Since(started).Milliseconds(),
+				})
 				messages = append(messages, message{Role: "tool", ToolName: call.Function.Name, Content: "Invalid arguments: " + err.Error()})
 				continue
 			}
@@ -332,6 +362,10 @@ func (r *Runner) agent(ctx context.Context, req Request) (contract.Values, error
 					var close func()
 					session, close, err = r.session(ctx, req, tool.alias)
 					if err != nil {
+						req.observation.emit(ctx, "tool.completed", id, map[string]any{
+							"step": step + 1, "name": name, "isError": true, "error": err.Error(),
+							"durationMs": time.Since(started).Milliseconds(),
+						})
 						return nil, preventRetry(err, effects)
 					}
 					sessions[tool.alias] = session
@@ -342,6 +376,19 @@ func (r *Runner) agent(ctx context.Context, req Request) (contract.Values, error
 				}
 				result, err = r.callMCP(ctx, req, session, tool.alias, tool.name, call.Function.Arguments, fmt.Sprintf("%d/%d", step, index))
 			}
+			completion := map[string]any{"step": step + 1, "name": name, "durationMs": time.Since(started).Milliseconds()}
+			if err != nil {
+				completion["isError"], completion["error"] = true, err.Error()
+			} else {
+				completion["result"] = result
+				var status struct {
+					IsError bool `json:"isError"`
+				}
+				if json.Unmarshal(result, &status) == nil && status.IsError {
+					completion["isError"] = true
+				}
+			}
+			req.observation.emit(ctx, "tool.completed", id, completion)
 			if err != nil {
 				return nil, preventRetry(err, effects)
 			}

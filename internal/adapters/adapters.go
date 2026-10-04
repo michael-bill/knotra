@@ -29,6 +29,7 @@ type Request struct {
 	Inputs                               contract.Values
 	ToolArguments                        json.RawMessage
 	service                              bool
+	observation                          *executionObservation
 }
 
 type Operation struct{ ID, Kind, Effect, IdempotencyKey string }
@@ -119,6 +120,8 @@ func (r *Runner) Execute(ctx context.Context, req Request) (contract.Values, err
 			fmt.Errorf("admitted plan requires adapter version %q; worker has %q", version, Version),
 		)
 	}
+	req.observation = r.newObservation(ctx, req)
+	defer req.observation.finish(ctx)
 
 	switch req.Node.Type {
 	case "llm":

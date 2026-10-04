@@ -68,7 +68,7 @@ test.beforeEach(async ({ page }) => {
 
 test('real Ollama run publishes an artifact and replays history on a fresh client', async ({
   page,
-}) => {
+}, testInfo) => {
   const errors: string[] = [];
   page.on('pageerror', (error) => errors.push(error.message));
   const title = `Desktop greeting ${randomUUID().slice(0, 8)}`;
@@ -90,6 +90,22 @@ test('real Ollama run publishes an artifact and replays history on a fresh clien
 
   const { run } = await (await page.request.get(`${endpoint}/v1/runs/${startedRun.id}`)).json();
   expect(run.outputs.greeting).toEqual(expect.any(String));
+  await page.getByRole('button', { name: 'Live graph', exact: true }).click();
+  await page.locator('.react-flow__node[data-id="greet"]').click();
+  await expect(page.locator('.execution-response pre')).toContainText(run.outputs.greeting);
+  await expect(page.locator('.execution-usage')).toContainText('Tokens');
+  const instance = run.instances.find((value: { nodeId: string }) => value.nodeId === 'greet');
+  const historyResponse = await page.request.get(
+    `${endpoint}/v1/runs/${run.id}/history?instanceId=${encodeURIComponent(instance.id)}`,
+  );
+  const history = (await historyResponse.json()).items;
+  const firstDelta = history.findIndex((event: { type: string }) => event.type === 'model.delta');
+  const completed = history.findIndex(
+    (event: { type: string }) => event.type === 'model.completed',
+  );
+  expect(firstDelta).toBeGreaterThan(-1);
+  expect(completed).toBeGreaterThan(firstDelta);
+  await page.screenshot({ path: testInfo.outputPath('real-qwen-live-graph.png'), fullPage: true });
   await navigate(page, 'Artifacts');
   await page.getByRole('textbox', { name: 'Search engine artifacts' }).fill(run.artifacts[0].id);
   await page.locator('.artifact-card').click();
@@ -219,4 +235,77 @@ Path(os.environ['KNOTRA_OUTPUT_JSON']).write_text('{}')
   await page.getByRole('button', { name: 'Export', exact: true }).click();
   const exported = await downloaded;
   expect(readFileSync((await exported.path())!)).toEqual(bytes);
+});
+
+test('real Qwen agent exposes model iterations, tool results and its produced file', async ({
+  page,
+}, testInfo) => {
+  const title = `Live agent ${randomUUID().slice(0, 8)}`;
+  await importPackage(
+    page,
+    {
+      'pipeline.yaml': `apiVersion: knotra/v1
+kind: Pipeline
+metadata: {name: live-agent-observation, title: ${title}}
+spec:
+  models: {writer: {connection: model_main}}
+  sandboxes: {work: {profile: python_box}}
+  nodes:
+    researcher:
+      type: agent
+      sandbox: work
+      tools: {sandbox: [files.write, files.read]}
+      agent:
+        model: writer
+        maxSteps: 8
+        prompt:
+          text: >-
+            Use files.write to create note.txt with content "Live agent observation works".
+            Use only the relative path note.txt (never /workspace/note.txt).
+            Then use files.read with root workspace and path note.txt to read the file.
+            Finally call knotra_finish with summary equal to the text you read.
+      outputs:
+        summary: {schema: {type: string, minLength: 1}}
+        note:
+          artifact: {mediaTypes: [text/plain]}
+          collect: {path: note.txt, mediaType: text/plain}
+  outputs:
+    summary: {schema: {type: string}, bind: {from: nodes.researcher.outputs.summary}}
+    note: {artifact: {mediaTypes: [text/plain]}, bind: {from: nodes.researcher.outputs.note}}
+`,
+    },
+    title,
+  );
+  const started = await start(page);
+  await page.locator('.react-flow__node[data-id="researcher"]').click();
+  await expect(page.locator('.execution-inspector')).toContainText('files.write', {
+    timeout: 120_000,
+  });
+  await expect(page.locator('.page-heading .status')).toHaveText('Completed', { timeout: 120_000 });
+  await expect(page.locator('.execution-inspector')).toContainText('files.read');
+  await expect.poll(() => page.locator('.execution-operation').count()).toBeGreaterThanOrEqual(5);
+  const { run } = await (await page.request.get(`${endpoint}/v1/runs/${started.id}`)).json();
+  expect(run.outputs.summary).toContain('Live agent observation works');
+  const instance = run.instances.find((item: { nodeId: string }) => item.nodeId === 'researcher');
+  const history = (
+    await (
+      await page.request.get(`${endpoint}/v1/runs/${run.id}/history?instanceId=${instance.id}`)
+    ).json()
+  ).items;
+  expect(
+    history.filter((event: { type: string }) => event.type === 'agent.iteration').length,
+  ).toBeGreaterThanOrEqual(3);
+  expect(
+    history.some(
+      (event: { type: string; data?: { name?: string } }) =>
+        event.type === 'tool.completed' && event.data?.name === 'files.read',
+    ),
+  ).toBe(true);
+  await page.screenshot({ path: testInfo.outputPath('real-qwen-agent-cycle.png'), fullPage: true });
+  await page
+    .locator('.execution-inspector')
+    .getByRole('button', { name: 'Inputs & outputs', exact: true })
+    .click();
+  await expect(page.locator('.execution-artifact')).toHaveCount(1);
+  await expect(page.locator('.execution-inspector')).toContainText(run.outputs.summary);
 });

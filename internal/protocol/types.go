@@ -26,12 +26,23 @@ type Definition struct {
 }
 
 type Instance struct {
-	ID        string               `json:"id"`
-	NodeID    string               `json:"nodeId"`
-	Scope     string               `json:"scope"`
-	Status    string               `json:"status"`
-	AttemptID string               `json:"attemptId,omitempty"`
-	Error     *contract.Diagnostic `json:"error,omitempty"`
+	ParentInstanceID string               `json:"parentInstanceId,omitempty"`
+	IterationIndex   *int                 `json:"iterationIndex,omitempty"`
+	GraphPath        string               `json:"graphPath,omitempty"`
+	NodeType         string               `json:"nodeType,omitempty"`
+	Inputs           map[string]any       `json:"inputs,omitempty"`
+	Outputs          map[string]any       `json:"outputs,omitempty"`
+	DataTruncated    bool                 `json:"dataTruncated,omitempty"`
+	StartedAt        *time.Time           `json:"startedAt,omitempty"`
+	FinishedAt       *time.Time           `json:"finishedAt,omitempty"`
+	UpdatedAt        *time.Time           `json:"updatedAt,omitempty"`
+	Reason           string               `json:"reason,omitempty"`
+	ID               string               `json:"id"`
+	NodeID           string               `json:"nodeId"`
+	Scope            string               `json:"scope"`
+	Status           string               `json:"status"`
+	AttemptID        string               `json:"attemptId,omitempty"`
+	Error            *contract.Diagnostic `json:"error,omitempty"`
 }
 
 type Run struct {

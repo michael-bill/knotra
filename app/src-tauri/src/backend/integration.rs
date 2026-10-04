@@ -327,6 +327,27 @@ fn pagination_preserves_structured_engine_rejections() {
 }
 
 #[test]
+fn instance_history_is_scoped_paginated_and_not_added_to_the_event_cursor() {
+    runtime().block_on(async {
+        let (session, task) = fixture(2, |index, request| {
+            assert!(request.starts_with("GET /v1/runs/r1/history?cursor=42&instanceId=n%2Fa "));
+            (200, "application/json", json!({
+                "items": [{"id":"43", "runId":"r1", "instanceId":if index == 0 { "n/a" } else { "another-node" }}],
+                "nextCursor":null,
+            }).to_string().into_bytes())
+        });
+        let store = store::Store::open(std::path::Path::new(":memory:")).unwrap();
+        let call = Call::History { run_id:"r1".into(), instance_id:Some("n/a".into()), cursor:Some("42".into()) };
+        let page = execute(&store, &session, &call).await.unwrap();
+        assert_eq!(page["items"][0]["id"], "43");
+        assert!(store.cursor("fixture", "r1").unwrap().is_none());
+        assert!(store.snapshot("fixture").unwrap()["cache"].as_object().unwrap().is_empty());
+        assert_eq!(execute(&store, &session, &call).await.unwrap_err().code, "protocol");
+        task.join().unwrap();
+    });
+}
+
+#[test]
 fn unsafe_event_numbers_do_not_advance_the_durable_cursor() {
     runtime().block_on(async {
         let (session, task) = fixture(1, |_, request| {

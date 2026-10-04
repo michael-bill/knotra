@@ -54,6 +54,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /v1/runs/{id}/resume", s.resume)
 	mux.HandleFunc("POST /v1/runs/{id}/instances/{instance}/resolve", s.resolve)
 	mux.HandleFunc("GET /v1/runs/{id}/events", s.events)
+	mux.HandleFunc("GET /v1/runs/{id}/history", s.history)
 	mux.HandleFunc("GET /v1/requests", s.requests)
 	mux.HandleFunc("POST /v1/requests/{id}/response", s.respond)
 	mux.HandleFunc("POST /v1/artifacts", s.upload)
@@ -203,7 +204,7 @@ func (s *Server) info(w http.ResponseWriter, r *http.Request) {
 			"engineId":     s.Store.EngineID,
 			"principalId":  s.principal(),
 			"version":      s.Version,
-			"capabilities": []string{"validate", "definitions", "runs", "events", "human", "artifacts", "resolution"},
+			"capabilities": []string{"validate", "definitions", "runs", "events", "history", "execution-observations", "human", "artifacts", "resolution"},
 		},
 	)
 }

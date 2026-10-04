@@ -340,6 +340,12 @@ func (s *Store) Deliver(ctx context.Context, send func(context.Context, Querier,
 }
 
 func (s *Store) Events(ctx context.Context, runID, after string) ([]protocol.Event, error) {
+	return s.History(ctx, runID, after, "")
+}
+
+// History pages the same committed order used by SSE; a filter only selects
+// records, it never changes the meaning or validation of the run's cursor.
+func (s *Store) History(ctx context.Context, runID, after, instanceID string) ([]protocol.Event, error) {
 	var n int64
 	var err error
 	if after != "" {
@@ -356,7 +362,7 @@ func (s *Store) Events(ctx context.Context, runID, after string) ([]protocol.Eve
 			return nil, ErrNotFound
 		}
 	}
-	rows, err := s.Pool.Query(ctx, "SELECT id,document FROM knotra_events WHERE run_id=$1 AND id>$2 ORDER BY id LIMIT 100", runID, n)
+	rows, err := s.Pool.Query(ctx, "SELECT id,document FROM knotra_events WHERE run_id=$1 AND id>$2 AND ($3='' OR document->>'instanceId'=$3) ORDER BY id LIMIT 100", runID, n, instanceID)
 	if err != nil {
 		return nil, err
 	}

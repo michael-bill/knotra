@@ -255,6 +255,37 @@ spec:
 	if w.Code != 404 {
 		t.Fatal(fmt.Sprint(w.Code, w.Body.String()))
 	}
+	for index := range 102 {
+		instance := "node"
+		if index == 101 {
+			instance = "other"
+		}
+		if err := db.Observe(context.Background(), protocol.Event{RunID: id, InstanceID: instance, Type: "model.delta", Data: map[string]any{"content": fmt.Sprint(index)}}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	getHistory := func(cursor string) protocol.Page[protocol.Event] {
+		t.Helper()
+		request := httptest.NewRequest("GET", "/v1/runs/"+id+"/history?instanceId=node&cursor="+url.QueryEscape(cursor), nil)
+		response := httptest.NewRecorder()
+		handler.ServeHTTP(response, request)
+		if response.Code != 200 {
+			t.Fatal(response.Code, response.Body.String())
+		}
+		var page protocol.Page[protocol.Event]
+		if err := json.Unmarshal(response.Body.Bytes(), &page); err != nil {
+			t.Fatal(err)
+		}
+		return page
+	}
+	first := getHistory("")
+	if len(first.Items) != 100 || first.NextCursor == nil {
+		t.Fatal(first)
+	}
+	last := getHistory(*first.NextCursor)
+	if len(last.Items) != 1 || last.NextCursor != nil || last.Items[0].InstanceID != "node" {
+		t.Fatal(last)
+	}
 }
 
 func TestListPageHasCursorAtByteBoundary(t *testing.T) {

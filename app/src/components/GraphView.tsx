@@ -29,6 +29,7 @@ interface CardData extends Record<string, unknown> {
   id: string;
   node: NodeDefinition;
   status?: NodeStatus;
+  observation?: string;
   outputs: Record<string, Port>;
   editable: boolean;
   compact: boolean;
@@ -92,7 +93,7 @@ function PipelineCard({ data, selected }: NodeProps<CardNode>) {
   );
   return (
     <div
-      className={`flow-card port-card ${data.compact ? 'run-port-card' : ''} node-color-${meta.color} ${selected ? 'flow-card-selected' : ''}`}
+      className={`flow-card port-card ${data.compact ? 'run-port-card' : ''} node-color-${meta.color} ${selected ? 'flow-card-selected' : ''} ${data.status ? `execution-node-${data.status}` : ''}`}
     >
       <Handle
         id="dependency-in"
@@ -130,6 +131,12 @@ function PipelineCard({ data, selected }: NodeProps<CardNode>) {
       </div>
       <strong>{data.id.replace(/_/g, ' ')}</strong>
       <p className="node-summary">{nodeDetail(data.node, t)}</p>
+      {data.status ? (
+        <div className={`execution-node-caption state-${data.status}`} title={data.observation}>
+          <span>{t(editorStatusKeys[data.status])}</span>
+          {data.observation ? <small>{data.observation}</small> : null}
+        </div>
+      ) : null}
       <div className="canvas-ports">
         <div>
           <span className="port-caption">{t('editor.inputs')}</span>
@@ -191,6 +198,8 @@ export default function GraphView({
   selected,
   onSelect,
   statuses,
+  observations,
+  onSelectEdge,
   onOpenBody,
   importedGraphs,
   onConnect,
@@ -203,6 +212,13 @@ export default function GraphView({
   selected?: string;
   onSelect: (id: string) => void;
   statuses?: Record<string, NodeStatus>;
+  observations?: Record<string, string>;
+  onSelectEdge?: (edge: {
+    source: string;
+    target: string;
+    sourcePort?: string;
+    targetPort?: string;
+  }) => void;
   importedGraphs?: Map<string, Graph>;
   positions?: Record<string, { x: number; y: number }>;
   onMove?: (id: string, position: { x: number; y: number }) => void;
@@ -253,7 +269,7 @@ export default function GraphView({
     layout.setGraph({ rankdir: 'LR', nodesep: 75, ranksep: onConnect ? 95 : 60 });
     const entries = Object.entries(graph.nodes);
     const height = (node: NodeDefinition) =>
-      132 +
+      (statuses ? 184 : 132) +
       Math.max(
         Object.keys(node.inputs ?? {}).length,
         Object.keys(nodePorts(node, importedGraphs)).length,
@@ -290,12 +306,13 @@ export default function GraphView({
           sourceHandle,
           targetHandle,
           type: 'smoothstep',
-          animated: statuses?.[id] === 'running',
+          animated: statuses?.[id] === 'running' && statuses?.[dep] === 'succeeded',
           markerEnd: { type: MarkerType.ArrowClosed, color, width: 12, height: 12 },
           style: {
             stroke: color,
             strokeWidth: highlighted ? 2 : 1.5,
             strokeDasharray: indirect ? '5 4' : undefined,
+            opacity: statuses?.[id] === 'skipped' || statuses?.[dep] === 'skipped' ? 0.3 : 1,
           },
         });
       };
@@ -369,6 +386,7 @@ export default function GraphView({
         id,
         node,
         status: statuses?.[id],
+        observation: observations?.[id],
         outputs: nodePorts(node, importedGraphs),
         editable: !!onConnect,
         compact: !onConnect,
@@ -376,7 +394,19 @@ export default function GraphView({
       },
     }));
     return { nodes, edges };
-  }, [graph, selected, statuses, importedGraphs, theme, pending, onConnect, positions, t, message]);
+  }, [
+    graph,
+    selected,
+    statuses,
+    observations,
+    importedGraphs,
+    theme,
+    pending,
+    onConnect,
+    positions,
+    t,
+    message,
+  ]);
   const [flowNodes, setFlowNodes, onNodesChange] = useNodesState<CardNode>([]);
   useEffect(() => setFlowNodes(nodes), [nodes, setFlowNodes]);
   useEffect(() => {
@@ -421,6 +451,18 @@ export default function GraphView({
         onConnect={connect}
         onNodeClick={(_, node) => onSelect(node.id)}
         onNodeDoubleClick={(_, node) => onOpenBody?.(node.id)}
+        onEdgeClick={(_, edge) =>
+          onSelectEdge?.({
+            source: edge.source,
+            target: edge.target,
+            sourcePort: edge.sourceHandle?.startsWith('output:')
+              ? edge.sourceHandle.slice(7)
+              : undefined,
+            targetPort: edge.targetHandle?.startsWith('input:')
+              ? edge.targetHandle.slice(6)
+              : undefined,
+          })
+        }
         proOptions={{ hideAttribution: true }}
         ariaLabelConfig={{
           'controls.zoomIn.ariaLabel': t('editor.zoomIn'),

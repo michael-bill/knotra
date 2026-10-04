@@ -3,7 +3,7 @@
 Tauri 2 application for authoring Knotra pipelines, running them on the Go engine, reviewing human
 requests and managing artifacts. React/TypeScript renders the UI; Rust handles native HTTP/SSE,
 SQLite persistence, package dialogs and verified binary downloads. Browser preview uses the same
-engine API with localStorage.
+engine API with a local browser cache.
 
 ## Development
 
@@ -54,10 +54,21 @@ credentials are kept separate from draft exports.
 
 Open **Library → Local Ollama greeting**, or import `examples/local/pipeline.yaml`, choose **Run**,
 select profile `local`, and check admission or start. The engine publishes an immutable package,
-executes Ollama and Docker, and saves the result. Engine Runs shows the instance list, current
-attempt IDs, diagnostics, timeline, run inputs/outputs and immutable package snapshot; Inbox answers
-saved human requests; Artifacts uploads, previews and exports registered bytes. The status graph
-currently belongs to guided demo runs. A run keeps executing after the app closes.
+executes Ollama and Docker, and saves the result. Engine Runs opens a live graph with step states,
+active connections, waiting reasons and elapsed times. Click a block to inspect its input/output,
+streaming model response, prompt context, agent iterations and tool calls. Nested graphs and
+iterations have their own scopes. The inspector includes token counts, first-token latency, failures
+and produced artifacts; the waterfall shows overlapping work. A follow toggle tracks the active step
+while the run progresses.
+
+Execution history can be rewound to a recorded state without repeating operations. Run comparison
+shows changes to prompts, packages, input/output and step timings. Earlier node activity loads from
+the engine independently of the bounded live cache. Large previews are explicitly marked as
+truncated; unavailable historical telemetry is not invented. Model-hidden reasoning is not shown.
+
+The instance list, timeline and immutable package remain available. Inbox answers saved human
+requests; Artifacts uploads, previews and exports registered bytes. A run keeps executing after the
+app closes.
 
 Other library examples are authoring templates. Their logical models, MCP tools and sandbox names
 need a matching EngineProfile. The implemented model adapter is Ollama; other provider names are
@@ -81,9 +92,9 @@ bun run desktop:build
 ```
 
 Default browser tests cover authoring, demos, interface language switching and a contract fixture.
-Two extra acceptance tests use a real engine: Ollama output/history replay, and a human review
-followed by a child pipeline and binary artifact round-trip. The engine must have the bundled
-`local` profile and allow the preview origin:
+Three extra acceptance tests use a real engine: streamed Ollama output/history replay, a Qwen agent
+using file tools, and a human review followed by a child pipeline and binary artifact round-trip.
+The engine must have the bundled `local` profile and allow the preview origin:
 
 ```sh
 KNOTRA_E2E_ENDPOINT=http://127.0.0.1:8787 bun run test:e2e

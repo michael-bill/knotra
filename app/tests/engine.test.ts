@@ -9,6 +9,7 @@ import {
   disconnectEngine,
   engineCall,
   engineCache,
+  eventWindow,
 } from '../src/lib/engine/client';
 
 describe('durable event framing', () => {
@@ -25,6 +26,77 @@ describe('durable event framing', () => {
     expect(() => new EventParser().push('x'.repeat(256 * 1024 + 1))).toThrow('256 KiB');
     expect(() => new EventParser().push('я'.repeat(128 * 1024 + 1))).toThrow('256 KiB');
   });
+});
+
+it('bounds the live event cache by payload size while retaining newest events', () => {
+  const events = Array.from({ length: 100 }, (_, n) => ({
+    id: String(n),
+    runId: 'r',
+    at: '2026-10-04T00:00:00Z',
+    type: 'model.completed',
+    message: '',
+    data: { content: 'x'.repeat(32 * 1024) },
+  }));
+  const window = eventWindow(events);
+  expect(window.length).toBeLessThan(20);
+  expect(window.at(-1)?.id).toBe('99');
+  expect(window[0].id).toBe(String(100 - window.length));
+  expect(eventWindow([])).toEqual([]);
+});
+
+it('loads scoped history without advancing the live cursor or caching full pages', async () => {
+  const entries = new Map<string, string>();
+  vi.stubGlobal('localStorage', {
+    getItem: (key: string) => entries.get(key) ?? null,
+    setItem: (key: string, value: string) => entries.set(key, value),
+  });
+  let wrongInstance = false;
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async (target: URL) => {
+      if (target.pathname === '/prefix/v1/info')
+        return Response.json({
+          protocol: 'knotra.desktop/1',
+          engineId: 'history-test',
+          principalId: 'local',
+          version: '1',
+          capabilities: ['history'],
+        });
+      expect(target.pathname).toBe('/prefix/v1/runs/run%2F1/history');
+      expect(target.searchParams.get('cursor')).toBe('cursor/+');
+      expect(target.searchParams.get('instanceId')).toBe('node/1');
+      return Response.json({
+        items: [
+          {
+            id: 'event1',
+            runId: 'run/1',
+            instanceId: wrongInstance ? 'other' : 'node/1',
+            at: '2026-10-04T00:00:00Z',
+            type: 'model.started',
+            message: 'model.started',
+          },
+        ],
+        nextCursor: null,
+      });
+    }),
+  );
+  try {
+    await connectEngine('http://localhost:8080/prefix');
+    const before = await engineCache();
+    const call = {
+      op: 'history' as const,
+      runId: 'run/1',
+      instanceId: 'node/1',
+      cursor: 'cursor/+',
+    };
+    expect(await engineCall(call)).toMatchObject({ items: [{ id: 'event1' }] });
+    expect(await engineCache()).toEqual(before);
+    wrongInstance = true;
+    await expect(engineCall(call)).rejects.toMatchObject({ code: 'protocol' });
+  } finally {
+    await disconnectEngine();
+    vi.unstubAllGlobals();
+  }
 });
 
 it('rejects unsafe integers consistently in REST and SSE JSON before accepting data', () => {

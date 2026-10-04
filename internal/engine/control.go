@@ -132,6 +132,7 @@ func (r *runtime) foreach(ctx workflow.Context, gc graphContext, state *NodeSnap
 				if err == nil {
 					child := gc
 					child.path = state.ID + "/item/" + strconv.Itoa(index)
+					child.parentInstanceID, child.iterationIndex, child.graphPath = state.ID, &index, state.GraphPath+"/body"
 					results[index], err = r.graph(childCtx, child, config.Body, with)
 					if err == nil {
 						r.foreachResults[state.ID][index] = results[index]
@@ -248,6 +249,7 @@ func (r *runtime) loop(ctx workflow.Context, gc graphContext, state *NodeSnapsho
 		}
 		child := gc
 		child.path = state.ID + "/iteration/" + strconv.Itoa(index)
+		child.parentInstanceID, child.iterationIndex, child.graphPath = state.ID, &index, state.GraphPath+"/body"
 		outputs, err := r.graph(ctx, child, config.Body, with)
 		if err != nil {
 			return nil, err
@@ -297,12 +299,13 @@ func (r *runtime) pipeline(ctx workflow.Context, gc graphContext, state *NodeSna
 	}
 	limits := restrictLimits(gc.scopes[len(gc.scopes)-1].Limits, document.Spec.Limits)
 	child := graphContext{
-		pipeline:    node.Pipeline.File,
-		document:    document,
-		path:        state.ID + "/pipeline",
-		scopes:      append(append([]BudgetScope(nil), gc.scopes...), BudgetScope{ID: state.ID, Limits: limits}),
-		permissions: intersectPermissions(gc.permissions, &node.Pipeline.Permissions),
-		deadline:    gc.deadline,
+		parentInstanceID: state.ID,
+		pipeline:         node.Pipeline.File,
+		document:         document,
+		path:             state.ID + "/pipeline",
+		scopes:           append(append([]BudgetScope(nil), gc.scopes...), BudgetScope{ID: state.ID, Limits: limits}),
+		permissions:      intersectPermissions(gc.permissions, &node.Pipeline.Permissions),
+		deadline:         gc.deadline,
 	}
 	if document.Spec.Limits.Timeout != "" {
 		duration, err := contract.Duration(document.Spec.Limits.Timeout)

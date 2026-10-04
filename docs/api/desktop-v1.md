@@ -38,8 +38,9 @@ budget; a single large item may exceed that budget.
 A browser preview uses the same contract with browser fetch. Its engine must explicitly support CORS
 for the preview origin (`http://127.0.0.1:1420` during development), `GET`, `POST`, `OPTIONS` and
 `Authorization`, `Content-Type`, `Idempotency-Key`, `Last-Event-ID` headers. Native requests do not
-need CORS. Browser persistence remains localStorage; desktop persistence is SQLite. No browser test
-service is launched in a production application.
+need CORS. Browser settings and command receipts use localStorage, while durable event IDs, cursors,
+and bounded event windows use IndexedDB; desktop persistence is SQLite. No browser test service is
+launched in a production application.
 
 ## Immutable packages and definitions
 
@@ -91,6 +92,16 @@ manufacture a succeeded run. The root run uses the same status vocabulary as ins
 `ready`, `running`, `retry_wait`, `waiting_human`, `waiting_resolution`, `succeeded`, `skipped`,
 `failed`, `cancelled` (root skipped may be omitted by an engine implementation). Terminal states are
 immutable.
+
+New workflow histories additionally expose optional instance metadata: `nodeType`, `graphPath` (the
+definition address, such as `/nodes/map/body/nodes/work`), `parentInstanceId`, and a zero-based
+`iterationIndex` under the immediate foreach/loop parent. `scope` remains the admitted pipeline
+filename; child pipeline definition paths restart at `/nodes/…`. Root instances omit a parent.
+`startedAt`, `finishedAt`, `updatedAt` and `reason` explain execution and waiting. Bound `inputs`
+and validated `outputs` use `{values,artifacts}` envelopes. Each context preview is limited to 32
+KiB and preserves whole port values; `dataTruncated: true` means oversized ports were omitted.
+Artifact descriptors omit sandbox paths. These optional fields can be absent in old histories;
+clients must not manufacture nested identities or timing when metadata is unavailable.
 
 The engine returns `availableActions` based on authoritative state and permissions. The client
 renders only these actions and never changes execution status optimistically:
@@ -173,8 +184,45 @@ purged, the server returns a definitive error rather than silently skipping a ga
 Retention-reset/cursor-expiry negotiation requires a later protocol revision; the client currently
 surfaces the reconnect failure and continues to display its last received history. It will not label
 missing history as complete. The UI keeps the most recent 1000 detailed events per run; native
-SQLite preserves all received IDs/events for replay deduplication. Browser preview stores IDs and a
-1000-event display cache.
+SQLite preserves all received IDs/events for replay deduplication. Browser preview commits the exact
+opaque event ID, reconnect cursor and a display window (at most 1000 events or approximately 512 KiB
+of serialized text) in one IndexedDB transaction before delivery. Deduplication IDs remain available
+after a displayed event is evicted or the page is reloaded; IDs are never compared as numbers or
+sorted to infer delivery. Their durable storage grows with received events, without expanding the
+synchronous localStorage cache. Records are isolated by endpoint, engine, principal and run. Legacy
+localStorage events, IDs and cursors migrate atomically before their original keys are removed;
+other cached views and pending commands are preserved. An aborted migration or event transaction
+cannot advance the cursor or discard a deduplication ID.
+
+## Execution observations and history
+
+`GET /runs/{runId}/history?cursor=…&instanceId=…` returns `{items: Event[], nextCursor}` in the same
+committed order as SSE. Both query parameters are optional; `instanceId` selects one exact instance,
+and `cursor` must identify an existing event in the same run. Pages contain at most 100 events. A
+full final page may return a cursor followed by an empty page. This read-only route lets an
+inspector retrieve earlier execution details independently of the client's 1000-event live display
+cache. `history` and `execution-observations` are advertised capabilities.
+
+Activity events use the existing event envelope and instance/attempt/operation identities:
+
+- `model.started`, `model.delta`, `model.completed`, `model.failed` describe model requests,
+  streamed visible output and measured provider usage/timing when available.
+- `agent.iteration` identifies each agent turn; `tool.started` and `tool.completed` describe tool
+  calls with arguments/results and durations; `tool.completed` includes `isError` for tool failures.
+- `output.validating` and `output.completed` distinguish a draft response from validated output.
+
+The adapter bounds diagnostic previews to 48 KiB, strings to 16 KiB, arrays to 64 elements, objects
+to 128 fields and nesting to 12 levels. `truncated: true` marks a shortened preview;
+`observationIncomplete: true` marks a prior observation delivery failure. Storage additionally
+limits observation data to 64 KiB per event. Oversized data is replaced by
+`{truncated:true,originalBytes:…}` with small step/name/timing fields retained when present. Clients
+must show this explicitly instead of treating the record as complete. Observation events are
+best-effort diagnostics: a storage outage can leave gaps in the detailed activity trace, but cannot
+cause an external operation to repeat or replace the authoritative node outcome. They are stored
+separately from workflow projection sequence numbers, while sharing the run lock and durable event
+cursor with status events. SSE polls every 250 ms and drains retained full batches immediately.
+Provider-hidden reasoning, credentials and attempt-local sandbox paths are excluded from observation
+payloads. Model text, pipeline inputs and tool results remain untrusted application content.
 
 ## Artifacts
 

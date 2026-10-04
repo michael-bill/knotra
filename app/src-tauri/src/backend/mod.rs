@@ -184,7 +184,7 @@ impl Session {
         body: Option<&Value>,
         operation: Option<&str>,
     ) -> Result<Value> {
-        self.json_with_cursor(method, path, body, operation, None)
+        self.json_with_cursor(method, path, body, operation, None, None)
             .await
     }
 
@@ -195,6 +195,7 @@ impl Session {
         body: Option<&Value>,
         operation: Option<&str>,
         cursor: Option<&str>,
+        instance_id: Option<&str>,
     ) -> Result<Value> {
         let mut request = self
             .request(method, path)?
@@ -208,6 +209,9 @@ impl Session {
         }
         if let Some(cursor) = cursor {
             request = request.query(&[("cursor", cursor)]);
+        }
+        if let Some(instance_id) = instance_id {
+            request = request.query(&[("instanceId", instance_id)]);
         }
         let response = request.send().await.map_err(Error::transport)?;
         let status = response.status();
@@ -327,6 +331,11 @@ pub enum Call {
     Run {
         run_id: String,
     },
+    History {
+        run_id: String,
+        instance_id: Option<String>,
+        cursor: Option<String>,
+    },
     Requests {
         cursor: Option<String>,
     },
@@ -411,6 +420,12 @@ impl Call {
                 (Method::GET, vec!["definitions", definition_id], None, None)
             }
             Self::Run { run_id } => (Method::GET, vec!["runs", run_id], None, None),
+            Self::History { run_id, cursor, .. } => (
+                Method::GET,
+                vec!["runs", run_id, "history"],
+                None,
+                cursor.as_deref(),
+            ),
             Self::Validate {
                 package,
                 profile,
@@ -650,8 +665,19 @@ async fn execute(store: &store::Store, session: &Session, call: &Call) -> Result
             return Ok(cached);
         }
     }
+    let instance_id = match call {
+        Call::History { instance_id, .. } => instance_id.as_deref(),
+        _ => None,
+    };
     let value = match session
-        .json_with_cursor(method, &path, body.as_ref(), call.operation(), cursor)
+        .json_with_cursor(
+            method,
+            &path,
+            body.as_ref(),
+            call.operation(),
+            cursor,
+            instance_id,
+        )
         .await
     {
         Ok(value) => value,
@@ -670,7 +696,7 @@ async fn execute(store: &store::Store, session: &Session, call: &Call) -> Result
     if let Some(id) = call.operation() {
         store.complete(&session.key, id, &value)?;
     }
-    if call.operation().is_none() && !matches!(call, Call::Validate { .. }) {
+    if call.operation().is_none() && !matches!(call, Call::Validate { .. } | Call::History { .. }) {
         let key = serde_json::to_string(call).map_err(Error::storage)?;
         store.cache(&session.key, &key, &value)?;
     }
@@ -692,6 +718,22 @@ fn check_response(call: &Call, value: &Value) -> Result<()> {
         Call::Publish { .. } | Call::Definition { .. } => identifier(&value["definition"]["id"]),
         Call::Start { .. } => identifier(&value["run"]["id"]),
         Call::Run { run_id } => value["run"]["id"] == *run_id,
+        Call::History {
+            run_id,
+            instance_id,
+            ..
+        } => {
+            page()
+                && value["items"].as_array().is_some_and(|items| {
+                    items.iter().all(|event| {
+                        identifier(&event["id"])
+                            && event["runId"] == *run_id
+                            && instance_id
+                                .as_ref()
+                                .is_none_or(|id| event["instanceId"] == *id)
+                    })
+                })
+        }
         Call::Cancel { run_id, .. }
         | Call::Resume { run_id, .. }
         | Call::Resolve { run_id, .. } => value["accepted"] == true && value["runId"] == *run_id,

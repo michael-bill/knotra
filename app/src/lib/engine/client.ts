@@ -13,8 +13,10 @@ import {
 } from './types';
 import { EngineError, engineError } from './error';
 import { assertEngineModel } from './validation';
+import { acceptBrowserEvent, browserEventState } from './browserEvents';
 
 export { EngineError, engineError } from './error';
+export { eventWindow } from './browserEvents';
 
 let connection: { url: string; token?: string; key: string } | undefined;
 let sessionRevision = 0;
@@ -83,7 +85,7 @@ function endpoint(url: string, token?: string) {
   return parsed.toString().replace(/\/$/, '');
 }
 
-function url(path: string[], cursor?: string | null) {
+function url(path: string[], cursor?: string | null, instanceId?: string) {
   if (!connection) throw new EngineError('disconnected', 'Connect to an engine in Settings first.');
   if (
     path.some(
@@ -94,6 +96,7 @@ function url(path: string[], cursor?: string | null) {
     throw new EngineError('input', 'Invalid API identifier.');
   const result = new URL(`${connection.url}/v1/${path.map(encodeURIComponent).join('/')}`);
   if (cursor) result.searchParams.set('cursor', cursor);
+  if (instanceId) result.searchParams.set('instanceId', instanceId);
   return result;
 }
 
@@ -130,12 +133,13 @@ async function jsonRequest(
   body?: unknown,
   operationId?: string,
   cursor?: string | null,
+  instanceId?: string,
 ) {
   const headers: Record<string, string> = { Accept: 'application/json' };
   if (connection?.token) headers.Authorization = `Bearer ${connection.token}`;
   if (body !== undefined) headers['Content-Type'] = 'application/json';
   if (operationId) headers['Idempotency-Key'] = operationId;
-  const response = await fetch(url(path, cursor), {
+  const response = await fetch(url(path, cursor, instanceId), {
     method: body === undefined ? 'GET' : 'POST',
     body: body === undefined ? undefined : JSON.stringify(body),
     headers,
@@ -212,7 +216,12 @@ export async function engineCache(): Promise<EngineCache> {
   return desktop ? invoke('engine_cache') : cache();
 }
 
-function route(call: EngineCall): { path: string[]; body?: unknown; cursor?: string | null } {
+function route(call: EngineCall): {
+  path: string[];
+  body?: unknown;
+  cursor?: string | null;
+  instanceId?: string;
+} {
   switch (call.op) {
     case 'info':
     case 'definitions':
@@ -225,6 +234,12 @@ function route(call: EngineCall): { path: string[]; body?: unknown; cursor?: str
       return { path: [call.op], cursor: call.cursor };
     case 'run':
       return { path: ['runs', call.runId] };
+    case 'history':
+      return {
+        path: ['runs', call.runId, 'history'],
+        cursor: call.cursor,
+        instanceId: call.instanceId,
+      };
     case 'definition':
       return { path: ['definitions', call.definitionId] };
     case 'artifact':
@@ -315,6 +330,12 @@ function checkReadResponse(call: EngineCall, value: any) {
       break;
     case 'runs':
       assertEngineModel('RunPage', value);
+      break;
+    case 'history':
+      assertEngineModel<Page<EngineEvent>>('EventPage', value);
+      for (const event of value.items)
+        if (event.runId !== call.runId || (call.instanceId && event.instanceId !== call.instanceId))
+          throw new EngineError('protocol', 'Event identity does not match the requested history.');
       break;
     case 'requests':
       assertEngineModel('HumanRequestPage', value);
@@ -430,12 +451,12 @@ export async function engineCall<T>(call: EngineCall): Promise<T> {
     );
     return task;
   }
-  const { path, body, cursor } = route(call);
-  const value = await jsonRequest(path, body, undefined, cursor);
+  const { path, body, cursor, instanceId } = route(call);
+  const value = await jsonRequest(path, body, undefined, cursor, instanceId);
   if (revision !== sessionRevision) throw new EngineError('disconnected', 'Connection changed.');
   checkReceipt(call, value);
   checkReadResponse(call, value);
-  if (call.op !== 'validate') {
+  if (call.op !== 'validate' && call.op !== 'history') {
     const current = cache();
     current.cache[JSON.stringify(call)] = value;
     writeCache(current);
@@ -523,7 +544,12 @@ export async function exportEngineArtifact(id: string): Promise<void> {
 
 export async function storedEvents(runId: string): Promise<EngineEvent[]> {
   if (desktop) return invoke('engine_events', { runId });
-  return (cache().cache[`events:${runId}`] ?? []) as EngineEvent[];
+  const revision = sessionRevision;
+  const session = connection?.key;
+  if (!session) return [];
+  const state = await browserEventState(session, runId);
+  if (revision !== sessionRevision) throw new EngineError('disconnected', 'Connection changed.');
+  return state.events;
 }
 
 export async function watchRun(
@@ -541,14 +567,16 @@ export async function watchRun(
       if (revision === sessionRevision) void invoke('engine_unwatch', { runId }).catch(() => {});
     };
   }
+  const session = connection?.key;
+  if (!session) throw new EngineError('disconnected', 'Connect to an engine in Settings first.');
   const controller = new AbortController();
   watches.add(controller);
   void (async () => {
     let delay = 1000;
     while (!controller.signal.aborted && revision === sessionRevision) {
       try {
-        const data = cache();
-        const cursor = data.cache[`cursor:${runId}`] as string | undefined;
+        const { cursor } = await browserEventState(session, runId);
+        if (controller.signal.aborted || revision !== sessionRevision) break;
         const headers: Record<string, string> = { Accept: 'text/event-stream' };
         if (cursor) headers['Last-Event-ID'] = cursor;
         if (connection?.token) headers.Authorization = `Bearer ${connection.token}`;
@@ -583,16 +611,12 @@ export async function watchRun(
             if (done || revision !== sessionRevision || controller.signal.aborted) break;
             for (const frame of parser.push(decoder.decode(value, { stream: true }))) {
               const event = parseEngineJSON(frame.data) as EngineEvent;
+              assertEngineModel('Event', event);
               if (!event || event.runId !== runId || event.id !== frame.id)
                 throw new EngineError('protocol', 'Event identity does not match its stream.');
-              const current = cache();
-              const events = (current.cache[`events:${runId}`] ?? []) as EngineEvent[];
-              const ids = (current.cache[`eventIds:${runId}`] ?? []) as string[];
-              if (!ids.includes(frame.id)) {
-                current.cache[`events:${runId}`] = [...events, event].slice(-1000);
-                current.cache[`eventIds:${runId}`] = [...ids, frame.id];
-                current.cache[`cursor:${runId}`] = frame.id;
-                writeCache(current);
+              const accepted = await acceptBrowserEvent(session, event);
+              if (controller.signal.aborted || revision !== sessionRevision) break;
+              if (accepted) {
                 receive({ type: 'event', event });
               }
             }
