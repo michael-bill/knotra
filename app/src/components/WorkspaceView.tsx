@@ -518,12 +518,17 @@ export default function WorkspaceView({
                     )
                       throw new Error(t('editor.aFileWithThisNameAlreadyExists'));
                     if (pipeline) {
-                      const doc = parseDocument(workspace.source);
-                      doc.setIn(
-                        ['spec', 'files'],
-                        [...(pipeline.spec.files ?? []), ...files.map((f) => f.path)],
-                      );
-                      onChange(doc.toString(), [...workspace.files, ...files]);
+                      const declared = pipeline.spec.files ?? [];
+                      const additions = files
+                        .map((f) => f.path)
+                        .filter((p) => !declared.includes(p));
+                      let source = workspace.source;
+                      if (additions.length) {
+                        const doc = parseDocument(source);
+                        doc.setIn(['spec', 'files'], [...declared, ...additions]);
+                        source = doc.toString();
+                      }
+                      onChange(source, [...workspace.files, ...files]);
                     } else onNotify(t('editor.fixThePipelineStructureBeforeAddingFiles'));
                   } catch (error) {
                     onNotify(String(error));
