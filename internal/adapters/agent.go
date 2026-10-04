@@ -280,9 +280,10 @@ func (r *Runner) agent(ctx context.Context, req Request) (contract.Values, error
 				messages = append(
 					messages,
 					message{
-						Role:     "tool",
-						ToolName: call.Function.Name,
-						Content:  "Validation error: " + validationErr.Error(),
+						Role:       "tool",
+						ToolName:   call.Function.Name,
+						ToolCallID: call.ID,
+						Content:    "Validation error: " + validationErr.Error(),
 					},
 				)
 			}
@@ -330,7 +331,10 @@ func (r *Runner) agent(ctx context.Context, req Request) (contract.Values, error
 					"step": step + 1, "name": name, "isError": true, "error": "Invalid arguments: " + err.Error(),
 					"durationMs": time.Since(started).Milliseconds(),
 				})
-				messages = append(messages, message{Role: "tool", ToolName: call.Function.Name, Content: "Invalid arguments: " + err.Error()})
+				messages = append(messages, message{
+					Role: "tool", ToolName: call.Function.Name, ToolCallID: call.ID,
+					Content: "Invalid arguments: " + err.Error(),
+				})
 				continue
 			}
 			var result json.RawMessage
@@ -392,7 +396,10 @@ func (r *Runner) agent(ctx context.Context, req Request) (contract.Values, error
 			if err != nil {
 				return nil, preventRetry(err, effects)
 			}
-			messages = append(messages, message{Role: "tool", ToolName: call.Function.Name, Content: string(result)})
+			messages = append(messages, message{
+				Role: "tool", ToolName: call.Function.Name, ToolCallID: call.ID,
+				Content: string(result),
+			})
 		}
 	}
 

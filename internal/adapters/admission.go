@@ -35,12 +35,8 @@ func (r *Runner) modelInfo(ctx context.Context, profile contract.Profile, c cont
 		return err
 	}
 	req.Header.Set("Content-Type", "application/json")
-	if key, ok := c.Auth["key"]; ok {
-		secret, err := r.credential(profile, key)
-		if err != nil {
-			return err
-		}
-		req.Header.Set("Authorization", "Bearer "+secret)
+	if err := r.modelAuth(profile, c, req); err != nil {
+		return err
 	}
 	client := r.httpClient()
 	res, err := client.Do(req)
@@ -51,10 +47,23 @@ func (r *Runner) modelInfo(ctx context.Context, profile contract.Profile, c cont
 	if res.StatusCode != 200 {
 		return fmt.Errorf("model discovery returned HTTP %d", res.StatusCode)
 	}
-	return json.NewDecoder(io.LimitReader(res.Body, 4<<20)).Decode(output)
+	return readBoundedModelJSON(res.Body, 4<<20, output)
 }
 
 func (r *Runner) modelDigest(ctx context.Context, profile contract.Profile, c contract.ModelConnection) (string, error) {
+	if c.Provider != "ollama" {
+		var model struct {
+			ID string `json:"id"`
+		}
+		if err := r.modelInfo(ctx, profile, c, "/models/"+urlPath(c.Model), nil, &model); err != nil {
+			return "", err
+		}
+		if model.ID == "" || strings.ContainsAny(model.ID, "/?#") {
+			return "", fmt.Errorf("remote model ID is invalid")
+		}
+		return "remote-id:" + model.ID, nil
+	}
+
 	var tags struct {
 		Models []struct {
 			Name   string `json:"name"`
@@ -96,8 +105,17 @@ func (r *Runner) prepareModels(ctx context.Context, req Request) error {
 		var details struct {
 			Capabilities []string `json:"capabilities"`
 		}
-		if err = r.modelInfo(ctx, req.Plan.Profile, c, "/api/show", map[string]any{"model": c.Model}, &details); err != nil {
-			return err
+		if c.Provider == "ollama" {
+			if err = r.modelInfo(ctx, req.Plan.Profile, c, "/api/show", map[string]any{"model": c.Model}, &details); err != nil {
+				return err
+			}
+		} else {
+			// Cloud catalogs expose accessible model IDs, not a weight digest or
+			// a portable capability contract. Only text and tool protocols are supported.
+			details.Capabilities = []string{"completion", "tools"}
+			resource.Model = strings.TrimPrefix(digest, "remote-id:")
+			pipeline(req).Spec.Models[alias] = resource
+			key = resource.Connection + "/" + resource.Model
 		}
 		requirements := append([]string(nil), resource.Requires...)
 		requirements = append(requirements, "structuredOutput")
