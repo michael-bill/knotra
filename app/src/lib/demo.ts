@@ -16,7 +16,7 @@ function event(message: string, node?: string): RunEvent {
 export function createDemoRun(workspace: Workspace, topic: string): DemoRun {
   if (!demoAvailable(workspace))
     throw new Error(
-      'The guided demo requires an unchanged Research brief template. Engine execution is not available.',
+      'The guided demo requires an unchanged Research brief template. Run edited workflows on a connected engine.',
     );
   if (!topic.trim()) throw new Error('Enter a research topic.');
   const now = new Date().toISOString();

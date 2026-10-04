@@ -14,6 +14,10 @@ let accepted = new Map<string, any>();
 let streams: ServerResponse[] = [];
 let reconnectHeaders: string[] = [];
 let loseStart = false;
+let rejectStart = false;
+let rejectResolution = false;
+let holdNextRuns = false;
+let heldRuns: { response: ServerResponse; value: unknown }[] = [];
 let badHash = false;
 let artifactBytes = Buffer.from([0, 255, 128, 10]);
 let lastPackage: any;
@@ -110,12 +114,15 @@ async function handle(request: IncomingMessage, response: ServerResponse) {
   if (request.method === 'GET') {
     if (path === '/v1/runs') {
       const cursor = new URL(request.url!, address).searchParams.get('cursor');
-      return json(
-        response,
-        cursor
-          ? { items: runs.slice(1), nextCursor: null }
-          : { items: runs.slice(0, 1), nextCursor: runs.length > 1 ? 'page-2' : null },
-      );
+      const value = cursor
+        ? { items: runs.slice(1), nextCursor: null }
+        : { items: runs.slice(0, 1), nextCursor: runs.length > 1 ? 'page-2' : null };
+      if (holdNextRuns) {
+        holdNextRuns = false;
+        heldRuns.push({ response, value: structuredClone(value) });
+        return;
+      }
+      return json(response, value);
     }
     if (path === '/v1/requests') return json(response, { items: requests, nextCursor: null });
     if (path === '/v1/artifacts')
@@ -183,6 +190,14 @@ async function handle(request: IncomingMessage, response: ServerResponse) {
     return json(response, result);
   }
   if (path === '/v1/runs') {
+    if (rejectStart) {
+      rejectStart = false;
+      return json(
+        response,
+        { code: 'INPUT_INVALID', message: 'Start inputs were rejected.', diagnostics: [] },
+        422,
+      );
+    }
     const run: EngineRun = {
       id: 'run-1',
       definitionId: body.definitionId,
@@ -263,6 +278,14 @@ async function handle(request: IncomingMessage, response: ServerResponse) {
     return json(response, result);
   }
   if (path.endsWith('/resolve') || path.endsWith('/resume')) {
+    if (path.endsWith('/resolve') && rejectResolution) {
+      rejectResolution = false;
+      return json(
+        response,
+        { code: 'RESOLUTION_INVALID', message: 'Provide verifiable evidence.', diagnostics: [] },
+        422,
+      );
+    }
     runs[0].status = 'running';
     runs[0].instances[0].status = 'running';
     runs[0].availableActions = ['cancel'];
@@ -301,6 +324,10 @@ test.beforeEach(async ({ page }) => {
   streams = [];
   reconnectHeaders = [];
   loseStart = false;
+  rejectStart = false;
+  rejectResolution = false;
+  holdNextRuns = false;
+  heldRuns = [];
   badHash = false;
   eventNumber = 0;
   server = createServer((request, response) => {
@@ -568,4 +595,156 @@ test('input artifact upload registers exact bytes and can be exported without te
   const chunks: Buffer[] = [];
   for await (const chunk of (await exported.createReadStream())!) chunks.push(chunk);
   expect(Buffer.concat(chunks)).toEqual(bytes);
+});
+
+test('a command received during a stale refresh triggers a fresh authoritative read', async ({
+  page,
+}) => {
+  await page.clock.install();
+  await connect(page);
+  await start(page);
+  await expect(page.getByRole('heading', { name: 'Future engine workflow' })).toBeVisible();
+  holdNextRuns = true;
+  await page.getByRole('button', { name: 'Refresh', exact: true }).click();
+  await expect.poll(() => heldRuns.length).toBe(1);
+  await page.clock.runFor(25000);
+  await page.getByRole('button', { name: 'Request cancellation' }).click();
+  await expect.poll(() => writes.at(-1)?.path).toBe('/v1/runs/run-1/cancel');
+  await expect(page.getByRole('button', { name: 'Request cancellation' })).toBeEnabled();
+  await expect(page.getByText(/command\(s\) awaiting confirmation/)).toHaveCount(0);
+  json(heldRuns[0].response, heldRuns[0].value);
+  await expect(page.locator('.page-heading .status')).toContainText('Cancelled');
+  await expect(page.getByRole('button', { name: 'Request cancellation' })).toHaveCount(0);
+});
+
+test('a command during the final refresh pass still receives a later authoritative snapshot', async ({
+  page,
+}) => {
+  await page.clock.install();
+  await connect(page);
+  await start(page);
+  await expect(page.getByRole('heading', { name: 'Future engine workflow' })).toBeVisible();
+  await page.getByRole('button', { name: 'Timeline', exact: true }).click();
+  await expect.poll(() => streams.filter((stream) => !stream.destroyed).length).toBe(1);
+  runs[0].status = 'running';
+  holdNextRuns = true;
+  await page.getByRole('button', { name: 'Refresh', exact: true }).click();
+  await expect.poll(() => heldRuns.length).toBe(1);
+  emit('Refresh while the first read is waiting.');
+  await expect(
+    page.getByText('Refresh while the first read is waiting.', { exact: true }),
+  ).toHaveCount(1);
+  await page.clock.runFor(201);
+  holdNextRuns = true;
+  json(heldRuns[0].response, heldRuns[0].value);
+  await expect.poll(() => heldRuns.length).toBe(2);
+  await nav(page, 'Inbox');
+  await page
+    .getByRole('textbox', { name: 'Engine review response' })
+    .fill('{"feedback":"Completed during the final read"}');
+  await page.getByRole('button', { name: 'Submit response' }).click();
+  await expect.poll(() => writes.at(-1)?.path).toBe('/v1/requests/request-1/response');
+  await expect(page.getByRole('button', { name: 'Submit response' })).toBeEnabled();
+  json(heldRuns[1].response, heldRuns[1].value);
+  await expect(page.getByRole('heading', { name: 'No open engine requests' })).toBeVisible();
+  await nav(page, 'Runs');
+  await page.getByRole('button', { name: /Future engine workflow/ }).click();
+  await expect(page.locator('.page-heading .status')).toContainText('Completed');
+});
+
+test('a definitively rejected start can be corrected without an impossible reconciliation', async ({
+  page,
+}) => {
+  await connect(page);
+  rejectStart = true;
+  await start(page);
+  await expect(page.getByRole('dialog').getByRole('alert')).toContainText(
+    'Start inputs were rejected.',
+  );
+  await expect(page.getByRole('dialog')).not.toContainText('saved operation ID');
+  await expect(page.getByRole('button', { name: 'Start run', exact: true })).toBeEnabled();
+  await page.getByRole('textbox', { name: 'Workflow input values' }).fill('{"topic":"Corrected"}');
+  await page.getByRole('button', { name: 'Start run', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Future engine workflow' })).toBeVisible();
+  const starts = writes.filter((write) => write.path === '/v1/runs');
+  expect(starts).toHaveLength(2);
+  expect(starts[0].key).not.toBe(starts[1].key);
+  expect(starts[1].body.inputs).toEqual({ topic: 'Corrected' });
+  await expect(page.getByText(/command\(s\) awaiting confirmation/)).toHaveCount(0);
+});
+
+test('resolution errors stay visible in the dialog and hidden outputs do not block other outcomes', async ({
+  page,
+}) => {
+  await connect(page);
+  await start(page);
+  await expect(page.getByRole('heading', { name: 'Future engine workflow' })).toBeVisible();
+  runs[0].status = 'waiting_resolution';
+  runs[0].instances[0].status = 'waiting_resolution';
+  runs[0].availableActions = ['resolve'];
+  await page.getByRole('button', { name: 'Refresh', exact: true }).click();
+  await page.getByRole('button', { name: 'Resolve unknown outcome' }).click();
+  await page.getByRole('combobox', { name: 'Confirmed outcome' }).selectOption('succeeded');
+  await page.getByRole('textbox', { name: 'Resolution outputs' }).fill('{');
+  await page.getByRole('combobox', { name: 'Confirmed outcome' }).selectOption('failed');
+  await page
+    .getByRole('textbox', { name: 'Resolution evidence' })
+    .fill('The external operation failed.');
+  rejectResolution = true;
+  await page.getByRole('button', { name: 'Submit resolution' }).click();
+  await expect(page.getByRole('dialog').getByRole('alert')).toContainText(
+    'Provide verifiable evidence.',
+  );
+  expect(writes.at(-1)?.body).toEqual({
+    outcome: 'failed',
+    evidence: 'The external operation failed.',
+  });
+  await page
+    .getByRole('textbox', { name: 'Resolution evidence' })
+    .fill('The service returned a documented failure.');
+  await page.getByRole('button', { name: 'Submit resolution' }).click();
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+});
+
+test('cached artifacts remain inspectable with download and upload disabled after disconnect', async ({
+  page,
+}) => {
+  await connect(page);
+  await start(page);
+  await expect(page.getByRole('heading', { name: 'Future engine workflow' })).toBeVisible();
+  await page.getByRole('button', { name: 'Settings', exact: true }).click();
+  await page.getByRole('button', { name: 'Disconnect', exact: true }).click();
+  await nav(page, 'Artifacts');
+  await page.getByRole('button', { name: /result.bin/ }).click();
+  await expect(page.locator('.artifact-text')).toContainText('Reconnect to the engine');
+  await expect(page.getByRole('button', { name: 'Export', exact: true })).toBeDisabled();
+  await expect(page.getByLabel('Upload engine artifact')).toBeDisabled();
+});
+
+test('unsafe event data neither renders nor advances the durable browser cursor', async ({
+  page,
+}) => {
+  await connect(page);
+  await start(page);
+  await expect(page.getByRole('heading', { name: 'Future engine workflow' })).toBeVisible();
+  await page.getByRole('button', { name: 'Timeline', exact: true }).click();
+  await expect.poll(() => streams.filter((stream) => !stream.destroyed).length).toBe(1);
+  emit('A safe event.');
+  await expect(page.getByText('A safe event.', { exact: true })).toHaveCount(1);
+  const before = reconnectHeaders.length;
+  streams
+    .filter((stream) => !stream.destroyed)
+    .at(-1)!
+    .write(
+      'id: event-2\ndata: {"id":"event-2","runId":"run-1","at":"2026-10-04T00:00:00Z","type":"node","message":"Unsafe value must not render.","data":{"n":9007199254740993}}\n\n',
+    );
+  await expect.poll(() => reconnectHeaders.length).toBeGreaterThan(before);
+  expect(reconnectHeaders.at(-1)).toBe('event-1');
+  await expect(page.getByText('Unsafe value must not render.', { exact: true })).toHaveCount(0);
+  const saved = await page.evaluate(() => {
+    const key = Object.keys(localStorage).find((key) => key.startsWith('knotra.engine.v1:'))!;
+    return JSON.parse(localStorage.getItem(key)!).cache;
+  });
+  expect(saved['cursor:run-1']).toBe('event-1');
+  expect(saved['events:run-1']).toHaveLength(1);
 });

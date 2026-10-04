@@ -98,3 +98,30 @@ fn manifest_path_folding_preserves_non_ascii_names() {
     };
     assert!(package.validate().is_ok());
 }
+
+#[test]
+fn safe_integer_checks_cover_nested_values_and_exponent_notation() {
+    assert!(check_safe_numbers(&json!({"nested":[9007199254740991u64, 1.25]})).is_ok());
+    for text in ["{\"n\":9007199254740993}", "{\"n\":1e20}", "{\"n\":-1e20}"] {
+        let value: Value = serde_json::from_str(text).unwrap();
+        assert_eq!(check_safe_numbers(&value).unwrap_err().code, "precision");
+    }
+}
+
+#[test]
+fn read_model_integer_fields_accept_integral_json_number_notation() {
+    for size in ["1e0", "1.0"] {
+        let response = format!(
+            r#"{{"artifact":{{"id":"a1","name":"input.bin","mediaType":"application/octet-stream","size":{size},"sha256":"{}","origin":{{}}}}}}"#,
+            "a".repeat(64)
+        );
+        let value: Value = serde_json::from_str(&response).unwrap();
+        assert!(check_response(
+            &Call::Artifact {
+                artifact_id: "a1".into()
+            },
+            &value
+        )
+        .is_ok());
+    }
+}

@@ -1,9 +1,7 @@
 import { test, expect, type Page } from '@playwright/test';
 import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { zipSync } from 'fflate';
-import { parse, stringify } from 'yaml';
 
 const endpoint = process.env.KNOTRA_E2E_ENDPOINT;
 
@@ -53,8 +51,14 @@ async function start(page: Page) {
   await page.getByRole('combobox', { name: 'Engine profile' }).selectOption('local');
   await page.getByRole('button', { name: 'Check with engine' }).click();
   await expect(page.getByRole('dialog')).toContainText('Engine admission checks passed');
+  const started = page.waitForResponse(
+    (response) =>
+      response.url() === `${endpoint}/v1/runs` && response.request().method() === 'POST',
+  );
   await page.getByRole('button', { name: 'Start run', exact: true }).click();
+  const { run } = await (await started).json();
   await expect(page.getByRole('dialog')).toHaveCount(0);
+  return run;
 }
 
 test.beforeEach(async ({ page }) => {
@@ -68,14 +72,32 @@ test('real Ollama run publishes an artifact and replays history on a fresh clien
   const errors: string[] = [];
   page.on('pageerror', (error) => errors.push(error.message));
   const title = `Desktop greeting ${randomUUID().slice(0, 8)}`;
-  const pipeline = parse(readFileSync(resolve('../examples/local/pipeline.yaml'), 'utf8'));
-  pipeline.metadata.title = title;
-  await importPackage(page, { 'pipeline.yaml': stringify(pipeline) }, title);
-  await start(page);
+  await navigate(page, 'Pipelines');
+  await page.getByRole('button', { name: 'New pipeline', exact: true }).click();
+  await page
+    .getByRole('dialog')
+    .getByRole('button', { name: /Local Ollama greeting/ })
+    .click();
+  await page.getByRole('button', { name: 'Workflow', exact: true }).click();
+  await page.getByRole('textbox', { name: 'Workflow title', exact: true }).fill(title);
+  await page.getByRole('button', { name: 'Save', exact: true }).click();
+  await expect(page.getByRole('heading', { name: title, exact: true })).toBeVisible();
+  const startedRun = await start(page);
   await expect(page.locator('.page-heading .status')).toHaveText('Completed', { timeout: 120_000 });
   await page.getByRole('button', { name: 'Outputs', exact: true }).click();
   await expect(page.locator('.json-view').first()).toContainText('greeting');
   await expect(page.locator('.json-view').last()).toContainText('sha256');
+
+  const { run } = await (await page.request.get(`${endpoint}/v1/runs/${startedRun.id}`)).json();
+  expect(run.outputs.greeting).toEqual(expect.any(String));
+  await navigate(page, 'Artifacts');
+  await page.getByRole('textbox', { name: 'Search engine artifacts' }).fill(run.artifacts[0].id);
+  await page.locator('.artifact-card').click();
+  await expect(page.locator('.artifact-text')).toContainText(run.outputs.greeting);
+  const downloaded = page.waitForEvent('download');
+  await page.getByRole('button', { name: 'Export', exact: true }).click();
+  const exported = await downloaded;
+  expect(readFileSync((await exported.path())!)).toEqual(Buffer.from(`${run.outputs.greeting}\n`));
 
   // A fresh browser has neither a stored cursor nor previously displayed events.
   await page.evaluate(() => localStorage.clear());

@@ -12,7 +12,8 @@ export function unbase64(value: string): Uint8Array {
 }
 
 export function decodeText(value: string): string {
-  return new TextDecoder('utf-8', { fatal: true }).decode(unbase64(value));
+  // Keep a BOM in the source so importing and exporting preserves its bytes.
+  return new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(unbase64(value));
 }
 
 export async function sha256(bytes: Uint8Array): Promise<string> {

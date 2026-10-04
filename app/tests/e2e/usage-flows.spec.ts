@@ -2,7 +2,7 @@ import { test, expect, type Page } from '@playwright/test';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { parse } from 'yaml';
-import { unzipSync } from 'fflate';
+import { zipSync, unzipSync } from 'fflate';
 
 const runtimeErrors = new WeakMap<Page, string[]>();
 
@@ -474,6 +474,13 @@ test('settings, search, shortcuts and modal dismissal work with persisted prefer
     .getByRole('dialog')
     .getByRole('button', { name: 'Settings View', exact: true })
     .click();
+  await expect(page.getByText('Disconnected', { exact: true })).toBeVisible();
+  await expect(page.locator('.notice.small')).toContainText(
+    'Start your local Knotra engine and connect using its address.',
+  );
+  await expect(page.locator('.notice.small')).toContainText(
+    'Running workflows continue on the engine when you close the app.',
+  );
   await page
     .getByRole('textbox', { name: 'Engine base URL', exact: true })
     .fill('file:///tmp/engine');
@@ -531,6 +538,98 @@ test('folder and loose YAML imports work and reject invalid selections', async (
   });
   await expect(page.getByRole('status')).toContainText('Select a YAML pipeline');
   await page.getByRole('button', { name: 'Close dialog', exact: true }).click();
+});
+
+test('ZIP import selects the only Pipeline after profile and schema YAML files', async ({
+  page,
+}) => {
+  const pipeline = Buffer.from(
+    readFileSync('../contracts/v1/fixtures/positive/llm/pipeline.yaml', 'utf8').replaceAll(
+      'reply.schema.json',
+      'reply.schema.yaml',
+    ),
+  );
+  const prompt = readFileSync('../contracts/v1/fixtures/positive/llm/prompt.txt');
+  const schema = readFileSync('../contracts/v1/fixtures/positive/llm/reply.schema.json');
+  const contents = {
+    'profile.yaml': Buffer.from(
+      'apiVersion: knotra/v1\nkind: EngineProfile\nmetadata: {name: local}\nspec: {}\n',
+    ),
+    'reply.schema.yaml': schema,
+    'pipeline.yaml': pipeline,
+    'prompt.txt': prompt,
+  };
+  await page.getByRole('button', { name: 'Open package', exact: true }).click();
+  await page.getByLabel('Import pipeline package', { exact: true }).setInputFiles({
+    name: 'mixed.zip',
+    mimeType: 'application/zip',
+    buffer: Buffer.from(zipSync(contents)),
+  });
+  await expect(page.getByRole('heading', { name: 'llm-contract', exact: true })).toBeVisible();
+  await expect.poll(async () => (await current(page)).entrypoint).toBe('pipeline.yaml');
+  await expect
+    .poll(async () => (await current(page)).files.map((file: { path: string }) => file.path).sort())
+    .toEqual(['prompt.txt', 'reply.schema.yaml']);
+  const downloaded = page.waitForEvent('download');
+  await page.getByRole('button', { name: 'Export', exact: true }).click();
+  const exported = unzipSync(new Uint8Array(readFileSync((await (await downloaded).path())!)));
+  expect(Object.keys(exported).sort()).toEqual([
+    'pipeline.yaml',
+    'prompt.txt',
+    'reply.schema.yaml',
+  ]);
+  for (const path of Object.keys(exported)) {
+    expect(Buffer.from(exported[path])).toEqual(contents[path as keyof typeof contents]);
+  }
+
+  await page.getByRole('button', { name: 'Open package', exact: true }).click();
+  await page.getByLabel('Import pipeline package', { exact: true }).setInputFiles({
+    name: 'profile-only.zip',
+    mimeType: 'application/zip',
+    buffer: Buffer.from(zipSync({ 'profile.yaml': contents['profile.yaml'] })),
+  });
+  await expect(page.getByRole('status')).toContainText('Package has no Pipeline YAML entrypoint.');
+  await expect(page.getByRole('heading', { name: 'llm-contract', exact: true })).toBeVisible();
+});
+
+test('ZIP import preserves an entrypoint BOM and rejects duplicate paths before overwrite', async ({
+  page,
+}) => {
+  const pipeline = Buffer.concat([
+    Buffer.from([0xef, 0xbb, 0xbf]),
+    readFileSync('../contracts/v1/fixtures/positive/human/pipeline.yaml'),
+  ]);
+  await page.getByRole('button', { name: 'Open package', exact: true }).click();
+  await page.getByLabel('Import pipeline package', { exact: true }).setInputFiles({
+    name: 'bom.ZIP',
+    mimeType: 'application/zip',
+    buffer: Buffer.from(zipSync({ 'PIPELINE.YAML': pipeline })),
+  });
+  await expect(page.getByRole('heading', { name: 'basic-human', exact: true })).toBeVisible();
+  const downloaded = page.waitForEvent('download');
+  await page.getByRole('button', { name: 'Export', exact: true }).click();
+  const exported = unzipSync(new Uint8Array(readFileSync((await (await downloaded).path())!)));
+  expect(Buffer.from(exported['PIPELINE.YAML'])).toEqual(pipeline);
+
+  for (const exact of [false, true]) {
+    const archive = Buffer.from(zipSync({ 'pipeline.yaml': pipeline, 'pipeline.YAML': pipeline }));
+    if (exact) {
+      let position = 0;
+      while ((position = archive.indexOf('pipeline.YAML', position)) >= 0) {
+        archive.write('pipeline.yaml', position);
+        position += 'pipeline.yaml'.length;
+      }
+    }
+    await page.getByRole('button', { name: 'Open package', exact: true }).click();
+    await page.getByLabel('Import pipeline package', { exact: true }).setInputFiles({
+      name: 'duplicate.zip',
+      mimeType: 'application/zip',
+      buffer: archive,
+    });
+    await expect(page.getByRole('status')).toContainText('Duplicate package path:');
+    await expect(page.getByRole('heading', { name: 'basic-human', exact: true })).toBeVisible();
+    await page.getByRole('button', { name: 'Close dialog', exact: true }).click();
+  }
 });
 
 test('demo tabs, cancellation, review links and artifact search complete the run journey', async ({

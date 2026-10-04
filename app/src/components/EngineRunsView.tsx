@@ -129,6 +129,7 @@ function EngineRunDetail({
   const [evidence, setEvidence] = useState('');
   const [outcome, setOutcome] = useState<'succeeded' | 'not_started' | 'failed'>('failed');
   const [outputs, setOutputs] = useState('{}');
+  const [resolutionError, setResolutionError] = useState('');
   const [busy, setBusy] = useState(false);
   const refresh = engine.refresh;
   useEffect(() => {
@@ -154,7 +155,8 @@ function EngineRunDetail({
     // Completed runs still need their authoritative history when opened on a new client.
     void watchRun(run.id, (message) => {
       if (stopped) return;
-      if (message.type === 'connection') setStream(message.status);
+      if (message.type === 'connection')
+        setStream(message.message ? `${message.status} · ${message.message}` : message.status);
       else {
         setEvents((events) =>
           events.some((event) => event.id === message.event.id)
@@ -172,7 +174,9 @@ function EngineRunDetail({
         if (stopped) cancel();
         else stop = cancel;
       })
-      .catch((error) => setStream(engineError(error).message));
+      .catch((error) => {
+        if (!stopped) setStream(engineError(error).message);
+      });
     return () => {
       stopped = true;
       stop?.();
@@ -191,8 +195,9 @@ function EngineRunDetail({
   }
   async function resolve() {
     setBusy(true);
+    setResolutionError('');
     try {
-      const values = JSON.parse(outputs);
+      const values = outcome === 'succeeded' ? JSON.parse(outputs) : {};
       if (!values || typeof values !== 'object' || Array.isArray(values))
         throw new Error('Resolution outputs must be an object.');
       await engine.command({
@@ -204,7 +209,7 @@ function EngineRunDetail({
       });
       setResolution('');
     } catch (error) {
-      setStream(engineError(error).message);
+      setResolutionError(engineError(error).message);
     } finally {
       setBusy(false);
     }
@@ -306,7 +311,14 @@ function EngineRunDetail({
                 {instance.error ? <Diagnostics diagnostics={[instance.error]} /> : null}
                 {instance.status === 'waiting_resolution' &&
                 run.availableActions.includes('resolve') ? (
-                  <button className="button" onClick={() => setResolution(instance.id)}>
+                  <button
+                    className="button"
+                    disabled={!engine.info || busy}
+                    onClick={() => {
+                      setResolutionError('');
+                      setResolution(instance.id);
+                    }}
+                  >
                     Resolve unknown outcome
                   </button>
                 ) : null}
@@ -332,6 +344,11 @@ function EngineRunDetail({
           onClose={() => setResolution('')}
         >
           <div className="modal-body">
+            {resolutionError ? (
+              <p className="form-error" role="alert">
+                {resolutionError}
+              </p>
+            ) : null}
             <label className="field">
               Confirmed outcome
               <select
@@ -367,6 +384,7 @@ function EngineRunDetail({
             <button
               className="button primary"
               disabled={
+                !engine.info ||
                 busy ||
                 !evidence.trim() ||
                 engine.pending.some(

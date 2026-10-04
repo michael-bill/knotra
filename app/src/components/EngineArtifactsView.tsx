@@ -21,7 +21,10 @@ export function EngineArtifactsView({ engine }: { engine: EngineController }) {
     let current = true;
     setPreview('');
     setError('');
-    if (artifact) {
+    setBusy(false);
+    if (artifact && !engine.info)
+      setPreview('Reconnect to the engine to verify and preview these bytes.');
+    if (artifact && engine.info) {
       setBusy(true);
       void downloadArtifact(artifact.id)
         .then((result) => {
@@ -43,7 +46,7 @@ export function EngineArtifactsView({ engine }: { engine: EngineController }) {
     return () => {
       current = false;
     };
-  }, [artifact?.id]);
+  }, [artifact?.id, engine.info]);
   return (
     <section className="page">
       <header className="page-heading">
@@ -56,6 +59,7 @@ export function EngineArtifactsView({ engine }: { engine: EngineController }) {
           <input
             hidden
             type="file"
+            disabled={!engine.info}
             onChange={async (event) => {
               const file = event.target.files?.[0];
               event.target.value = '';
@@ -124,7 +128,7 @@ export function EngineArtifactsView({ engine }: { engine: EngineController }) {
                 <h3>{artifact.name}</h3>
                 <button
                   className="button small-button"
-                  disabled={busy || !!error}
+                  disabled={!engine.info || busy || !!error}
                   onClick={() => {
                     void exportEngineArtifact(artifact.id).catch((error) =>
                       setError(engineError(error).message),

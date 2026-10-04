@@ -6,6 +6,14 @@ import { examples } from '../src/lib/examples';
 import { parsePipeline } from '../src/lib/validation';
 
 describe('desktop packages on the engine wire', () => {
+  it('preserves a UTF-8 entrypoint BOM through decoding and publication', () => {
+    const source = examples.find((example) => example.id === 'local')!.source;
+    const bytes = Uint8Array.from([0xef, 0xbb, 0xbf, ...textBytes(source)]);
+    const decoded = decodeText(base64(bytes));
+    const pack = enginePackage({ entrypoint: 'pipeline.yaml', source: decoded, files: [] });
+    expect(unbase64(pack.files[0].content)).toEqual(bytes);
+    expect(parsePipeline(decoded)?.metadata.name).toBe('local-welcome');
+  });
   it('publishes current entrypoint bytes and preserves declared binary files', () => {
     const pipeline = structuredClone(
       parsePipeline(examples.find((example) => example.id === 'local')!.source)!,

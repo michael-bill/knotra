@@ -206,30 +206,32 @@ export function validatePipeline(
     for (const path of allowed)
       if (!fileMap.has(path) && path !== entrypoint)
         error('FILE_MISSING', `Declared package file is missing: ${path}`, path, 'package');
-    function walk(v: unknown, path: string) {
-      if (Array.isArray(v)) {
-        v.forEach((x, i) => walk(x, `${path}/${i}`));
-        return;
-      }
-      for (const [key, x] of Object.entries(record(v))) {
-        if (key === 'value') continue;
-        if (key === 'file' && typeof x === 'string') {
-          if (!allowed.has(x))
-            error(
-              'FILE_UNDECLARED',
-              `Source file must appear in this Pipeline’s spec.files: ${x}`,
-              path,
-              'package',
-            );
-          if (!fileMap.has(x) && x !== entrypoint)
-            error('FILE_MISSING', `Source file is missing: ${x}`, path, 'package');
-        } else walk(x, `${path}/${key}`);
-      }
+    function checkFile(source: unknown, path: string) {
+      const file = record(source).file;
+      if (typeof file !== 'string') return;
+      if (!allowed.has(file))
+        error(
+          'FILE_UNDECLARED',
+          `Source file must appear in this Pipeline’s spec.files: ${file}`,
+          path,
+          'package',
+        );
+      if (!fileMap.has(file) && file !== entrypoint)
+        error('FILE_MISSING', `Source file is missing: ${file}`, path, 'package');
     }
-    walk(p.spec, '/spec');
-    function graphImports(graph: Graph) {
-      for (const node of Object.values(graph.nodes)) {
+    for (const [name, schema] of Object.entries(p.spec.schemas ?? {}))
+      checkFile(schema, `/spec/schemas/${name}`);
+    function graphImports(graph: Graph, graphPath: string) {
+      for (const [id, node] of Object.entries(graph.nodes)) {
+        const at = `${graphPath}/nodes/${id}`;
+        if (node.type === 'llm' || node.type === 'agent' || node.type === 'human') {
+          const config = record(node[node.type]);
+          checkFile(config.prompt, `${at}/${node.type}/prompt`);
+          if (node.type !== 'human')
+            checkFile(config.instructions, `${at}/${node.type}/instructions`);
+        }
         if (node.type === 'pipeline') {
+          checkFile(node.pipeline, `${at}/pipeline`);
           const path = String(record(node.pipeline).file);
           if (active.has(path)) {
             error('IMPORT_CYCLE', `Recursive pipeline import: ${path}`, path, 'package');
@@ -252,10 +254,13 @@ export function validatePipeline(
           }
         }
         if (node.type === 'foreach' || node.type === 'loop')
-          graphImports(record(record(node[node.type]).body) as unknown as Graph);
+          graphImports(
+            record(record(node[node.type]).body) as unknown as Graph,
+            `${at}/${node.type}/body`,
+          );
       }
     }
-    graphImports(p.spec);
+    graphImports(p.spec, '/spec');
   }
   loadImports(pipeline);
   function check(p: Pipeline) {
@@ -263,12 +268,20 @@ export function validatePipeline(
     for (const [key, value] of Object.entries(p.spec.schemas ?? {})) {
       if (typeof record(value).file === 'string') {
         const path = String(record(value).file);
-        if (!/\.(json|ya?ml)$/.test(path))
+        if (!/\.(json|ya?ml)$/i.test(path))
           error('SCHEMA_INVALID', 'Schema files must be JSON or YAML.', path);
         const file = fileMap.get(path);
         if (file)
           try {
-            schemas.set(key, parse(decodeText(file.content), diagnostics, path));
+            const source = decodeText(file.content);
+            if (/\.json$/i.test(path))
+              try {
+                JSON.parse(source);
+              } catch {
+                error('SCHEMA_INVALID', 'JSON schema files must contain valid JSON.', path);
+                continue;
+              }
+            schemas.set(key, parse(source, diagnostics, path));
           } catch {
             error('SCHEMA_INVALID', 'Cannot read schema as UTF-8.', path);
           }
@@ -399,7 +412,18 @@ export function validatePipeline(
           if (node.type === 'foreach') {
             const over = node.inputs?.[String(config.over)];
             const schema = over ? record(schemaOf(over, at)) : {};
-            if (!over || (schema.type !== 'array' && !over.artifact?.collection))
+            const types =
+              typeof schema.type === 'string'
+                ? [schema.type]
+                : Array.isArray(schema.type)
+                  ? schema.type.filter((type) => typeof type === 'string')
+                  : [];
+            if (
+              !over ||
+              (over.artifact
+                ? !over.artifact.collection
+                : types.length > 0 && !types.includes('array'))
+            )
               error(
                 'FOREACH_TYPE',
                 'foreach.over must reference an array or artifact collection input.',

@@ -4,7 +4,47 @@ The implementation is checked at three levels: deterministic contract and workfl
 integration tests against PostgreSQL and Docker, and complete executions through the public CLI/API
 with real services.
 
-## Verification on 4 October 2026
+## Desktop consistency re-review on 4 October 2026
+
+A second review compared desktop behavior and documentation with the implemented Go API. It found
+stale Settings text and functional gaps that the initial acceptance scenarios did not cover.
+
+The corrections cover Pipeline entrypoint selection when profiles or schemas appear first in an
+import, duplicate ZIP paths, byte-preserving UTF-8 BOM handling, typed file references, foreach
+schema compatibility, and visual connection type compatibility. Artifact upload now requires a
+base64 string; omitted/null content and JSON byte arrays cannot silently create artifacts. An
+explicit empty string still represents an empty artifact.
+
+Browser and native clients validate read responses before replacing cached data and reject unsafe
+integers before persisting SSE events or advancing the replay cursor. The native contract check
+covers structure, required fields, types, references, enums and bounds; it does not implement a
+complete JSON Schema validator or validate date formats and content encodings. Pagination preserves
+the server's structured errors. Session changes invalidate late responses, overlapping refreshes
+retain a follow-up read, and accepted commands return their durable receipts without waiting for
+background reads. Rejected starts can be edited, human-resolution errors remain visible, and cached
+artifact actions require a connected engine.
+
+The live browser acceptance now creates a workflow from Library, runs it through actual Ollama,
+downloads its verified result, and reopens its history in a fresh client. The second scenario checks
+binary input, human validation and an imported child pipeline. The Go real-service suite again
+passed with the race detector: store 4.561 s, API 7.279 s, adapters 183.798 s, sandbox helper 3.331
+s, and integration 192.546 s. `make check` passed against PostgreSQL; Python formatting and all 39
+parse/structural fixtures passed.
+
+| Final check                                    | Result                                                                                         |
+| ---------------------------------------------- | ---------------------------------------------------------------------------------------------- |
+| Frontend unit tests and production build       | 80 tests passed; TypeScript/Vite build passed                                                  |
+| Complete Playwright suite with a real endpoint | 49 passed, including both real engine scenarios; no skips                                      |
+| Native unit and HTTP fixture tests             | 25 passed; the opt-in real engine test is ignored in the default suite                         |
+| Native opt-in acceptance                       | Passed after the final cache, precision and artifact-download corrections                      |
+| Repository formatting and documentation links  | Prettier, gofmt, rustfmt and Black passed; 23 Markdown files had no missing local link targets |
+
+Documentation distinguishes implemented run lists and timelines from the future real execution
+graph, agent message view and token streaming. Ollama remains the only implemented model provider.
+No SQL migrations or dependency lockfiles changed in this re-review. The reproduction commands below
+apply to both reviews.
+
+## Initial readability review on 4 October 2026
 
 The repository readability review and desktop integration were checked on macOS/arm64 with Go
 1.27.1, Bun 1.3.10, Rust 1.99.0, Colima/Docker, the bundled PostgreSQL/Temporal development

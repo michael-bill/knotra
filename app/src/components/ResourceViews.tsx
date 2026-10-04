@@ -65,7 +65,8 @@ export function ConnectionsView({
           <strong>Resolved by your engine profile</strong>
           <p>
             A pipeline declares aliases. The trusted engine supplies credentials, applies
-            permissions, and checks capabilities. No secrets are read from this computer.
+            permissions, and checks capabilities during run admission. Secret values stay on the
+            engine.
           </p>
         </div>
       </div>
@@ -73,11 +74,12 @@ export function ConnectionsView({
         <div className="settings-card">
           <h2>Engine resource catalog</h2>
           <p className="small muted">
-            Canonical IDs available to the connected engine. Secret values stay on the engine.
+            Connections configured in the engine profiles. Availability reflects provider and
+            credential configuration; run admission checks model capabilities and dependencies.
           </p>
           <div className="engine-resource-list">
             {engine.resources.map((resource) => (
-              <div key={resource.kind + resource.id}>
+              <div key={JSON.stringify([resource.kind, resource.title, resource.id])}>
                 <strong>{resource.title}</strong>
                 <code>{resource.id}</code>
                 <span>
@@ -138,7 +140,7 @@ export function ConnectionsView({
               ) : null}
               <footer>
                 <span className="dot amber" />
-                Engine verification pending
+                Checked during run admission
               </footer>
             </article>
           ))}
@@ -349,9 +351,9 @@ export function SettingsView({
           </div>
         ) : null}
         <div className="notice small">
-          The engine has not been implemented in this repository. The desktop API contract is a
-          proposal for its implementation. Remote engines require HTTPS and an access token; tokens
-          stay in memory until you disconnect or close the app.
+          Start your local Knotra engine and connect using its address. Running workflows continue
+          on the engine when you close the app. Remote engines require HTTPS and an access token;
+          tokens stay in memory until you disconnect or close the app.
         </div>
       </div>
       <div className="settings-card">

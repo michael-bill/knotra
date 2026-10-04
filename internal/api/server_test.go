@@ -287,3 +287,49 @@ func TestProfilesUseNameWhenTitleOmitted(t *testing.T) {
 		t.Fatalf("profile without an explicit title must display its name: %s", response.Body.String())
 	}
 }
+
+func TestArtifactUploadRequiresBase64StringContent(t *testing.T) {
+	db := apiStore(t)
+	srv := Server{Store: db, Artifacts: store.Artifacts{Root: t.TempDir(), Store: db}}
+	for _, tc := range []struct {
+		name, body string
+		status     int
+	}{
+		{"missing", `{"name":"empty.txt","mediaType":"text/plain"}`, 422},
+		{"null", `{"name":"empty.txt","mediaType":"text/plain","content":null}`, 422},
+		{"array", `{"name":"empty.txt","mediaType":"text/plain","content":[65]}`, 400},
+		{"invalid-base64", `{"name":"empty.txt","mediaType":"text/plain","content":"!"}`, 400},
+		{"empty", `{"name":"empty.txt","mediaType":"text/plain","content":""}`, 201},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			r := httptest.NewRequest(http.MethodPost, "/v1/artifacts", strings.NewReader(tc.body))
+			r.Header.Set("Idempotency-Key", tc.name)
+			w := httptest.NewRecorder()
+			srv.Handler().ServeHTTP(w, r)
+			if w.Code != tc.status {
+				t.Fatalf("upload status %d, want %d: %s", w.Code, tc.status, w.Body.String())
+			}
+			if tc.status == 201 {
+				var result struct {
+					Artifact contract.Artifact `json:"artifact"`
+				}
+				if err := json.Unmarshal(w.Body.Bytes(), &result); err != nil {
+					t.Fatal(err)
+				}
+				content, err := srv.Artifacts.Get(context.Background(), result.Artifact.ID)
+				if err != nil || len(content) != 0 || result.Artifact.Size != 0 {
+					t.Fatalf("explicit empty file did not round-trip: size=%d content=%q error=%v", result.Artifact.Size, content, err)
+				}
+			} else {
+				var result protocol.Error
+				if err := json.Unmarshal(w.Body.Bytes(), &result); err != nil || result.Code != "INPUT_INVALID" {
+					t.Fatalf("invalid content must produce a structured input error: %s", w.Body.String())
+				}
+			}
+		})
+	}
+	artifacts, err := db.Artifacts(context.Background(), "")
+	if err != nil || len(artifacts) != 1 {
+		t.Fatalf("invalid uploads registered artifacts: count=%d error=%v", len(artifacts), err)
+	}
+}

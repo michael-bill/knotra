@@ -1,6 +1,7 @@
 package api
 
 import (
+	"encoding/base64"
 	"mime"
 	"net/http"
 	"strings"
@@ -14,25 +15,35 @@ import (
 
 func (s *Server) upload(w http.ResponseWriter, r *http.Request) {
 	var q struct {
-		Name      string `json:"name"`
-		MediaType string `json:"mediaType"`
-		Content   []byte `json:"content"`
+		Name      string  `json:"name"`
+		MediaType string  `json:"mediaType"`
+		Content   *string `json:"content"`
 	}
 	b, e := readBody(w, r, &q)
 	if e != nil {
 		s.fail(w, 400, "INPUT_INVALID", e.Error(), nil)
 		return
 	}
+	var content []byte
+	if q.Content != nil {
+		content, e = base64.StdEncoding.DecodeString(*q.Content)
+		if e != nil {
+			s.fail(w, 400, "INPUT_INVALID", "content must be a base64 string", nil)
+			return
+		}
+	}
 	s.command(w, r, b, func(tx pgx.Tx) (int, any, error) {
 		mt, params, mediaErr := mime.ParseMediaType(q.MediaType)
-		if q.Name == "" || len(q.Name) > 1024 || mediaErr != nil || len(params) > 0 || !strings.Contains(mt, "/") || strings.Contains(mt, "*") || len(q.Content) > store.MaxArtifactBytes {
+		if q.Name == "" || len(q.Name) > 1024 ||
+			mediaErr != nil || len(params) > 0 || !strings.Contains(mt, "/") || strings.Contains(mt, "*") ||
+			q.Content == nil || len(content) > store.MaxArtifactBytes {
 			return 422, protocol.Error{
 				Code:        "INPUT_INVALID",
 				Message:     "name, mediaType and content <=64 MiB required",
 				Diagnostics: []contract.Diagnostic{},
 			}, nil
 		}
-		art, e := s.Artifacts.Write(q.Name, q.MediaType, q.Content, map[string]string{})
+		art, e := s.Artifacts.Write(q.Name, q.MediaType, content, map[string]string{})
 		if e != nil {
 			return 0, nil, e
 		}

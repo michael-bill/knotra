@@ -48,7 +48,14 @@ export function compatible(source: Port, target: Port): boolean {
   if (!a || !b) return true; // Full schema compatibility is checked by the engine.
   const from = Array.isArray(a) ? a : [a];
   const to = Array.isArray(b) ? b : [b];
-  return from.every((type) => to.includes(type) || (type === 'integer' && to.includes('number')));
+  return from.some((type) =>
+    to.some(
+      (targetType) =>
+        type === targetType ||
+        (type === 'integer' && targetType === 'number') ||
+        (type === 'number' && targetType === 'integer'),
+    ),
+  );
 }
 
 export function connectionError(

@@ -95,7 +95,19 @@ export function EngineRunDialog({
       const caught = engineError(error);
       setError(caught.message);
       setDiagnostics(caught.diagnostics as EngineDiagnostic[]);
-      if (start && frozen.current) setBlocked(true);
+      if (start && frozen.current) {
+        if (
+          caught.code === 'input' ||
+          (caught.status &&
+            caught.status >= 400 &&
+            caught.status < 500 &&
+            ![408, 429].includes(caught.status))
+        ) {
+          // A definitive rejection has no pending command to reconcile.
+          frozen.current = undefined;
+          setBlocked(false);
+        } else setBlocked(true);
+      }
     } finally {
       setBusy(false);
     }

@@ -39,13 +39,15 @@ credentials are kept separate from draft exports.
 
 Open **Library → Local Ollama greeting**, or import `examples/local/pipeline.yaml`, choose **Run**,
 select profile `local`, and check admission or start. The engine publishes an immutable package,
-executes Ollama and Docker, and saves the result. Runs shows states/events; Inbox answers saved
-human requests; Artifacts uploads, previews and exports registered bytes. A run keeps executing
-after the app closes.
+executes Ollama and Docker, and saves the result. Engine Runs shows the instance list, current
+attempt IDs, diagnostics, timeline, run inputs/outputs and immutable package snapshot; Inbox answers
+saved human requests; Artifacts uploads, previews and exports registered bytes. The status graph
+currently belongs to guided demo runs. A run keeps executing after the app closes.
 
 Other library examples are authoring templates. Their logical models, MCP tools and sandbox names
-need a matching EngineProfile. **Guided demo** uses sample data; it does not make model calls. The
-live boundary is defined by [the API contract](../docs/api/desktop-v1.md) and
+need a matching EngineProfile. The implemented model adapter is Ollama; other provider names are
+rejected during admission. **Guided demo** uses sample data; it does not make model calls. The live
+boundary is defined by [the API contract](../docs/api/desktop-v1.md) and
 [OpenAPI](../docs/api/desktop-v1.openapi.json).
 
 ## Checks and build

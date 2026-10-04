@@ -1,5 +1,6 @@
 mod sse;
 mod store;
+mod validation;
 use crate::package::{valid_path, PackageFile};
 use base64::{engine::general_purpose::STANDARD, Engine};
 use futures_util::StreamExt;
@@ -16,6 +17,7 @@ use std::{
     time::Duration,
 };
 use tauri::{ipc::Channel, Manager, State};
+use validation::check_read_shape;
 pub type Result<T> = std::result::Result<T, Error>;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -182,6 +184,18 @@ impl Session {
         body: Option<&Value>,
         operation: Option<&str>,
     ) -> Result<Value> {
+        self.json_with_cursor(method, path, body, operation, None)
+            .await
+    }
+
+    async fn json_with_cursor(
+        &self,
+        method: Method,
+        path: &[&str],
+        body: Option<&Value>,
+        operation: Option<&str>,
+        cursor: Option<&str>,
+    ) -> Result<Value> {
         let mut request = self
             .request(method, path)?
             .timeout(Duration::from_secs(30))
@@ -191,6 +205,9 @@ impl Session {
         }
         if let Some(id) = operation {
             request = request.header("Idempotency-Key", id);
+        }
+        if let Some(cursor) = cursor {
+            request = request.query(&[("cursor", cursor)]);
         }
         let response = request.send().await.map_err(Error::transport)?;
         let status = response.status();
@@ -547,6 +564,7 @@ pub async fn engine_connect(
         info["principalId"]
     ]))
     .map_err(Error::storage)?;
+    check_response(&Call::Info, &info)?;
     backend.store.cache(&session.key, "info", &info)?;
     let mut active = backend.session.lock().map_err(Error::storage)?;
     if revision != backend.revision.load(Ordering::SeqCst) {
@@ -632,40 +650,20 @@ async fn execute(store: &store::Store, session: &Session, call: &Call) -> Result
             return Ok(cached);
         }
     }
-    let value = if let Some(cursor) = cursor {
-        let response = session
-            .request(method, &path)?
-            .query(&[("cursor", cursor)])
-            .timeout(Duration::from_secs(30))
-            .send()
-            .await
-            .map_err(Error::transport)?;
-        let status = response.status();
-        let data = limited(response, 96 * 1024 * 1024).await?;
-        if !status.is_success() {
-            return Err(Error::new(
-                "engine",
-                "Engine rejected the pagination request.",
-            ));
-        }
-        serde_json::from_slice(&data)
-            .map_err(|_| Error::new("protocol", "Invalid page response."))?
-    } else {
-        match session
-            .json(method, &path, body.as_ref(), call.operation())
-            .await
-        {
-            Ok(value) => value,
-            Err(error) => {
-                if error.status.is_some_and(|status| {
-                    (400..500).contains(&status) && status != 408 && status != 429
-                }) {
-                    if let Some(id) = call.operation() {
-                        store.complete(&session.key, id, &json!({"clientRejection":error}))?;
-                    }
+    let value = match session
+        .json_with_cursor(method, &path, body.as_ref(), call.operation(), cursor)
+        .await
+    {
+        Ok(value) => value,
+        Err(error) => {
+            if error.status.is_some_and(|status| {
+                (400..500).contains(&status) && status != 408 && status != 429
+            }) {
+                if let Some(id) = call.operation() {
+                    store.complete(&session.key, id, &json!({"clientRejection":error}))?;
                 }
-                return Err(error);
             }
+            return Err(error);
         }
     };
     check_response(call, &value)?;
@@ -702,7 +700,9 @@ fn check_response(call: &Call, value: &Value) -> Result<()> {
         }
         Call::Upload { .. } | Call::Artifact { .. } => {
             identifier(&value["artifact"]["id"])
-                && value["artifact"]["size"].as_u64().is_some()
+                && value["artifact"]["size"]
+                    .as_f64()
+                    .is_some_and(|size| size.is_finite() && size >= 0.0 && size.fract() == 0.0)
                 && value["artifact"]["sha256"]
                     .as_str()
                     .is_some_and(|hash| hash.len() == 64)
@@ -718,6 +718,11 @@ fn check_response(call: &Call, value: &Value) -> Result<()> {
         ));
     }
 
+    check_read_shape(call, value)?;
+    check_safe_numbers(value)
+}
+
+fn check_safe_numbers(value: &Value) -> Result<()> {
     fn safe(value: &Value) -> bool {
         match value {
             Value::Number(number) => {
@@ -727,6 +732,9 @@ fn check_response(call: &Call, value: &Value) -> Result<()> {
                     && number
                         .as_u64()
                         .is_none_or(|value| value <= 9_007_199_254_740_991)
+                    && number.as_f64().is_none_or(|value| {
+                        value.fract() != 0.0 || value.abs() <= 9_007_199_254_740_991.0
+                    })
             }
             Value::Array(values) => values.iter().all(safe),
             Value::Object(values) => values.values().all(safe),
@@ -752,13 +760,20 @@ async fn download(session: &Session, artifact_id: &str) -> Result<Value> {
     let metadata = session
         .json(Method::GET, &["artifacts", artifact_id], None, None)
         .await?;
+    check_response(
+        &Call::Artifact {
+            artifact_id: artifact_id.into(),
+        },
+        &metadata,
+    )?;
     let descriptor = &metadata["artifact"];
     let size = descriptor["size"]
-        .as_u64()
+        .as_f64()
         .ok_or_else(|| Error::new("protocol", "Artifact is missing its byte size."))?;
-    if size > 64 * 1024 * 1024 {
+    if size > (64 * 1024 * 1024) as f64 {
         return Err(Error::new("limit", "Artifact exceeds 64 MiB."));
     }
+    let size = size as u64;
     let response = session
         .request(Method::GET, &["artifacts", artifact_id, "content"])?
         .timeout(Duration::from_secs(60))
@@ -818,7 +833,17 @@ pub fn engine_watch(
                 ),
                 Err(e) => (e.message, e.code),
             };
-            if channel.send(json!({"type":"connection","status":"reconnecting","message":message,"code":code})).is_err() {break;}
+            if channel
+                .send(json!({
+                    "type": "connection",
+                    "status": "reconnecting",
+                    "message": message,
+                    "code": code
+                }))
+                .is_err()
+            {
+                break;
+            }
             tokio::time::sleep(Duration::from_secs(delay)).await;
             delay = (delay * 2).min(15);
         }
@@ -882,6 +907,7 @@ async fn stream(
                     "Event identity does not match its stream.",
                 ));
             }
+            check_safe_numbers(&event)?;
             if store.event(&session.key, run, &frame.id, &event)? {
                 channel
                     .send(json!({"type":"event","event":event}))

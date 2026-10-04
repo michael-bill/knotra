@@ -94,9 +94,36 @@ describe('visual data bindings', () => {
     expect(
       compatible(file, { artifact: { mediaTypes: ['text/markdown'], collection: true } }),
     ).toBe(false);
+  });
+  it('allows JSON type domains with an overlap and rejects disjoint domains', () => {
     expect(compatible({ schema: { type: 'integer' } }, { schema: { type: 'number' } })).toBe(true);
+    expect(compatible({ schema: { type: 'number' } }, { schema: { type: 'integer' } })).toBe(true);
     expect(
       compatible({ schema: { type: ['string', 'null'] } }, { schema: { type: 'string' } }),
+    ).toBe(true);
+    expect(
+      compatible({ schema: { type: ['string', 'null'] } }, { schema: { type: 'array' } }),
     ).toBe(false);
+  });
+  it('offers a nullable output to a matching input without rejecting the visual connection', () => {
+    const graph = structuredClone(researchPipeline.spec);
+    graph.nodes.research.outputs!.summary.schema = { type: ['string', 'null'] };
+    expect(
+      connectionError(graph, {
+        source: 'research',
+        sourcePort: 'summary',
+        target: 'draft',
+        targetPort: 'summary',
+      }),
+    ).toBeUndefined();
+    graph.nodes.research.outputs!.summary.schema = { type: ['array', 'null'] };
+    expect(
+      connectionError(graph, {
+        source: 'research',
+        sourcePort: 'summary',
+        target: 'draft',
+        targetPort: 'summary',
+      }),
+    ).toContain('data types');
   });
 });

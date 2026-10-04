@@ -7,6 +7,7 @@ import {
   engineCache,
   engineCall,
   engineError,
+  EngineError,
 } from './client';
 import type {
   EngineCall,
@@ -31,47 +32,72 @@ export function useEngine(notify: (message: string) => void) {
   const [resources, setResources] = useState<Resource[]>([]);
   const [pending, setPending] = useState<PendingOperation[]>([]);
   const revision = useRef(0);
-  const refreshing = useRef<number | undefined>(undefined);
-  const refresh = useCallback(async () => {
-    const current = revision.current;
-    if (!info || refreshing.current === current) return;
-    refreshing.current = current;
-    setSyncing(true);
-    try {
-      const [runs, requests, artifacts, profiles, resources, cached] = await Promise.all([
-        allPages<EngineRun>('runs'),
-        allPages<EngineRequest>('requests'),
-        allPages<EngineArtifact>('artifacts'),
-        engineCall<{ items: Profile[] }>({ op: 'profiles' }),
-        engineCall<{ items: Resource[] }>({ op: 'resources' }),
-        engineCache(),
-      ]);
-      if (current !== revision.current) return;
-      if (!Array.isArray(profiles.items) || !Array.isArray(resources.items))
-        throw new Error('Engine returned an incompatible catalog.');
-      for (const run of runs) assertEngineModel('Run', run);
-      for (const request of requests) assertEngineModel('HumanRequest', request);
-      for (const artifact of artifacts) assertEngineModel('Artifact', artifact);
-      for (const profile of profiles.items) assertEngineModel('Profile', profile);
-      for (const resource of resources.items) assertEngineModel('Resource', resource);
-      setRuns(runs);
-      setRequests(requests);
-      setArtifacts(artifacts);
-      setProfiles(profiles.items);
-      setResources(resources.items);
-      setPending(cached.pending);
-      setError('');
-    } catch (error) {
-      if (current === revision.current) setError(engineError(error).message);
-    } finally {
-      if (refreshing.current === current) refreshing.current = undefined;
-      if (current === revision.current) setSyncing(false);
-    }
-  }, [info]);
+  const refreshing = useRef<
+    { revision: number; again: boolean; promise: Promise<void> } | undefined
+  >(undefined);
+  const refresh = useCallback(
+    async (queue = true): Promise<void> => {
+      const current = revision.current;
+      if (!info) return;
+      if (refreshing.current?.revision === current) {
+        // A command or event received during a read needs another read after it.
+        if (queue) refreshing.current.again = true;
+        return refreshing.current.promise;
+      }
+      const task = { revision: current, again: true, promise: Promise.resolve() };
+      refreshing.current = task;
+      setSyncing(true);
+      task.promise = (async () => {
+        // Coalesce at most one follow-up; a continuous event stream cannot keep
+        // one refresh alive indefinitely.
+        for (let pass = 0; pass < 2; pass++) {
+          task.again = false;
+          try {
+            const [runs, requests, artifacts, profiles, resources, cached] = await Promise.all([
+              allPages<EngineRun>('runs'),
+              allPages<EngineRequest>('requests'),
+              allPages<EngineArtifact>('artifacts'),
+              engineCall<{ items: Profile[] }>({ op: 'profiles' }),
+              engineCall<{ items: Resource[] }>({ op: 'resources' }),
+              engineCache(),
+            ]);
+            if (current !== revision.current) return;
+            if (!Array.isArray(profiles.items) || !Array.isArray(resources.items))
+              throw new Error('Engine returned an incompatible catalog.');
+            for (const run of runs) assertEngineModel('Run', run);
+            for (const request of requests) assertEngineModel('HumanRequest', request);
+            for (const artifact of artifacts) assertEngineModel('Artifact', artifact);
+            for (const profile of profiles.items) assertEngineModel('Profile', profile);
+            for (const resource of resources.items) assertEngineModel('Resource', resource);
+            setRuns(runs);
+            setRequests(requests);
+            setArtifacts(artifacts);
+            setProfiles(profiles.items);
+            setResources(resources.items);
+            setPending(cached.pending);
+            setError('');
+          } catch (error) {
+            if (current === revision.current) setError(engineError(error).message);
+          }
+          if (!task.again || current !== revision.current) break;
+        }
+      })().finally(() => {
+        if (refreshing.current === task) refreshing.current = undefined;
+        if (current === revision.current) {
+          setSyncing(false);
+          // Events/commands during the final read still need a later snapshot;
+          // start it independently after releasing this bounded task.
+          if (task.again) void refresh(false);
+        }
+      });
+      return task.promise;
+    },
+    [info],
+  );
   useEffect(() => {
     void refresh();
     if (!info) return;
-    const timer = setInterval(() => void refresh(), 10000);
+    const timer = setInterval(() => void refresh(false), 10000);
     return () => clearInterval(timer);
   }, [refresh, info]);
   async function connect(url: string, token?: string) {
@@ -90,6 +116,7 @@ export function useEngine(notify: (message: string) => void) {
       assertEngineModel('Info', info);
       if (current !== revision.current) return;
       const saved = await engineCache();
+      if (current !== revision.current) return;
       // Recover the last read model first, clearly marked until the fresh read completes.
       const pages = Object.entries(saved.cache).flatMap(([key, value]) => {
         try {
@@ -144,28 +171,39 @@ export function useEngine(notify: (message: string) => void) {
     }
   }
   async function disconnect() {
-    revision.current++;
+    const current = ++revision.current;
     await disconnectEngine();
+    if (current !== revision.current) return;
     setInfo(undefined);
     setError('');
     setPending([]);
   }
   async function command<T>(call: EngineCall): Promise<T> {
+    const current = revision.current;
+    let response: T;
     try {
-      const response = await engineCall<T>(call);
-      await refresh();
-      return response;
+      response = await engineCall<T>(call);
+      // The durable receipt is already confirmed. A slow/unavailable read must
+      // not keep the form busy or prevent the caller from receiving it.
+      if (current === revision.current) void refresh();
     } catch (error) {
       const caught = engineError(error);
-      notify(caught.message);
+      if (current === revision.current) notify(caught.message);
       throw caught;
     } finally {
       try {
-        setPending((await engineCache()).pending);
+        const saved = await engineCache();
+        if (current === revision.current) setPending(saved.pending);
       } catch {
         /* Already reported by the command. */
       }
     }
+    if (current !== revision.current)
+      throw new EngineError(
+        'disconnected',
+        'Connection changed; recover commands on the original engine.',
+      );
+    return response;
   }
   return {
     info,

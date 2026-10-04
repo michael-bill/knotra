@@ -353,10 +353,11 @@ function LoadedApp({ initial }: { initial: State }) {
     setBusy(true);
     try {
       let opened: OpenedPackage;
-      if (files.length === 1 && files[0].name.endsWith('.zip')) {
+      if (files.length === 1 && files[0].name.toLowerCase().endsWith('.zip')) {
         if (files[0].size > 64 * 1024 * 1024) throw new Error('Archive exceeds 64 MiB.');
         let size = 0;
         let count = 0;
+        const paths = new Set<string>();
         const bytes = unzipSync(new Uint8Array(await files[0].arrayBuffer()), {
           filter: (file) => {
             if (file.name.endsWith('/')) return false;
@@ -364,6 +365,9 @@ function LoadedApp({ initial }: { initial: State }) {
             count++;
             if (count > 512 || size > 64 * 1024 * 1024 || !validPath(file.name))
               throw new Error('Archive exceeds package limits or contains an invalid path.');
+            const folded = file.name.replace(/[A-Z]/g, (letter) => letter.toLowerCase());
+            if (paths.has(folded)) throw new Error(`Duplicate package path: ${file.name}`);
+            paths.add(folded);
             return true;
           },
         });
@@ -371,7 +375,7 @@ function LoadedApp({ initial }: { initial: State }) {
           path,
           content: base64(content),
         }));
-        const candidates = packageFiles.filter((f) => /\.ya?ml$/.test(f.path));
+        const candidates = packageFiles.filter((f) => /\.ya?ml$/i.test(f.path));
         if (!candidates.length) throw new Error('Archive has no YAML entrypoint.');
         opened = {
           entrypoint: candidates[0].path,
@@ -381,7 +385,7 @@ function LoadedApp({ initial }: { initial: State }) {
       } else {
         if (files.length > 512 || files.reduce((n, f) => n + f.size, 0) > 64 * 1024 * 1024)
           throw new Error('Selection exceeds 512 files or 64 MiB.');
-        const first = files.find((f) => /\.ya?ml$/.test(f.name));
+        const first = files.find((f) => /\.ya?ml$/i.test(f.name));
         if (!first) throw new Error('Select a YAML pipeline or a ZIP package.');
         const entrypoint = first.webkitRelativePath
           ? first.webkitRelativePath.split('/').slice(1).join('/')
@@ -392,10 +396,17 @@ function LoadedApp({ initial }: { initial: State }) {
         { path: opened.entrypoint, content: base64(textBytes(opened.source)) },
         ...opened.files,
       ];
+      const paths = new Set<string>();
+      for (const file of all) {
+        if (!validPath(file.path)) throw new Error(`Invalid package path: ${file.path}`);
+        const folded = file.path.replace(/[A-Z]/g, (letter) => letter.toLowerCase());
+        if (paths.has(folded)) throw new Error(`Duplicate package path: ${file.path}`);
+        paths.add(folded);
+      }
       const candidates = all
         .filter(
           (f) =>
-            /\.ya?ml$/.test(f.path) &&
+            /\.ya?ml$/i.test(f.path) &&
             (() => {
               try {
                 return Boolean(parsePipeline(decodeText(f.content)));
@@ -410,7 +421,17 @@ function LoadedApp({ initial }: { initial: State }) {
         setEntries(candidates);
         setPickedEntry(candidates.includes('pipeline.yaml') ? 'pipeline.yaml' : candidates[0]);
         setDialog('entrypoint');
-      } else addWorkspace(allowedFiles(opened));
+      } else if (candidates.length === 1) {
+        const entrypoint = candidates[0];
+        const file = all.find((file) => file.path === entrypoint)!;
+        addWorkspace(
+          allowedFiles({
+            entrypoint,
+            source: decodeText(file.content),
+            files: all.filter((file) => file.path !== entrypoint),
+          }),
+        );
+      } else throw new Error('Package has no Pipeline YAML entrypoint.');
     } catch (e) {
       notify(e instanceof Error ? e.message : String(e));
     } finally {
