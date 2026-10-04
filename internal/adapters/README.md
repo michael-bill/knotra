@@ -12,25 +12,25 @@ generation request. Supported parameters are `temperature`, `top_k`, `top_p`, `m
 Prompts and typed input envelopes are separate messages. Provider tool names map unambiguously to
 grants; `knotra_finish` is reserved for the runtime.
 
-Ollama replies are streamed. Visible text is coalesced every 100 ms or 1 KiB, with an
-immediate first fragment and a final flush. The adapter also accepts a single complete JSON
-response. Content, tool calls and provider-private context are assembled before the existing
-operation journal commits the complete response. An incomplete or malformed stream cannot
-publish a successful completion; replaying a recorded response never starts another generation.
+Ollama replies are streamed. Visible text is coalesced every 100 ms or 1 KiB, with an immediate
+first fragment and a final flush. The adapter also accepts a single complete JSON response. Content,
+tool calls and provider-private context are assembled before the existing operation journal commits
+the complete response. An incomplete or malformed stream cannot publish a successful completion;
+replaying a recorded response never starts another generation.
 
 Hooks may implement `ExecutionObserver` to receive `model.started`, `model.delta`,
-`model.completed`, `model.failed`, `agent.iteration`, `tool.started`, `tool.completed`, `output.validating`,
-and `output.completed`. Events carry one-based steps and operation identities, plus bounded
-previews, model timing and token counts when supplied by the provider. Missing telemetry cannot
-change execution decisions or retry side effects; later events mark `observationIncomplete`.
-Each execution delivers observations through a 64-event FIFO with nonblocking enqueue and a
-250 ms write deadline. Overflow or failed writes mark later events as incomplete. After executable
-work and operation journaling finish, delivery drains for at most 250 ms (50 ms when already
-cancelled), then stops. Observer implementations must honor the supplied context deadline.
-Previews are limited to 48 KiB per event and 16 KiB per string, with explicit truncation markers.
-Numbers outside the clients' supported range are shown as explicit text markers containing their
-original JSON spelling; they cannot invalidate the surrounding event stream or history page.
-They redact resolved engine credentials and host sandbox paths, and omit
+`model.completed`, `model.failed`, `agent.iteration`, `tool.started`, `tool.completed`,
+`output.validating`, and `output.completed`. Events carry one-based steps and operation identities,
+plus bounded previews, model timing and token counts when supplied by the provider. Missing
+telemetry cannot change execution decisions or retry side effects; later events mark
+`observationIncomplete`. Each execution delivers observations through a 64-event FIFO with
+nonblocking enqueue and a 250 ms write deadline. Overflow or failed writes mark later events as
+incomplete. After executable work and operation journaling finish, delivery drains for at most 250
+ms (50 ms when already cancelled), then stops. Observer implementations must honor the supplied
+context deadline. Previews are limited to 48 KiB per event and 16 KiB per string, with explicit
+truncation markers. Numbers outside the clients' supported range are shown as explicit text markers
+containing their original JSON spelling; they cannot invalidate the surrounding event stream or
+history page. They redact resolved engine credentials and host sandbox paths, and omit
 provider-hidden reasoning. Redaction spans fragment boundaries. The complete operation response
 remains internal so the next model turn can receive the context required by the
 [Ollama streaming tool protocol](https://docs.ollama.com/capabilities/tool-calling#tool-calling-with-streaming).

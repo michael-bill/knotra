@@ -10,7 +10,7 @@
     "test": "vitest run",
     "test:e2e": "playwright test",
     "format": "prettier --write src tests *.ts *.json index.html README.md",
-    "format:check": "prettier --check src tests *.ts *.json index.html README.md",
+    "format:check": "prettier --check .. --ignore-path ../.prettierignore",
     "tauri": "tauri",
     "desktop:dev": "tauri dev",
     "desktop:build": "tauri build"
