@@ -5,6 +5,7 @@ import {
   connectEngine,
   disconnectEngine,
   engineCache,
+  engineSessionKey,
   engineCall,
   engineError,
   EngineError,
@@ -22,6 +23,7 @@ import type {
 
 export function useEngine(notify: (message: string) => void) {
   const [info, setInfo] = useState<EngineInfo>();
+  const [sessionKey, setSessionKey] = useState<string>();
   const [connecting, setConnecting] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [error, setError] = useState('');
@@ -160,6 +162,7 @@ export function useEngine(notify: (message: string) => void) {
           .flatMap((page) => (page.value as { items?: EngineArtifact[] }).items ?? []),
       );
       setPending(saved.pending);
+      setSessionKey(engineSessionKey());
       setInfo(info);
     } catch (error) {
       if (current === revision.current) {
@@ -207,6 +210,7 @@ export function useEngine(notify: (message: string) => void) {
   }
   return {
     info,
+    sessionKey,
     connecting,
     syncing,
     error,

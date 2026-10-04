@@ -1,8 +1,9 @@
+import { parseDocument } from 'yaml';
 import { validPath } from './validation';
-import { unbase64 } from './bytes';
+import { sha256, textBytes, unbase64 } from './bytes';
 import { invoke } from '@tauri-apps/api/core';
 import { desktop } from './native';
-import { initialWorkspaces } from './examples';
+import { examples, initialWorkspaces } from './examples';
 import type { Theme } from './theme';
 import { normalizeLocale, preferredLocale, type Locale } from './i18n';
 import type { DemoRun, Workspace } from './types';
@@ -12,6 +13,7 @@ const foldPath = (path: string) => path.replace(/[A-Z]/g, (letter) => letter.toL
 
 export interface State {
   version: 1;
+  starterRevision?: 1 | 2 | 3;
   workspaces: Workspace[];
   runs: DemoRun[];
   activeId: string;
@@ -22,44 +24,94 @@ export interface State {
 }
 
 export function freshState(): State {
-  const workspaces = initialWorkspaces();
+  const locale = preferredLocale();
+  const workspaces = initialWorkspaces(locale);
   return {
     version: 1,
+    starterRevision: 3,
     workspaces,
     runs: [],
     activeId: workspaces[0].id,
     engineUrl: 'http://127.0.0.1:8787',
     compact: false,
     theme: 'dark',
-    locale: preferredLocale(),
+    locale,
   };
 }
 
 export function loadState(): State {
-  try {
-    const raw = localStorage.getItem(KEY);
-    if (!raw) return freshState();
-    const value = JSON.parse(raw) as State;
-    if (value.version !== 1 || !Array.isArray(value.workspaces) || !Array.isArray(value.runs))
-      throw new Error('Unsupported workspace data.');
-    if (
-      !value.workspaces.every(
-        (w) =>
-          typeof w.id === 'string' &&
-          typeof w.source === 'string' &&
-          typeof w.entrypoint === 'string' &&
-          Array.isArray(w.files),
-      )
-    )
-      throw new Error('Invalid workspace data.');
-    return {
-      ...value,
-      theme: value.theme === 'light' ? 'light' : 'dark',
-      locale: normalizeLocale(value.locale),
-    };
-  } catch {
-    return freshState();
+  const raw = localStorage.getItem(KEY);
+  return raw === null ? freshState() : readBackup(raw);
+}
+
+// Importing a backup is exact; only opening an older installation adds new starters.
+// Once marked, deliberately deleted starters stay deleted on subsequent launches.
+export async function migrateStarters(state: State): Promise<State> {
+  if (state.starterRevision === 3) return state;
+  const nameOf = (workspace: Workspace): string | undefined => {
+    // A draft may temporarily fail contract validation while retaining its identity.
+    if (workspace.source.length > 8 * 1024 * 1024) return;
+    try {
+      const name = parseDocument(workspace.source).getIn(['metadata', 'name']);
+      return typeof name === 'string' ? name : undefined;
+    } catch {
+      return;
+    }
+  };
+  const fingerprint = (source: string, files: Workspace['files']) =>
+    sha256(
+      textBytes(
+        JSON.stringify([
+          source,
+          files
+            .map((file) => [file.path, file.content])
+            .sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0)),
+        ]),
+      ),
+    );
+  // Exact fingerprints of the three retired starter packages, including their
+  // original EN/RU titles. Any source or supporting-file edit keeps the draft.
+  const retired = new Set([
+    '133fef130fb7f4032e6f4b41a308ff96041bca25cc2079adb1252e668ac4fbce',
+    'f574889495ef6991b14627f4c181f191283bcda38304d59b02ed22be52f35800',
+    '74a83e8f78aaf9c1a99b5c6e868c56866fe46b7295677775fc7c8a6ca9a396e9',
+    'a7dd3e91dbd963ea16eaf74760e0f0ed31623d5b600b510a6d949cb01a18429e',
+    '2104f88e6e59070380da9b7d29db3e0b20ecc8d1f41b0ea7371c89e1d4f7fe6a',
+    'bee24c70d7afa6a95761dbe35a10d685d914da9b23a08d11c37622330a44e5de',
+    'eba32eb49ed19e6f304f291567146d90edf8c5711cd46cae9af743cad17b5e94',
+    '828d6f91f4961b7c8e154ac1f0918d1cd1d8ace9c187f816fc0dd77e457eced4',
+    '1584077623c086da6b8c8bd0abda73b07841c5411681fa7a36000febae0427fd',
+  ]);
+  for (const example of examples.filter((example) =>
+    ['research', 'agent', 'foreach', 'local'].includes(example.id),
+  )) {
+    retired.add(await fingerprint(example.source, example.files));
   }
+  const retained: Workspace[] = [];
+  for (const workspace of state.workspaces) {
+    if (
+      workspace.entrypoint !== 'pipeline.yaml' ||
+      Object.keys(workspace.positions ?? {}).length > 0 ||
+      workspace.source !== workspace.savedSource ||
+      !retired.has(await fingerprint(workspace.source, workspace.files))
+    ) {
+      retained.push(workspace);
+    }
+  }
+  const names = new Set(retained.map(nameOf));
+  const additions = initialWorkspaces(state.locale).filter((workspace) => {
+    const name = nameOf(workspace);
+    return name && !names.has(name);
+  });
+  const workspaces = [...retained, ...additions];
+  return {
+    ...state,
+    starterRevision: 3,
+    workspaces,
+    activeId: workspaces.some((w) => w.id === state.activeId)
+      ? state.activeId
+      : (workspaces[0]?.id ?? ''),
+  };
 }
 
 let writes: Promise<void> = Promise.resolve();
@@ -70,11 +122,21 @@ export function loadWorkspace(): Promise<State> {
 }
 
 async function readWorkspace(): Promise<State> {
-  if (!desktop) return loadState();
+  if (!desktop) {
+    const loaded = loadState();
+    const migrated = await migrateStarters(loaded);
+    if (migrated !== loaded) await saveState(migrated);
+    return migrated;
+  }
   const saved = await invoke<State | null>('workspace_load');
-  if (saved) return readBackup(JSON.stringify(saved));
+  if (saved) {
+    const loaded = readBackup(JSON.stringify(saved));
+    const migrated = await migrateStarters(loaded);
+    if (migrated !== loaded) await saveState(migrated);
+    return migrated;
+  }
   const legacy = localStorage.getItem(KEY);
-  const migrated = legacy ? readBackup(legacy) : freshState();
+  const migrated = await migrateStarters(legacy === null ? freshState() : readBackup(legacy));
   await invoke('workspace_save', { value: migrated });
   return migrated;
 }
@@ -204,6 +266,9 @@ export function readBackup(text: string): State {
     throw new Error('Invalid engine address in backup.');
   return {
     version: 1,
+    ...([1, 2, 3].includes(value.starterRevision)
+      ? { starterRevision: value.starterRevision as 1 | 2 | 3 }
+      : {}),
     workspaces: value.workspaces,
     runs: value.runs,
     activeId: ids.has(value.activeId) ? value.activeId : (value.workspaces[0]?.id ?? ''),

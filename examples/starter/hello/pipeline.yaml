@@ -1,0 +1,60 @@
+apiVersion: knotra/v1
+kind: Pipeline
+metadata:
+  name: hello-world
+  title: Hello, model
+  description: A small first run to check local model generation and a downloadable text artifact.
+spec:
+  models:
+    writer:
+      connection: model_main
+      requires: [structuredOutput]
+  sandboxes:
+    work:
+      profile: python_box
+  inputs:
+    name:
+      schema: { type: string }
+      default: Knotra
+  nodes:
+    greet:
+      type: llm
+      inputs:
+        name:
+          schema: { type: string }
+          bind: { from: inputs.name }
+      llm:
+        model: writer
+        prompt:
+          text: Write a brief friendly greeting to the supplied name. Return it as greeting.
+      outputs:
+        greeting:
+          schema: { type: string }
+    save:
+      type: code
+      sandbox: work
+      inputs:
+        greeting:
+          schema: { type: string }
+          bind: { from: nodes.greet.outputs.greeting }
+      code:
+        command:
+          - python3
+          - -c
+          - |
+            import json, os
+            from pathlib import Path
+            data = json.loads(Path(os.environ['KNOTRA_INPUT_JSON']).read_text())
+            Path('greeting.txt').write_text(data['values']['greeting'] + '\n')
+            Path(os.environ['KNOTRA_OUTPUT_JSON']).write_text('{}')
+      outputs:
+        file:
+          artifact: { mediaTypes: [text/plain] }
+          collect: { path: greeting.txt, mediaType: text/plain }
+  outputs:
+    greeting:
+      schema: { type: string }
+      bind: { from: nodes.greet.outputs.greeting }
+    file:
+      artifact: { mediaTypes: [text/plain] }
+      bind: { from: nodes.save.outputs.file }

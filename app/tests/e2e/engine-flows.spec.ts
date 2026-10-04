@@ -1,3 +1,5 @@
+import { parseDocument } from 'yaml';
+import { openActiveEditor } from './authoring';
 import { test, expect, type Page } from '@playwright/test';
 import { createServer, type Server, type IncomingMessage, type ServerResponse } from 'node:http';
 import { createHash } from 'node:crypto';
@@ -386,6 +388,7 @@ async function connect(page: Page) {
 
 async function start(page: Page, values = '{"topic":"Backend verification"}') {
   await nav(page, 'Pipelines');
+  await openActiveEditor(page);
   await page.getByRole('button', { name: 'Run', exact: true }).click();
   await page.getByRole('textbox', { name: 'Workflow input values' }).fill(values);
   await page.getByRole('button', { name: 'Start run', exact: true }).click();
@@ -551,12 +554,13 @@ test('workspace backup restore replaces drafts only after review and leaves exec
   for await (const chunk of stream!) chunks.push(chunk);
   const bytes = Buffer.concat(chunks);
   const before = JSON.parse(bytes.toString());
+  const originalCount = before.workspaces.length;
   before.workspaces = before.workspaces.slice(0, 1);
-  before.workspaces[0].source = before.workspaces[0].source.replace(
-    'Research brief',
-    'Restored workflow',
-  );
+  const source = parseDocument(before.workspaces[0].source);
+  source.setIn(['metadata', 'title'], 'Restored workflow');
+  before.workspaces[0].source = source.toString();
   before.theme = 'light';
+  delete before.starterRevision;
   await page.getByLabel('Restore workspace backup').setInputFiles({
     name: 'backup.json',
     mimeType: 'application/json',
@@ -569,12 +573,19 @@ test('workspace backup restore replaces drafts only after review and leaves exec
         () => JSON.parse(localStorage.getItem('knotra.workspace.v1') ?? '{}').workspaces?.length,
       ),
     )
-    .toBe(3);
+    .toBe(originalCount);
   await page.getByRole('button', { name: 'Restore backup', exact: true }).click();
+  await openActiveEditor(page);
   await expect(page.getByRole('heading', { name: 'Restored workflow', exact: true })).toBeVisible();
   await page.reload();
+  await openActiveEditor(page);
   await expect(page.getByRole('heading', { name: 'Restored workflow', exact: true })).toBeVisible();
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'light');
+  expect(
+    await page.evaluate(
+      () => JSON.parse(localStorage.getItem('knotra.workspace.v1')!).workspaces.length,
+    ),
+  ).toBe(1);
 });
 
 test('an engine account switch cannot reuse another account command journal', async ({ page }) => {
@@ -966,4 +977,78 @@ spec:
   await page.locator('.react-flow__node[data-id="draft"]').click();
   await expect(page.locator('.execution-response pre')).toHaveText('Hello from the live model.');
   expect(writes).toHaveLength(0);
+});
+
+test('run list orders every API page by creation time with stable ties through filters and refresh', async ({
+  page,
+}) => {
+  const source = `apiVersion: knotra/v1
+kind: Pipeline
+metadata: {name: sorted-runs}
+spec:
+  nodes:
+    review:
+      type: human
+      human: {prompt: {text: Review}}
+      outputs: {answer: {schema: {type: string}}}
+  outputs: {answer: {schema: {type: string}, bind: {from: nodes.review.outputs.answer}}}
+`;
+  const run = (
+    id: string,
+    title: string,
+    createdAt: string,
+    status: EngineRun['status'] = 'succeeded',
+  ): EngineRun => ({
+    id,
+    title,
+    createdAt,
+    updatedAt: createdAt,
+    status,
+    definitionId: 'definition-sorting',
+    profile: 'local',
+    package: {
+      entrypoint: 'pipeline.yaml',
+      source,
+      files: [{ path: 'pipeline.yaml', content: Buffer.from(source).toString('base64') }],
+    },
+    inputs: {},
+    inputArtifacts: {},
+    outputs: {},
+    artifacts: [],
+    instances: [],
+    diagnostics: [],
+    availableActions: [],
+  });
+  // Server cursors deliberately use opaque ID order, unrelated to creation times.
+  runs = [
+    run('zz-oldest', 'Old archived run', '2026-10-01T12:00:00Z'),
+    run('mm-middle', 'Recent completed run', '2026-10-04T10:00:00+02:00'),
+    run('aa-newest-a', 'Newest tied A', '2026-10-04T09:00:00Z', 'running'),
+    run('bb-newest-b', 'Newest tied B', '2026-10-04T11:00:00+02:00', 'running'),
+  ];
+  await connect(page);
+  await nav(page, 'Runs');
+  const titles = page.locator('.table-row .run-name strong');
+  await expect(titles).toHaveText([
+    'Newest tied B',
+    'Newest tied A',
+    'Recent completed run',
+    'Old archived run',
+  ]);
+  await page.getByRole('textbox', { name: 'Search engine runs' }).fill('Newest');
+  await expect(titles).toHaveText(['Newest tied B', 'Newest tied A']);
+  await page.getByRole('textbox', { name: 'Search engine runs' }).fill('');
+  await page.getByRole('combobox', { name: 'Filter engine runs' }).selectOption('succeeded');
+  await expect(titles).toHaveText(['Recent completed run', 'Old archived run']);
+  await page.getByRole('combobox', { name: 'Filter engine runs' }).selectOption('all');
+  runs.push(run('00-latest', 'Just started run', '2026-10-04T12:00:00Z', 'running'));
+  await page.getByRole('button', { name: 'Refresh', exact: true }).click();
+  await expect(titles).toHaveText([
+    'Just started run',
+    'Newest tied B',
+    'Newest tied A',
+    'Recent completed run',
+    'Old archived run',
+  ]);
+  expect(writes).toEqual([]);
 });

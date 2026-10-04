@@ -324,13 +324,13 @@ func TestDockerCodeAndArtifacts(t *testing.T) {
 		Code: &contract.CodeNode{Command: []string{
 			"python",
 			"-c",
-			`import json,os;json.dump({"answer":42},open(os.environ["KNOTRA_OUTPUT_JSON"],"w"));open("report.txt","w").write("done")`,
+			`import json,os;json.dump({"answer":42},open(os.environ["KNOTRA_OUTPUT_JSON"],"w"));os.makedirs("reports",exist_ok=True);open("reports/report.txt","w").write("done")`,
 		}},
 		Outputs: map[string]contract.Port{
 			"answer": {Schema: json.RawMessage(`{"const":42}`)},
 			"report": {
 				Artifact: &contract.ArtifactPort{MediaTypes: []string{"text/plain"}},
-				Collect:  &contract.Collect{Path: "report.txt", MediaType: "text/plain"},
+				Collect:  &contract.Collect{Path: "reports/report.txt", MediaType: "text/plain"},
 			},
 		},
 	}
@@ -344,6 +344,9 @@ func TestDockerCodeAndArtifacts(t *testing.T) {
 		}
 		if len(values["report"].Artifacts) != 1 || string(values["answer"].JSON) != "42" {
 			t.Fatalf("wrong outputs: %#v", values)
+		}
+		if values["report"].Artifacts[0].Name != "report.txt" {
+			t.Fatalf("artifact lost its filename: %#v", values["report"].Artifacts[0])
 		}
 	}
 }
@@ -382,8 +385,12 @@ func TestDockerAgentFileFinish(t *testing.T) {
 	defer cancel()
 
 	for i := 0; i < 2; i++ {
-		if _, err := r.Execute(ctx, req); err != nil {
+		values, err := r.Execute(ctx, req)
+		if err != nil {
 			t.Fatal(err)
+		}
+		if len(values["report"].Artifacts) != 1 || values["report"].Artifacts[0].Name != "report.txt" {
+			t.Fatalf("artifact lost its filename: %#v", values["report"])
 		}
 	}
 

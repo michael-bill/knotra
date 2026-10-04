@@ -1,3 +1,4 @@
+import { activeWorkspace, addResearchDemo, openActiveEditor } from './authoring';
 import { expect, test, type Page } from '@playwright/test';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
@@ -22,7 +23,7 @@ async function persisted(page: Page) {
 
 async function open(page: Page) {
   await page.goto('/');
-  await expect(page.getByRole('heading', { name: 'Research brief', exact: true })).toBeVisible();
+  await addResearchDemo(page);
   await expect.poll(() => persisted(page)).not.toBeNull();
 }
 
@@ -60,24 +61,24 @@ test('language switches live and persists without changing saved user content or
   page.on('pageerror', (error) => errors.push(error.message));
   await open(page);
   const seed = await persisted(page);
-  const userTitle = 'navigation.settings';
-  seed.workspaces[0].source = seed.workspaces[0].source.replace(
-    'title: Research brief',
-    `title: ${userTitle}`,
+  const selected = seed.workspaces.find(
+    (workspace: { id: string }) => workspace.id === seed.activeId,
   );
-  seed.workspaces[0].source += '\n# User content — Данные $& {name}\n';
-  seed.workspaces[0].savedSource = seed.workspaces[0].source;
+  const userTitle = 'navigation.settings';
+  selected.source = selected.source.replace('title: Research brief', `title: ${userTitle}`);
+  selected.source += '\n# User content — Данные $& {name}\n';
+  selected.savedSource = selected.source;
   seed.runs = [
     {
       id: 'saved-localization-demo',
-      workspaceId: seed.workspaces[0].id,
+      workspaceId: selected.id,
       title: 'User title — Заголовок',
       topic: 'User topic — Тема $ {name}',
       createdAt: '2026-01-01T10:00:00Z',
       updatedAt: '2026-01-01T10:00:00Z',
       status: 'succeeded',
-      source: seed.workspaces[0].source,
-      files: seed.workspaces[0].files,
+      source: selected.source,
+      files: selected.files,
       inputs: { topic: 'User topic — Тема $ {name}' },
       nodes: {
         discover: 'succeeded',
@@ -122,10 +123,11 @@ test('language switches live and persists without changing saved user content or
     { seed, cacheKey, cache, workspaceKey },
   );
   await page.reload();
+  await openActiveEditor(page);
   await expect(page.getByRole('heading', { name: userTitle, exact: true })).toBeVisible();
   await expect.poll(async () => (await persisted(page))?.runs?.length).toBe(1);
   await expect
-    .poll(async () => Object.keys((await persisted(page))?.workspaces?.[0]?.positions ?? {}).length)
+    .poll(async () => Object.keys((await activeWorkspace(page))?.positions ?? {}).length)
     .toBe(5);
   const before = await contentSnapshot(page);
 
@@ -140,6 +142,7 @@ test('language switches live and persists without changing saved user content or
   expect(await contentSnapshot(page)).toEqual(before);
 
   await page.reload();
+  await openActiveEditor(page);
   await expect(page.locator('html')).toHaveAttribute('lang', 'ru');
   await expect(page.getByRole('heading', { name: userTitle, exact: true })).toBeVisible();
   await settings(page, 'ru');
@@ -169,7 +172,7 @@ test('Russian navigation, search, Library and editor expose localized accessible
   const errors: string[] = [];
   page.on('pageerror', (error) => errors.push(error.message));
   await open(page);
-  const source = (await persisted(page)).workspaces[0].source;
+  const source = (await activeWorkspace(page)).source;
   await settings(page, 'en');
   await page.getByRole('combobox', { name: 'Language', exact: true }).selectOption('ru');
 
@@ -206,6 +209,7 @@ test('Russian navigation, search, Library and editor expose localized accessible
   await expect(
     library.getByRole('heading', { name: ru('library.title'), exact: true }),
   ).toBeVisible();
+  await library.getByRole('button', { name: ru('library.category.demo'), exact: true }).click();
   await expect(
     library.getByRole('heading', { name: ru('shell.researchBrief'), exact: true }),
   ).toBeVisible();
@@ -215,6 +219,7 @@ test('Russian navigation, search, Library and editor expose localized accessible
     .getByRole('navigation', { name: ru('navigation.main'), exact: true })
     .getByRole('button', { name: ru('navigation.pipelines'), exact: true })
     .click();
+  await openActiveEditor(page);
   await expect(page.getByRole('heading', { name: 'Research brief', exact: true })).toBeVisible();
   await expect(
     page.getByRole('textbox', { name: ru('editor.description'), exact: true }),
@@ -228,7 +233,7 @@ test('Russian navigation, search, Library and editor expose localized accessible
     'aria-label',
     ru('editor.find'),
   );
-  expect((await persisted(page)).workspaces[0].source).toBe(source);
+  expect((await activeWorkspace(page)).source).toBe(source);
 
   await page.getByRole('button', { name: ru('shell.newPipeline'), exact: true }).click();
   await page

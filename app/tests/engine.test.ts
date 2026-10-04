@@ -9,6 +9,7 @@ import {
   disconnectEngine,
   engineCall,
   engineCache,
+  engineSessionKey,
   eventWindow,
 } from '../src/lib/engine/client';
 
@@ -266,4 +267,39 @@ it('uses the engine ASCII path folding rules when restoring supporting files', (
   original.workspaces[0].files.push({ path: 'DATA.txt', content: 'AA==' });
   original.workspaces[0].files.push({ path: 'data.txt', content: 'AA==' });
   expect(() => readBackup(JSON.stringify(original))).toThrow('package path');
+});
+
+it('scopes transient drafts to the normalized endpoint and both engine identities', async () => {
+  let engineId = 'same:engine';
+  let principalId = 'user';
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async () =>
+      Response.json({
+        protocol: 'knotra.desktop/1',
+        engineId,
+        principalId,
+        version: '1',
+        capabilities: [],
+      }),
+    ),
+  );
+  try {
+    await connectEngine('http://127.0.0.1:8080/prefix/');
+    const first = engineSessionKey();
+    await connectEngine('http://127.0.0.1:8080/prefix');
+    expect(engineSessionKey()).toBe(first);
+    await connectEngine('http://127.0.0.1:8081/prefix');
+    const second = engineSessionKey();
+    expect(second).not.toBe(first);
+    engineId = 'same';
+    principalId = 'engine:user';
+    await connectEngine('http://127.0.0.1:8081/prefix');
+    expect(engineSessionKey()).not.toBe(second);
+    await disconnectEngine();
+    expect(engineSessionKey()).toBeUndefined();
+  } finally {
+    await disconnectEngine();
+    vi.unstubAllGlobals();
+  }
 });

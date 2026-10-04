@@ -20,7 +20,6 @@ import {
   Search,
   Plus,
   ChevronRight,
-  ArrowUpRight,
   FolderOpen,
   ArrowDownToLine,
   Check,
@@ -80,6 +79,7 @@ import {
 import { allowedFiles } from './lib/package';
 import { Modal, NodeIcon, nodeMeta } from './components/ui';
 import { RunsView, InboxView, ArtifactsView } from './components/RunViews';
+import { PipelinesView, TemplateLibrary } from './components/PipelinesView';
 import { ConnectionsView, SettingsView } from './components/ResourceViews';
 import { useEngine } from './lib/engine/useEngine';
 import {
@@ -120,18 +120,108 @@ export default function App() {
       .then(setInitial)
       .catch((error) => setError(error instanceof Error ? error.message : String(error)));
   }, []);
+  if (error)
+    return (
+      <WorkspaceRecovery
+        error={error}
+        onRestore={(value) => {
+          setError('');
+          setInitial(value);
+        }}
+      />
+    );
   if (!initial)
     return (
-      <div className="loading" role={error ? 'alert' : 'status'}>
-        {error ? translateMessage(error, locale) : translate('shell.openingLocalWorkspace', locale)}
-        {error ? (
-          <button className="button" onClick={() => location.reload()}>
-            {translate('common.retry', locale)}
-          </button>
-        ) : null}
+      <div className="loading" role="status">
+        {translate('shell.openingLocalWorkspace', locale)}
       </div>
     );
   return <LoadedApp initial={initial} />;
+}
+
+function WorkspaceRecovery({
+  error,
+  onRestore,
+}: {
+  error: string;
+  onRestore: (state: State) => void;
+}) {
+  const locale = preferredLocale();
+  const t = useTranslation(locale);
+  const input = useRef<HTMLInputElement>(null);
+  const [candidate, setCandidate] = useState<State>();
+  const [detail, setDetail] = useState(error);
+  return (
+    <div className="loading workspace-recovery" role="alert">
+      <h1>{t('storage.loadFailed')}</h1>
+      <p>{t('storage.preserved')}</p>
+      <p>{translateMessage(detail, locale)}</p>
+      <div className="heading-actions">
+        {!desktop ? (
+          <button
+            className="button"
+            onClick={async () => {
+              try {
+                const raw = localStorage.getItem('knotra.workspace.v1');
+                if (raw !== null)
+                  await exportFile('knotra-workspace-original.json', raw, 'application/json');
+              } catch (e) {
+                setDetail(e instanceof Error ? e.message : String(e));
+              }
+            }}
+          >
+            {t('storage.downloadOriginal')}
+          </button>
+        ) : null}
+        <button className="button" onClick={() => input.current?.click()}>
+          {t('storage.restore')}
+        </button>
+        <button className="button" onClick={() => location.reload()}>
+          {t('common.retry')}
+        </button>
+      </div>
+      <input
+        ref={input}
+        hidden
+        type="file"
+        accept=".json,application/json"
+        aria-label={t('storage.restore')}
+        onChange={async (event) => {
+          const file = event.target.files?.[0];
+          event.target.value = '';
+          if (!file) return;
+          try {
+            if (file.size > 96 * 1024 * 1024) throw new Error('Workspace backup exceeds 96 MiB.');
+            setCandidate({ ...readBackup(await file.text()), starterRevision: 3 });
+          } catch (e) {
+            setDetail(e instanceof Error ? e.message : String(e));
+            setCandidate(undefined);
+          }
+        }}
+      />
+      {candidate ? (
+        <>
+          <p>
+            {t('storage.replaceConfirm')}{' '}
+            {t('pipelines.count', { count: candidate.workspaces.length })}
+          </p>
+          <button
+            className="button primary"
+            onClick={async () => {
+              try {
+                await saveState(candidate);
+                onRestore(candidate);
+              } catch (e) {
+                setDetail(e instanceof Error ? e.message : String(e));
+              }
+            }}
+          >
+            {t('shell.restoreBackup')}
+          </button>
+        </>
+      ) : null}
+    </div>
+  );
 }
 
 function LoadedApp({ initial }: { initial: State }) {
@@ -142,6 +232,7 @@ function LoadedApp({ initial }: { initial: State }) {
   const [state, setState] = useState<State>(initial);
   const t = useTranslation(state.locale);
   const [section, setSection] = useState<Section>('pipelines');
+  const [pipelinePage, setPipelinePage] = useState<'list' | 'editor'>('list');
   const [dialog, setDialog] = useState<Dialog>();
   const [toast, setToast] = useState<{
     message: string;
@@ -153,6 +244,7 @@ function LoadedApp({ initial }: { initial: State }) {
   const [query, setQuery] = useState('');
   const [topic, setTopic] = useState('Reliable AI workflows');
   const [activeRun, setActiveRun] = useState<string>();
+  const [reviewDrafts, setReviewDrafts] = useState<Record<string, Record<string, string>>>({});
   const [busy, setBusy] = useState(false);
   const [pendingPackage, setPendingPackage] = useState<OpenedPackage>();
   const [entries, setEntries] = useState<string[]>([]);
@@ -195,8 +287,9 @@ function LoadedApp({ initial }: { initial: State }) {
   const notifyRaw = useCallback((message: string) => setToast({ message, raw: true }), []);
   useLayoutEffect(() => {
     document.querySelector('.main-content')?.scrollTo(0, 0);
-  }, [section, runMode, activeRun]);
+  }, [section, pipelinePage, workspace?.id, runMode, activeRun]);
   const engine = useEngine(notifyRaw);
+  const currentReviewScope = engine.sessionKey ?? 'offline';
   const waiting =
     state.runs.filter((r) => r.status === 'waiting_human').length +
     (engine.info ? engine.requests.filter((request) => request.status === 'open').length : 0);
@@ -304,6 +397,7 @@ function LoadedApp({ initial }: { initial: State }) {
       }
       if (e.key.toLowerCase() === 's') {
         e.preventDefault();
+        if (section !== 'pipelines' || pipelinePage !== 'editor' || dialog) return;
         const field = document.activeElement;
         if (field instanceof HTMLInputElement || field instanceof HTMLTextAreaElement) {
           const label = field.getAttribute('aria-label');
@@ -332,11 +426,12 @@ function LoadedApp({ initial }: { initial: State }) {
     };
     window.addEventListener('keydown', key);
     return () => window.removeEventListener('keydown', key);
-  }, [saveDraft]);
+  }, [saveDraft, section, pipelinePage, dialog]);
   function selectWorkspace(id: string) {
     setOpenResources(undefined);
     setState((s) => ({ ...s, activeId: id }));
     setSection('pipelines');
+    setPipelinePage('editor');
     closeDialog();
   }
   function addWorkspace(opened: OpenedPackage) {
@@ -351,15 +446,17 @@ function LoadedApp({ initial }: { initial: State }) {
     };
     setState((s) => ({ ...s, workspaces: [...s.workspaces, w], activeId: w.id }));
     setSection('pipelines');
+    setPipelinePage('editor');
     closeDialog();
     notify('messages.pipelinePackageAddedToYourLocalWorkspace');
   }
   function selectExample(id: string) {
     setOpenResources(undefined);
     const example = examples.find((e) => e.id === id)!;
-    const w = fromExample(example);
+    const w = fromExample(example, state.locale);
     setState((s) => ({ ...s, workspaces: [...s.workspaces, w], activeId: w.id }));
     setSection('pipelines');
+    setPipelinePage('editor');
     closeDialog();
   }
   async function importNative() {
@@ -637,6 +734,7 @@ function LoadedApp({ initial }: { initial: State }) {
   function navigate(next: Section) {
     setOpenResources(undefined);
     setSection(next);
+    if (next === 'pipelines') setPipelinePage('list');
     if (next === 'runs') setActiveRun(undefined);
   }
   function openImport() {
@@ -709,7 +807,11 @@ function LoadedApp({ initial }: { initial: State }) {
             <div className="sidebar-pipelines">
               {state.workspaces.map((w) => (
                 <button
-                  className={workspace?.id === w.id && section === 'pipelines' ? 'selected' : ''}
+                  className={
+                    workspace?.id === w.id && section === 'pipelines' && pipelinePage === 'editor'
+                      ? 'selected'
+                      : ''
+                  }
                   key={w.id}
                   onClick={() => selectWorkspace(w.id)}
                   title={names.get(w.id)}
@@ -749,22 +851,36 @@ function LoadedApp({ initial }: { initial: State }) {
               <div className="workspace-location">
                 <span>{t('shell.personalWorkspace')}</span>
                 <ChevronRight size={13} />
-                <strong>
-                  {t(
-                    section === 'settings'
-                      ? 'navigation.settings'
-                      : navigation.find((item) => item.id === section)!.title,
-                  )}
-                </strong>
+                {section === 'pipelines' && pipelinePage === 'editor' ? (
+                  <>
+                    <button className="text-button" onClick={() => navigate('pipelines')}>
+                      {t('navigation.pipelines')}
+                    </button>
+                    <ChevronRight size={13} />
+                    <strong>
+                      {workspace ? names.get(workspace.id) : t('editor.pipelineDraft')}
+                    </strong>
+                  </>
+                ) : (
+                  <strong>
+                    {t(
+                      section === 'settings'
+                        ? 'navigation.settings'
+                        : navigation.find((item) => item.id === section)!.title,
+                    )}
+                  </strong>
+                )}
               </div>
               <div className="header-actions">
                 <span className="runtime-label">
                   {t(desktop ? 'resources.desktop' : 'shell.browserPreview')}
                 </span>
-                <button className="button" disabled={busy} onClick={openImport}>
-                  <FolderOpen size={15} />
-                  <span>{t(busy ? 'shell.working' : 'common.openPackage')}</span>
-                </button>
+                {section !== 'pipelines' || pipelinePage !== 'list' ? (
+                  <button className="button" disabled={busy} onClick={openImport}>
+                    <FolderOpen size={15} />
+                    <span>{t(busy ? 'shell.working' : 'common.openPackage')}</span>
+                  </button>
+                ) : null}
                 <button
                   className="icon-button notification-button"
                   aria-label={
@@ -803,7 +919,15 @@ function LoadedApp({ initial }: { initial: State }) {
                   ) : null}
                 </>
               ) : null}
-              {section === 'pipelines' ? (
+              {section === 'pipelines' && pipelinePage === 'list' ? (
+                <PipelinesView
+                  workspaces={state.workspaces}
+                  onOpen={selectWorkspace}
+                  onCreate={() => setDialog('library')}
+                  onImport={openImport}
+                  busy={busy}
+                />
+              ) : section === 'pipelines' ? (
                 <Suspense fallback={<div className="loading">{t('shell.openingWorkspace')}</div>}>
                   <WorkspaceView
                     resourcesRequested={openResources}
@@ -811,7 +935,10 @@ function LoadedApp({ initial }: { initial: State }) {
                     workspace={workspace}
                     validation={validation}
                     engineConnected={!!engine.info && !engine.error}
-                    onEngineRun={() => setDialog('engine-run')}
+                    onEngineRun={() => {
+                      if (engine.info && !engine.error) setDialog('engine-run');
+                      else navigate('settings');
+                    }}
                     demo={workspace ? demoAvailable(workspace) : false}
                     onChange={(source, files, positions) => {
                       if (!workspace) return;
@@ -868,7 +995,18 @@ function LoadedApp({ initial }: { initial: State }) {
                 />
               ) : section === 'inbox' && runMode === 'engine' ? (
                 <EngineInboxView
+                  key={currentReviewScope}
                   engine={engine}
+                  responseDrafts={reviewDrafts[currentReviewScope] ?? {}}
+                  onResponseDraftsChange={(update) =>
+                    setReviewDrafts((current) => ({
+                      ...current,
+                      [currentReviewScope]:
+                        typeof update === 'function'
+                          ? update(current[currentReviewScope] ?? {})
+                          : update,
+                    }))
+                  }
                   onRun={(id) => {
                     setActiveRun(id);
                     setSection('runs');
@@ -894,6 +1032,7 @@ function LoadedApp({ initial }: { initial: State }) {
                   onSource={(kind) => {
                     setOpenResources(kind);
                     setSection('pipelines');
+                    setPipelinePage('editor');
                   }}
                 />
               ) : (
@@ -937,7 +1076,7 @@ function LoadedApp({ initial }: { initial: State }) {
               try {
                 if (file.size > 96 * 1024 * 1024)
                   throw new Error('Workspace backup exceeds 96 MiB.');
-                setRestoring(readBackup(await file.text()));
+                setRestoring({ ...readBackup(await file.text()), starterRevision: 3 });
                 setDialog('restore');
               } catch (error) {
                 notify(error instanceof Error ? error.message : String(error));
@@ -973,6 +1112,7 @@ function LoadedApp({ initial }: { initial: State }) {
                       setState(restoring);
                       setActiveRun(undefined);
                       setSection('pipelines');
+                      setPipelinePage('list');
                       setRunMode('demo');
                       setRestoring(undefined);
                       closeDialog();
@@ -1006,36 +1146,9 @@ function LoadedApp({ initial }: { initial: State }) {
               onClose={closeDialog}
               wide
             >
-              <div className="library-grid">
-                {examples.map((e) => (
-                  <button key={e.id} className="template-card" onClick={() => selectExample(e.id)}>
-                    <span className={`node-icon tint-${e.id === 'research' ? 'green' : 'violet'}`}>
-                      {e.id === 'research' ? (
-                        <Workflow size={21} />
-                      ) : (
-                        <NodeIcon
-                          kind={
-                            (e.id === 'subpipeline'
-                              ? 'pipeline'
-                              : e.id === 'artifact-mount'
-                                ? 'code'
-                                : e.id) as NodeKind
-                          }
-                          size={21}
-                        />
-                      )}
-                    </span>
-                    <h3>{t(e.titleKey)}</h3>
-                    <p>{t(e.descriptionKey)}</p>
-                    <span className="template-kind">
-                      {t(e.kindKey)}
-                      <ArrowUpRight size={14} />
-                    </span>
-                  </button>
-                ))}
-              </div>
+              <TemplateLibrary onSelect={selectExample} />
               <div className="modal-footer">
-                <span>{t('shell.examplesFollowTheRepositorySNotationV1Fixtures')}</span>
+                <span>{t('library.footer')}</span>
                 <button
                   className="button"
                   onClick={() => {
@@ -1044,8 +1157,8 @@ function LoadedApp({ initial }: { initial: State }) {
                     );
                     p.metadata = {
                       name: 'untitled-pipeline',
-                      title: 'Untitled pipeline',
-                      description: 'Your next process starts here.',
+                      title: t('pipelines.untitled'),
+                      description: t('pipelines.newDescription'),
                     };
                     addWorkspace({ source: stringify(p), entrypoint: 'pipeline.yaml', files: [] });
                   }}
@@ -1200,6 +1313,7 @@ function LoadedApp({ initial }: { initial: State }) {
                       const workspaces = s.workspaces.filter((w) => w.id !== workspace?.id);
                       return { ...s, workspaces, activeId: workspaces[0]?.id ?? '' };
                     });
+                    setPipelinePage('list');
                     closeDialog();
                   }}
                 >

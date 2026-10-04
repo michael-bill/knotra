@@ -211,6 +211,10 @@ export async function disconnectEngine(): Promise<void> {
   if (desktop) await invoke('engine_disconnect');
 }
 
+export function engineSessionKey(): string | undefined {
+  return connection?.key;
+}
+
 export async function engineCache(): Promise<EngineCache> {
   if (!connection) return { cache: {}, pending: [] };
   return desktop ? invoke('engine_cache') : cache();

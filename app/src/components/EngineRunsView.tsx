@@ -41,7 +41,10 @@ export function EngineRunsView({
         onReview={onReview}
       />
     );
-  const filtered = engine.runs.filter(
+  const ordered = [...engine.runs].sort(
+    (a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt) || b.id.localeCompare(a.id),
+  );
+  const filtered = ordered.filter(
     (run) =>
       (status === 'all' || status === run.status) &&
       `${run.id} ${run.title}`.toLowerCase().includes(search.toLowerCase()),

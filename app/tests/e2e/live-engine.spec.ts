@@ -68,12 +68,20 @@ test.beforeEach(async ({ page }) => {
 
 test('real Ollama run publishes an artifact and replays history on a fresh client', async ({
   page,
+  browser,
 }, testInfo) => {
   const errors: string[] = [];
   page.on('pageerror', (error) => errors.push(error.message));
   const title = `Desktop greeting ${randomUUID().slice(0, 8)}`;
   await navigate(page, 'Pipelines');
-  await page.getByRole('button', { name: 'New pipeline', exact: true }).click();
+  await page
+    .locator('.app-sidebar')
+    .getByRole('button', { name: 'New pipeline', exact: true })
+    .click();
+  await page
+    .getByRole('dialog')
+    .getByRole('button', { name: 'Building blocks', exact: true })
+    .click();
   await page
     .getByRole('dialog')
     .getByRole('button', { name: /Local Ollama greeting/ })
@@ -113,17 +121,24 @@ test('real Ollama run publishes an artifact and replays history on a fresh clien
   const downloaded = page.waitForEvent('download');
   await page.getByRole('button', { name: 'Export', exact: true }).click();
   const exported = await downloaded;
+  expect(exported.suggestedFilename()).toBe('greeting.txt');
   expect(readFileSync((await exported.path())!)).toEqual(Buffer.from(`${run.outputs.greeting}\n`));
 
-  // A fresh browser has neither a stored cursor nor previously displayed events.
-  await page.evaluate(() => localStorage.clear());
-  await page.reload();
-  await connect(page);
-  await navigate(page, 'Runs');
-  await page.locator('.table-row').filter({ hasText: title }).click();
-  await page.getByRole('button', { name: 'Timeline', exact: true }).click();
-  await expect.poll(() => page.locator('.timeline-event').count()).toBeGreaterThan(4);
-  await expect(page.locator('.timeline')).toContainText('succeeded');
+  // A separate context has neither localStorage metadata nor IndexedDB event IDs/cursor.
+  const freshContext = await browser.newContext({ locale: 'en-US' });
+  try {
+    const fresh = await freshContext.newPage();
+    fresh.on('pageerror', (error) => errors.push(error.message));
+    await fresh.goto(new URL('/', page.url()).toString());
+    await connect(fresh);
+    await navigate(fresh, 'Runs');
+    await fresh.locator('.table-row').filter({ hasText: title }).click();
+    await fresh.getByRole('button', { name: 'Timeline', exact: true }).click();
+    await expect.poll(() => fresh.locator('.timeline-event').count()).toBeGreaterThan(4);
+    await expect(fresh.locator('.timeline')).toContainText('succeeded');
+  } finally {
+    await freshContext.close();
+  }
   expect(errors).toEqual([]);
 });
 
@@ -234,6 +249,7 @@ Path(os.environ['KNOTRA_OUTPUT_JSON']).write_text('{}')
   const downloaded = page.waitForEvent('download');
   await page.getByRole('button', { name: 'Export', exact: true }).click();
   const exported = await downloaded;
+  expect(exported.suggestedFilename()).toBe('copy.bin');
   expect(readFileSync((await exported.path())!)).toEqual(bytes);
 });
 
@@ -286,6 +302,7 @@ spec:
   await expect.poll(() => page.locator('.execution-operation').count()).toBeGreaterThanOrEqual(5);
   const { run } = await (await page.request.get(`${endpoint}/v1/runs/${started.id}`)).json();
   expect(run.outputs.summary).toContain('Live agent observation works');
+  expect(run.artifacts.map((artifact: { name: string }) => artifact.name)).toEqual(['note.txt']);
   const instance = run.instances.find((item: { nodeId: string }) => item.nodeId === 'researcher');
   const history = (
     await (

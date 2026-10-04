@@ -28,7 +28,8 @@ workspaces and backups without a language keep their data and use that initial d
 
 Translation changes interface labels, help, accessibility text, frontend validation messages and
 date/size formatting. Pipeline YAML, names, prompts, model output, engine diagnostics and artifact
-contents retain their original text.
+contents retain their original text. Starter titles and descriptions are localized once when a draft
+is created; later language changes preserve that draft's content.
 
 The catalogs are [en.json](src/locales/en.json) and [ru.json](src/locales/ru.json). Components refer
 to stable keys such as `t('settings.language')`; English phrases are catalog values. See
@@ -52,14 +53,14 @@ In Settings, save `http://127.0.0.1:8787` and connect. Native requests do not ne
 preview requires the exact allowed origin above. Remote engines require HTTPS and a token;
 credentials are kept separate from draft exports.
 
-Open **Library → Local Ollama greeting**, or import `examples/local/pipeline.yaml`, choose **Run**,
-select profile `local`, and check admission or start. The engine publishes an immutable package,
-executes Ollama and Docker, and saves the result. Engine Runs opens a live graph with step states,
-active connections, waiting reasons and elapsed times. Click a block to inspect its input/output,
-streaming model response, prompt context, agent iterations and tool calls. Nested graphs and
-iterations have their own scopes. The inspector includes token counts, first-token latency, failures
-and produced artifacts; the waterfall shows overlapping work. A follow toggle tracks the active step
-while the run progresses.
+Open **Pipelines → Hello, model**, or create a copy through **New pipeline → Ready to run**. Choose
+**Run**, select profile `local`, and check admission or start. The engine publishes an immutable
+package, executes Ollama and Docker, and saves the result. Engine Runs opens a live graph with step
+states, active connections, waiting reasons and elapsed times. Click a block to inspect its
+input/output, streaming model response, prompt context, agent iterations and tool calls. Nested
+graphs and iterations have their own scopes. The inspector includes token counts, first-token
+latency, failures and produced artifacts; the waterfall shows overlapping work. A follow toggle
+tracks the active step while the run progresses.
 
 Execution history can be rewound to a recorded state without repeating operations. Run comparison
 shows changes to prompts, packages, input/output and step timings. Earlier node activity loads from
@@ -70,10 +71,21 @@ The instance list, timeline and immutable package remain available. Inbox answer
 requests; Artifacts uploads, previews and exports registered bytes. A run keeps executing after the
 app closes.
 
-Other library examples are authoring templates. Their logical models, MCP tools and sandbox names
-need a matching EngineProfile. The implemented model adapter is Ollama; other provider names are
-rejected during admission. **Guided demo** uses sample data; it does not make model calls. The live
-boundary is defined by [the API contract](../docs/api/desktop-v1.md) and
+The four [local starters](../examples/starter/README.md) range from a small hello-world check to
+independent agents comparing source materials, a generated playable game with independent tests, and
+a publication with editorial review and human approval. The research scorer selects the eligible
+winner in code; the model explains that decision. The game engine runs fixed tests and carries their
+feedback through at most four generation attempts before independent verification. All use
+`model_main`, useful default inputs, and no MCP or secrets. Python steps use `python_box`; the game
+requires `node_box` and the `node:22-alpine` image. The **Pipelines** landing page lists drafts with
+search and sorting; opening a card enters its editor. Upgrades add missing starters and remove only
+unchanged obsolete examples; edited drafts and execution history are preserved.
+
+The library's **Building blocks** tab keeps the small notation examples, including the original
+local greeting. Their declared model, MCP, sandbox and secret resources need a matching
+EngineProfile. The implemented model adapter is Ollama; other provider names are rejected during
+admission. **Guided demo** uses sample data; it does not make model calls. The live boundary is
+defined by [the API contract](../docs/api/desktop-v1.md) and
 [OpenAPI](../docs/api/desktop-v1.openapi.json).
 
 ## Checks and build
@@ -92,9 +104,9 @@ bun run desktop:build
 ```
 
 Default browser tests cover authoring, demos, interface language switching and a contract fixture.
-Three extra acceptance tests use a real engine: streamed Ollama output/history replay, a Qwen agent
-using file tools, and a human review followed by a child pipeline and binary artifact round-trip.
-The engine must have the bundled `local` profile and allow the preview origin:
+Opt-in acceptance tests use a real engine for streamed Ollama output/history replay, a Qwen agent
+using file tools, human review and artifact round-trips, including the four bundled starter
+packages. The engine must have the bundled `local` profile and allow the preview origin:
 
 ```sh
 KNOTRA_E2E_ENDPOINT=http://127.0.0.1:8787 bun run test:e2e

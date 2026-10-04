@@ -16,6 +16,7 @@ import (
 	"net/url"
 	"os"
 	"os/exec"
+	"path"
 	"path/filepath"
 	"slices"
 	"sort"
@@ -583,7 +584,7 @@ func (r *Runner) collect(ctx context.Context, req Request, s *sandbox, values co
 		if err != nil {
 			return nil, err
 		}
-		artifact, err := r.Hooks.PutArtifact(ctx, name, port.Collect.MediaType, data)
+		artifact, err := r.Hooks.PutArtifact(ctx, path.Base(port.Collect.Path), port.Collect.MediaType, data)
 		if err != nil {
 			return nil, err
 		}

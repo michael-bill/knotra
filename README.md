@@ -36,6 +36,7 @@ browser preview.
 make build helper firewall
 ollama pull qwen3.5:9b
 docker pull python:3.13-alpine
+docker pull node:22-alpine
 export KNOTRA_DATABASE_URL='postgres://USER@127.0.0.1:5432/knotra?sslmode=disable'
 bin/knotra serve --profile examples/local/profile.yaml
 ```
@@ -44,11 +45,16 @@ bin/knotra serve --profile examples/local/profile.yaml
 терминале:
 
 ```sh
-bin/knotra validate examples/local/pipeline.yaml --profile examples/local/profile.yaml
-bin/knotra run examples/local/pipeline.yaml --profile local --input 'name="Knotra"' --watch
+bin/knotra validate examples/starter/hello/pipeline.yaml --profile examples/local/profile.yaml
+bin/knotra run examples/starter/hello/pipeline.yaml --profile local --watch
 bin/knotra runs list
 bin/knotra artifacts list
 ```
+
+Первый сценарий сохраняет приветствие в скачиваемый `greeting.txt`. Ещё три
+[готовых пайплайна](examples/starter/README.md) показывают исследование исходных материалов
+независимыми агентами, создание игры с тестами и редакторский процесс с согласованием человеком. Они
+доступны и на стартовой странице приложения.
 
 [Развёртывание и настройки](docs/running.md) включают отдельную инфраструктуру Compose, подключение
 существующих сервисов и восстановление. [Справка CLI](internal/cli/README.md) описывает команды,

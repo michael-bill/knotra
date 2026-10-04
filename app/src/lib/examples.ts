@@ -1,8 +1,8 @@
-import { stringify } from 'yaml';
+import { parseDocument, stringify } from 'yaml';
 import localSource from '../../../examples/local/pipeline.yaml?raw';
 import { base64, textBytes } from './bytes';
 import type { PackageFile, Pipeline, Workspace } from './types';
-import type { MessageKey } from './i18n';
+import { translate, type Locale, type MessageKey } from './i18n';
 
 const stringPort = { schema: { type: 'string' } };
 export const researchPipeline: Pipeline = {
@@ -125,6 +125,9 @@ export interface Example {
   titleKey: MessageKey;
   descriptionKey: MessageKey;
   kindKey: MessageKey;
+  category: 'starter' | 'block' | 'demo';
+  requirements: ('model' | 'sandbox' | 'nodeSandbox' | 'mcp' | 'secret')[];
+  resultKey?: MessageKey;
   source: string;
   files: PackageFile[];
 }
@@ -134,6 +137,64 @@ const rawFiles = import.meta.glob('../../../contracts/v1/fixtures/positive/**/*'
   query: '?raw',
   import: 'default',
 }) as Record<string, string>;
+const starterFiles = import.meta.glob('../../../examples/starter/*/**/*', {
+  eager: true,
+  query: '?raw',
+  import: 'default',
+}) as Record<string, string>;
+
+function packageFiles(files: Record<string, string>, prefix: string): PackageFile[] {
+  return Object.entries(files)
+    .filter(([path]) => path.startsWith(prefix) && path !== prefix + 'pipeline.yaml')
+    .map(([path, content]) => ({
+      path: path.slice(prefix.length),
+      content: base64(textBytes(content)),
+    }));
+}
+
+const starters: Pick<Example, 'id' | 'titleKey' | 'descriptionKey' | 'kindKey' | 'resultKey'>[] = [
+  {
+    id: 'hello',
+    titleKey: 'starter.hello.title',
+    descriptionKey: 'starter.hello.description',
+    kindKey: 'starter.hello.kind',
+    resultKey: 'starter.hello.result',
+  },
+  {
+    id: 'research-dossier',
+    titleKey: 'starter.research.title',
+    descriptionKey: 'starter.research.description',
+    kindKey: 'starter.research.kind',
+    resultKey: 'starter.research.result',
+  },
+  {
+    id: 'tic-tac-toe',
+    titleKey: 'starter.game.title',
+    descriptionKey: 'starter.game.description',
+    kindKey: 'starter.game.kind',
+    resultKey: 'starter.game.result',
+  },
+  {
+    id: 'publication',
+    titleKey: 'starter.publication.title',
+    descriptionKey: 'starter.publication.description',
+    kindKey: 'starter.publication.kind',
+    resultKey: 'starter.publication.result',
+  },
+];
+
+const fixtureRequirements: Record<string, Example['requirements']> = {
+  llm: ['model'],
+  agent: ['model', 'sandbox', 'mcp', 'secret'],
+  code: ['sandbox'],
+  tool: ['mcp'],
+  switch: [],
+  human: [],
+  foreach: [],
+  loop: [],
+  subpipeline: ['model'],
+  'artifact-mount': ['sandbox'],
+};
 const fixtureTitles: Record<string, [MessageKey, MessageKey]> = {
   llm: ['shell.modelResponse', 'shell.structuredGenerationWithAPromptAndAnExternal'],
   agent: ['shell.autonomousResearch', 'shell.aBoundedAgentWithMcpToolsAndAn'],
@@ -152,6 +213,8 @@ export const examples: Example[] = [
     titleKey: 'shell.researchBrief',
     descriptionKey: 'shell.exploreTheCompleteWorkbenchWithAGuidedDemo',
     kindKey: 'shell.5NodesDemoAvailable',
+    category: 'demo',
+    requirements: ['model', 'sandbox', 'mcp'],
     source: RESEARCH_SOURCE,
     files: [],
   },
@@ -160,15 +223,29 @@ export const examples: Example[] = [
     titleKey: 'library.local.title',
     descriptionKey: 'shell.generateAndSaveAGreetingWithTheBundled',
     kindKey: 'shell.llmCodeLocalProfile',
+    category: 'block',
+    requirements: ['model', 'sandbox'],
     source: localSource,
     files: [],
   },
+  ...starters.map((starter): Example => {
+    const prefix = `../../../examples/starter/${starter.id}/`;
+    return {
+      ...starter,
+      category: 'starter',
+      requirements: starter.id === 'tic-tac-toe' ? ['model', 'nodeSandbox'] : ['model', 'sandbox'],
+      source: starterFiles[prefix + 'pipeline.yaml'],
+      files: packageFiles(starterFiles, prefix),
+    };
+  }),
   ...Object.entries(fixtureTitles).map(([id, [title, description]]) => {
     const prefix = `../../../contracts/v1/fixtures/positive/${id}/`;
     return {
       id,
       titleKey: title,
       descriptionKey: description,
+      category: 'block' as const,
+      requirements: fixtureRequirements[id],
       kindKey: (
         {
           llm: 'shell.llm',
@@ -184,31 +261,33 @@ export const examples: Example[] = [
         } as Record<string, MessageKey>
       )[id],
       source: rawFiles[prefix + 'pipeline.yaml'],
-      files: Object.entries(rawFiles)
-        .filter(([path]) => path.startsWith(prefix) && path !== prefix + 'pipeline.yaml')
-        .map(([path, content]) => ({
-          path: path.slice(prefix.length),
-          content: base64(textBytes(content)),
-        })),
+      files: packageFiles(rawFiles, prefix),
     };
   }),
 ];
 
-export function fromExample(example: Example): Workspace {
+export function fromExample(example: Example, locale: Locale = 'en'): Workspace {
+  let source = example.source;
+  // The guided demo relies on its exact canonical source. New starter names
+  // become ordinary authoring content once created and are never retranslated.
+  if (example.category === 'starter') {
+    const document = parseDocument(source);
+    document.setIn(['metadata', 'title'], translate(example.titleKey, locale));
+    document.setIn(['metadata', 'description'], translate(example.descriptionKey, locale));
+    source = document.toString({ lineWidth: 110 });
+  }
   return {
     id: crypto.randomUUID(),
     entrypoint: 'pipeline.yaml',
-    source: example.source,
-    savedSource: example.source,
-    files: example.files,
+    source,
+    savedSource: source,
+    files: example.files.map((file) => ({ ...file })),
     updatedAt: new Date().toISOString(),
   };
 }
 
-export function initialWorkspaces(): Workspace[] {
-  return [
-    examples[0],
-    examples.find((e) => e.id === 'agent')!,
-    examples.find((e) => e.id === 'foreach')!,
-  ].map(fromExample);
+export function initialWorkspaces(locale: Locale = 'en'): Workspace[] {
+  return examples
+    .filter((example) => example.category === 'starter')
+    .map((example) => fromExample(example, locale));
 }

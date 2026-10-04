@@ -66,8 +66,12 @@ export default function SourceEditor({
         basicSetup,
         yaml(),
         EditorView.editable.of(!readOnly),
+        EditorState.readOnly.of(readOnly),
         languageCompartment.current.of([
-          EditorView.contentAttributes.of({ 'aria-label': t(label) }),
+          EditorView.contentAttributes.of({
+            'aria-label': t(label),
+            ...(readOnly ? { tabindex: '0', 'aria-readonly': 'true' } : {}),
+          }),
           EditorState.phrases.of(
             Object.fromEntries(editorPhrases.map(([phrase, key]) => [phrase, t(key)])),
           ),
@@ -87,13 +91,16 @@ export default function SourceEditor({
   useEffect(() => {
     editor.current?.dispatch({
       effects: languageCompartment.current.reconfigure([
-        EditorView.contentAttributes.of({ 'aria-label': t(label) }),
+        EditorView.contentAttributes.of({
+          'aria-label': t(label),
+          ...(readOnly ? { tabindex: '0', 'aria-readonly': 'true' } : {}),
+        }),
         EditorState.phrases.of(
           Object.fromEntries(editorPhrases.map(([phrase, key]) => [phrase, t(key)])),
         ),
       ]),
     });
-  }, [label, locale, t]);
+  }, [label, locale, t, readOnly]);
   useEffect(() => {
     editor.current?.dispatch({
       effects: themeCompartment.current.reconfigure(createEditorTheme(theme)),

@@ -15,6 +15,7 @@ docker info
 ollama list
 make build helper firewall
 docker pull python:3.13-alpine
+docker pull node:22-alpine
 ```
 
 `make helper` определяет архитектуру Docker daemon. Если она недоступна при сборке, задайте
@@ -77,13 +78,14 @@ docker compose start
 В другом терминале, из корня репозитория:
 
 ```sh
-bin/knotra validate examples/local/pipeline.yaml
-bin/knotra validate examples/local/pipeline.yaml --remote --profile local
-bin/knotra run examples/local/pipeline.yaml --profile local --input 'name="Knotra"' --wait
+bin/knotra validate examples/starter/hello/pipeline.yaml
+bin/knotra validate examples/starter/hello/pipeline.yaml --remote --profile local
+bin/knotra run examples/starter/hello/pipeline.yaml --profile local --wait
 bin/knotra runs list
 ```
 
-Модель создаст JSON-приветствие, кодовый кубик запишет его в файл, движок опубликует артефакт.
+Модель создаст приветствие для входа `name`, кодовый кубик запишет его в `greeting.txt`, движок
+опубликует артефакт. Этот небольшой сценарий проверяет подключение и сохранение результата.
 Используйте ID из результата:
 
 ```sh
@@ -94,6 +96,12 @@ bin/knotra artifacts download ARTIFACT_ID --output greeting.txt
 CLI проверяет размер и SHA-256 до записи файла. `--force` разрешает заменить уже существующий файл.
 `--json` предназначен для скриптов; справочник команд доступен через `bin/knotra --help` и в
 [документации CLI](../internal/cli/README.md).
+
+Другие [готовые сценарии](../examples/starter/README.md) показывают исследование трёх вариантов
+независимыми агентами с расчётом оценок и выбором подходящего варианта кодом, создание игры с
+управляемым движком циклом генерации и фиксированных тестов, а также редакторский процесс с
+согласованием человеком. Все четыре используют профиль `local` и `model_main`; Python-шагам нужен
+`python_box`, игре — `node_box` с образом `node:22-alpine`. MCP-серверы и секреты не нужны.
 
 Для `human`-кубиков:
 
@@ -110,9 +118,13 @@ bin/knotra runs watch RUN_ID
 ## Подключение desktop и browser preview
 
 Движок по умолчанию слушает `http://127.0.0.1:8787`. Запустите приложение по
-[desktop README](../app/README.md), укажите этот адрес в Settings и подключитесь. В Library есть
-**Local Ollama greeting**, использующий bundled профиль `local`. При запуске движок проверяет
-admission и фиксирует текущий пакет; редактирование черновика не меняет уже принятый запуск.
+[desktop README](../app/README.md), укажите этот адрес в Settings и подключитесь. На странице
+**Пайплайны** выберите **Привет, модель**, **Исследование по исходным материалам**, **Создать игру в
+крестики-нолики** или **От брифа к согласованной публикации**. Новую копию можно создать через
+**Новый пайплайн → Готовые сценарии**; при запуске выберите профиль `local`. Технические примеры и
+прежнее приветствие доступны в категории **Примеры блоков**, отдельная категория **Демонстрация**
+работает с готовыми результатами. При запуске движок проверяет admission и фиксирует текущий пакет;
+редактирование черновика не меняет уже принятый запуск.
 
 Для browser preview добавьте при старте движка:
 

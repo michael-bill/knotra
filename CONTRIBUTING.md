@@ -74,8 +74,8 @@ cargo test --locked --manifest-path src-tauri/Cargo.toml
 
 `bun run format` formats app sources. `bunx prettier --write .. --ignore-path ../.prettierignore`
 also formats repository documentation and supported configs; `.prettierignore` excludes the notation
-fixtures and generated content. Use `black --check scripts examples/integration` for the three
-Python sources. The structural fixture script has reproducible
+fixtures and generated content. Use `black --check scripts examples/integration examples/starter`
+for the Python sources. The structural fixture script has reproducible
 [setup instructions](contracts/v1/fixtures/README.md).
 
 The desktop CI workflow runs frontend and contract-script checks on Linux and native tests on macOS.

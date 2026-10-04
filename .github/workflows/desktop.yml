@@ -53,5 +53,9 @@ jobs:
       - run:
           /tmp/knotra-contract-venv/bin/pip install -r scripts/requirements-contract.txt
           black==25.1.0
-      - run: /tmp/knotra-contract-venv/bin/black --check scripts examples/integration
+      - run:
+          /tmp/knotra-contract-venv/bin/black --check scripts examples/integration examples/starter
       - run: /tmp/knotra-contract-venv/bin/python scripts/check_contract.py
+      - run:
+          PYTHONDONTWRITEBYTECODE=1 /tmp/knotra-contract-venv/bin/python
+          examples/starter/research_test.py

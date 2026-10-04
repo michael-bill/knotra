@@ -13,8 +13,11 @@ export function EngineArtifactsView({ engine }: { engine: EngineController }) {
   const [preview, setPreview] = useState('');
   const [previewNotice, setPreviewNotice] = useState('');
   const [error, setError] = useState('');
+  const [uploadError, setUploadError] = useState('');
+  const [exportError, setExportError] = useState('');
   const [localError, setLocalError] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [exporting, setExporting] = useState(false);
   const files = engine.artifacts.filter((artifact) =>
     `${artifact.name} ${artifact.id} ${artifact.origin.runId ?? ''}`
       .toLowerCase()
@@ -26,7 +29,7 @@ export function EngineArtifactsView({ engine }: { engine: EngineController }) {
     setPreview('');
     setPreviewNotice('');
     setError('');
-    setLocalError(false);
+    setExportError('');
     setBusy(false);
     if (artifact && !engine.info)
       setPreviewNotice('Reconnect to the engine to verify and preview these bytes.');
@@ -45,7 +48,6 @@ export function EngineArtifactsView({ engine }: { engine: EngineController }) {
         .catch((error) => {
           if (current) {
             setError(engineError(error).message);
-            setLocalError(false);
           }
         })
         .finally(() => {
@@ -73,7 +75,7 @@ export function EngineArtifactsView({ engine }: { engine: EngineController }) {
               const file = event.target.files?.[0];
               event.target.value = '';
               if (!file) return;
-              setError('');
+              setUploadError('');
               setLocalError(false);
               let localFailure = false;
               try {
@@ -91,7 +93,7 @@ export function EngineArtifactsView({ engine }: { engine: EngineController }) {
                   operationId: crypto.randomUUID(),
                 });
               } catch (error) {
-                setError(engineError(error).message);
+                setUploadError(engineError(error).message);
                 setLocalError(localFailure);
               }
             }}
@@ -110,9 +112,9 @@ export function EngineArtifactsView({ engine }: { engine: EngineController }) {
           />
         </label>
       </div>
-      {error ? (
+      {uploadError ? (
         <p className="form-error" role="alert">
-          {localError ? t('execution.artifactExceeds64Mib') : error}
+          {localError ? t('execution.artifactExceeds64Mib') : uploadError}
         </p>
       ) : null}
       {files.length ? (
@@ -143,18 +145,24 @@ export function EngineArtifactsView({ engine }: { engine: EngineController }) {
                 <h3>{artifact.name}</h3>
                 <button
                   className="button small-button"
-                  disabled={!engine.info || busy || !!error}
+                  disabled={!engine.info || busy || exporting || !!error}
                   onClick={() => {
-                    void exportEngineArtifact(artifact.id).catch((error) => {
-                      setError(engineError(error).message);
-                      setLocalError(false);
-                    });
+                    setExportError('');
+                    setExporting(true);
+                    void exportEngineArtifact(artifact.id)
+                      .catch((error) => setExportError(engineError(error).message))
+                      .finally(() => setExporting(false));
                   }}
                 >
                   <Download size={14} />
                   {t('common.export')}
                 </button>
               </div>
+              {error || exportError ? (
+                <p className="form-error" role="alert">
+                  {error || exportError}
+                </p>
+              ) : null}
               <div className="detail-field">
                 <span>SHA-256</span>
                 <code className="hash">{artifact.sha256}</code>

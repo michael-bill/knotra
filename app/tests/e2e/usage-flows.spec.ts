@@ -1,3 +1,4 @@
+import { activeWorkspace, addResearchDemo, openActiveEditor } from './authoring';
 import { test, expect, type Page } from '@playwright/test';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
@@ -12,7 +13,7 @@ test.beforeEach(async ({ page }) => {
   page.on('pageerror', (error) => errors.push(error.message));
   await page.setViewportSize({ width: 1456, height: 767 });
   await page.goto('/');
-  await expect(page.getByRole('heading', { name: 'Research brief', exact: true })).toBeVisible();
+  await addResearchDemo(page);
   await expect.poll(() => state(page)).not.toBeNull();
 });
 
@@ -47,6 +48,13 @@ async function nav(page: Page, name: string) {
 async function template(page: Page, title: string) {
   const previous = (await state(page)).activeId;
   await page.getByRole('button', { name: 'New pipeline', exact: true }).click();
+  await page
+    .getByRole('dialog')
+    .getByRole('button', {
+      name: title === 'Research brief' ? 'Guided demo' : 'Building blocks',
+      exact: true,
+    })
+    .click();
   await page
     .getByRole('dialog')
     .getByRole('button', { name: new RegExp(`^${title} `) })
@@ -263,6 +271,7 @@ for (const title of templates)
     for (const file of workspace.files)
       expect(Buffer.from(bytes[file.path])).toEqual(Buffer.from(file.content, 'base64'));
     await page.reload();
+    await openActiveEditor(page);
     await expect(page.getByRole('textbox', { name: 'Description', exact: true })).toHaveValue(
       `Verified ${title}`,
     );
@@ -364,6 +373,8 @@ test('scratch workflow supports port values, expressions, schemas and block remo
   await page.getByRole('button', { name: 'Keep pipeline', exact: true }).click();
   await page.getByRole('button', { name: 'Delete pipeline', exact: true }).click();
   await page.getByRole('button', { name: 'Remove pipeline', exact: true }).click();
+  await expect(page.locator('.pipelines-page')).toBeVisible();
+  await page.getByRole('button', { name: 'Open Research brief', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Research brief', exact: true })).toBeVisible();
 });
 
@@ -505,7 +516,7 @@ test('settings, search, shortcuts and modal dismissal work with persisted prefer
   await page.getByRole('button', { name: 'Export backup', exact: true }).click();
   const backup = JSON.parse(readFileSync((await (await download).path())!, 'utf8'));
   expect(backup.theme).toBe('light');
-  expect(backup.workspaces).toHaveLength(3);
+  expect(backup.workspaces).toHaveLength(5);
   await page.keyboard.press('Control+n');
   await expect(page.getByRole('dialog')).toBeVisible();
   await page.keyboard.press('Escape');
@@ -826,6 +837,7 @@ test('workflow inputs, exports and all editable resource aliases persist', async
   await save(page);
   await expect(page.locator('.validation-summary')).toContainText('Local checks passed');
   await page.reload();
+  await openActiveEditor(page);
   await page.getByRole('button', { name: 'Workflow', exact: true }).click();
   await page.getByText('Models (3)', { exact: true }).click();
   await expect(
@@ -834,17 +846,16 @@ test('workflow inputs, exports and all editable resource aliases persist', async
 });
 
 test('empty workspace creation and modal keyboard navigation remain usable', async ({ page }) => {
-  for (let index = 0; index < 3; index++) {
+  const count = await page.locator('.sidebar-pipelines > button').count();
+  for (let index = 0; index < count; index++) {
+    if (index > 0) await page.locator('.sidebar-pipelines > button').first().click();
     await page.getByRole('button', { name: 'Delete pipeline', exact: true }).click();
     await page.getByRole('button', { name: 'Remove pipeline', exact: true }).click();
   }
   await expect(
-    page.getByRole('heading', { name: 'Make room for your next idea', exact: true }),
+    page.getByRole('heading', { name: 'Create your first pipeline', exact: true }),
   ).toBeVisible();
-  await page
-    .locator('.empty')
-    .getByRole('button', { name: 'Create pipeline', exact: true })
-    .click();
+  await page.locator('.empty').getByRole('button', { name: 'New pipeline', exact: true }).click();
   const last = page.getByRole('button', { name: 'Start from scratch', exact: true });
   await last.focus();
   await page.keyboard.press('Tab');

@@ -1,3 +1,4 @@
+import { activeWorkspace, addResearchDemo, openActiveEditor } from './authoring';
 import { test, expect, type Page } from '@playwright/test';
 import { readFileSync, readdirSync } from 'node:fs';
 import { resolve } from 'node:path';
@@ -13,7 +14,7 @@ async function navigate(page: Page, name: string) {
 
 async function open(page: Page) {
   await page.goto('/');
-  await expect(page.getByRole('heading', { name: 'Research brief', exact: true })).toBeVisible();
+  await addResearchDemo(page);
   await expect.poll(() => persisted(page)).not.toBeNull();
 }
 
@@ -31,9 +32,7 @@ test('authoring stays synchronized and navigation preference survives reload', a
   await page.getByRole('button', { name: 'Save', exact: true }).click();
   await page.getByRole('tab', { name: 'Code', exact: true }).click();
   await expect
-    .poll(async () =>
-      (await persisted(page)).workspaces[0].source.includes('Check the sources carefully'),
-    )
+    .poll(async () => (await activeWorkspace(page)).source.includes('Check the sources carefully'))
     .toBe(true);
   await expect(page.getByRole('button', { name: 'Run demo', exact: true })).toBeDisabled();
   await page.getByRole('button', { name: 'Collapse navigation' }).click();
@@ -42,6 +41,7 @@ test('authoring stays synchronized and navigation preference survives reload', a
   await page.reload();
   await expect(page.getByRole('button', { name: 'Expand navigation' })).toBeVisible();
   await page.getByRole('button', { name: 'Expand navigation' }).click();
+  await openActiveEditor(page);
   await expect(page.getByRole('textbox', { name: 'Description', exact: true })).toHaveValue(
     'Check the sources carefully',
   );
@@ -109,7 +109,7 @@ test('complete ZIP package import preserves child contracts and every exported b
 
 test('saved human request resumes once and produces a traceable artifact', async ({ page }) => {
   await open(page);
-  const original = (await persisted(page)).workspaces[0].source;
+  const original = (await activeWorkspace(page)).source;
   await page.getByRole('button', { name: 'Run demo', exact: true }).click();
   await page.getByRole('textbox', { name: 'Research topic' }).fill('Persistent review test');
   await page.getByRole('button', { name: 'Start demo', exact: true }).click();
@@ -117,6 +117,7 @@ test('saved human request resumes once and produces a traceable artifact', async
   await expect.poll(async () => (await persisted(page)).runs[0]?.requestId).toBeTruthy();
   const request = (await persisted(page)).runs[0].requestId;
   await page.reload();
+  await openActiveEditor(page);
   await navigate(page, 'Inbox');
   expect((await persisted(page)).runs[0].requestId).toBe(request);
   await page.getByRole('button', { name: 'JSON response', exact: true }).click();
@@ -201,6 +202,7 @@ for (const theme of ['dark', 'light'] as const)
       .click();
     await expect.poll(async () => (await persisted(page))?.theme).toBe(theme);
     await page.reload();
+    await openActiveEditor(page);
     await expect(page.locator('html')).toHaveAttribute('data-theme', theme);
     await expect(page.locator(`.react-flow.${theme}`)).toBeVisible();
     await page.getByRole('tab', { name: 'Code', exact: true }).click();
@@ -229,9 +231,7 @@ for (const theme of ['dark', 'light'] as const)
     });
     expect(contrast.length).toBeGreaterThan(3);
     expect(Math.min(...contrast)).toBeGreaterThanOrEqual(4.5);
-    await expect
-      .poll(async () => (await persisted(page)).workspaces[0].source)
-      .toContain('answer: 12');
+    await expect.poll(async () => (await activeWorkspace(page)).source).toContain('answer: 12');
     await page.getByRole('button', { name: 'Settings', exact: true }).click();
     await page
       .getByRole('radio', { name: theme === 'dark' ? 'Dark' : 'Light', exact: true })
@@ -244,6 +244,7 @@ for (const theme of ['dark', 'light'] as const)
     await page.keyboard.press('ArrowLeft');
     await expect(page.locator('html')).toHaveAttribute('data-theme', theme);
     await navigate(page, 'Pipelines');
+    await openActiveEditor(page);
     await page.getByRole('tab', { name: 'Code', exact: true }).click();
     await expect(page.getByRole('textbox', { name: 'Pipeline YAML' })).toContainText('answer: 12');
     await page.getByRole('button', { name: 'New pipeline', exact: true }).click();
@@ -297,7 +298,7 @@ test('build and configure blocks with named ports, drag connections and workflow
   await page.getByRole('button', { name: 'human input brief', exact: true }).click();
   await expect(page.getByRole('status')).toContainText('different data types');
   // Move a block without changing pipeline notation; remember its layout after reload.
-  const originalPosition = (await persisted(page)).workspaces[0].positions['::human'];
+  const originalPosition = (await activeWorkspace(page)).positions['::human'];
   const card = page.locator('.react-flow__node[data-id="human"] .flow-card-top');
   const before = await card.boundingBox();
   await page.mouse.move(before!.x + 70, before!.y + 10);
@@ -305,9 +306,9 @@ test('build and configure blocks with named ports, drag connections and workflow
   await page.mouse.move(before!.x + 90, before!.y + 35, { steps: 10 });
   await page.mouse.up();
   await expect
-    .poll(async () => (await persisted(page)).workspaces[0].positions?.['::human'])
+    .poll(async () => (await activeWorkspace(page)).positions?.['::human'])
     .not.toEqual(originalPosition);
-  const position = (await persisted(page)).workspaces[0].positions['::human'];
+  const position = (await activeWorkspace(page)).positions['::human'];
   await page.getByRole('button', { name: 'Workflow', exact: true }).click();
   await page.getByText('Models (2)', { exact: true }).click();
   await page.getByRole('textbox', { name: 'New model alias', exact: true }).fill('assistant');
@@ -340,16 +341,15 @@ test('build and configure blocks with named ports, drag connections and workflow
   expect(centers.dot).toBeLessThan(1);
   expect(centers.toggle).toBeLessThan(1);
   await page.getByRole('button', { name: 'Save', exact: true }).click();
-  await expect
-    .poll(async () => (await persisted(page)).workspaces[0].source)
-    .toContain('maxSteps: 7');
-  const source = (await persisted(page)).workspaces[0].source;
+  await expect.poll(async () => (await activeWorkspace(page)).source).toContain('maxSteps: 7');
+  const source = (await activeWorkspace(page)).source;
   expect(source).toContain('connection: local_model');
   expect(source).toContain('model: assistant');
   expect(source).toContain('from: nodes.review.outputs.feedback');
   expect(source).toContain('from: nodes.human.outputs.answer');
   await page.reload();
-  expect((await persisted(page)).workspaces[0].positions['::human']).toEqual(position);
+  await openActiveEditor(page);
+  expect((await activeWorkspace(page)).positions['::human']).toEqual(position);
   await page.getByRole('button', { name: 'Workflow', exact: true }).click();
   await expect(
     page.getByRole('combobox', { name: 'Source for reviewed', exact: true }),
@@ -358,7 +358,15 @@ test('build and configure blocks with named ports, drag connections and workflow
 
 test('configure a nested body and add blocks in its own scope', async ({ page }) => {
   await open(page);
-  await page.getByRole('button', { name: 'foreach-contract', exact: true }).click();
+  await page.getByRole('button', { name: 'New pipeline', exact: true }).click();
+  await page
+    .getByRole('dialog')
+    .getByRole('button', { name: 'Building blocks', exact: true })
+    .click();
+  await page
+    .getByRole('dialog')
+    .getByRole('button', { name: /^Parallel review / })
+    .click();
   await page.getByRole('spinbutton', { name: /^Concurrent iterations/ }).fill('3');
   await page.getByRole('button', { name: 'Save', exact: true }).click();
   await page.getByRole('button', { name: 'Edit body graph', exact: true }).click();
@@ -397,6 +405,7 @@ for (const theme of ['dark', 'light'] as const)
       .getByRole('radio', { name: theme === 'dark' ? 'Dark' : 'Light', exact: true })
       .click();
     await navigate(page, 'Pipelines');
+    await openActiveEditor(page);
     await page.locator('.react-flow__node[data-id="draft"] .flow-card-top').click();
     await page.getByRole('button', { name: 'Inputs & outputs', exact: true }).click();
     for (const width of [1456, 1000]) {

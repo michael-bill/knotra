@@ -80,21 +80,23 @@ export default function WorkspaceView({
         ? 'research'
         : (Object.keys(validation.pipeline?.spec.nodes ?? {})[0] ?? ''),
   );
-  const [scope, setScope] = useState<string[]>([]);
+  const [requestedScope, setScope] = useState<string[]>([]);
   const [diagnosticsOpen, setDiagnosticsOpen] = useState(false);
   const [selectedFile, setSelectedFile] = useState<string>();
   const [removeNode, setRemoveNode] = useState(false);
   const upload = useRef<HTMLInputElement>(null);
   const pipeline = validation.pipeline;
-  const graph = useMemo(() => {
+  const { graph, scope } = useMemo(() => {
     let graph = pipeline?.spec;
-    for (const id of scope) {
+    const scope: string[] = [];
+    for (const id of requestedScope) {
       const node = graph?.nodes[id];
-      if (!node) return pipeline?.spec;
+      if (!node || !['foreach', 'loop'].includes(node.type)) break;
+      scope.push(id);
       graph = record(record(node[node.type]).body) as unknown as Graph;
     }
-    return graph;
-  }, [pipeline, scope]);
+    return { graph, scope };
+  }, [pipeline, requestedScope]);
   const importedGraphs = useMemo(() => {
     const graphs = new Map<string, Graph>();
     for (const file of workspace?.files ?? []) {
@@ -233,7 +235,7 @@ export default function WorkspaceView({
           <button
             className="button small-button primary"
             onClick={onEngineRun}
-            disabled={!engineConnected || errors.length > 0}
+            disabled={errors.length > 0}
             title={t(
               engineConnected
                 ? 'editor.checkAndStartOnYourEngine'
@@ -241,21 +243,23 @@ export default function WorkspaceView({
             )}
           >
             <Play size={14} />
-            {t('common.run')}
+            {t(engineConnected ? 'common.run' : 'resources.connectEngine')}
           </button>
-          <button
-            className="button small-button primary"
-            onClick={onRun}
-            disabled={!demo || errors.length > 0}
-            title={t(
-              demo
-                ? 'editor.runTheGuidedDemoWithSampleOutputs'
-                : 'editor.theUnchangedResearchBriefTemplateOffersAGuided',
-            )}
-          >
-            <Play size={14} fill="currentColor" />
-            {t('editor.runDemo')}
-          </button>
+          {demo || pipeline?.metadata.name === 'research-brief' ? (
+            <button
+              className="button small-button primary"
+              onClick={onRun}
+              disabled={!demo || errors.length > 0}
+              title={t(
+                demo
+                  ? 'editor.runTheGuidedDemoWithSampleOutputs'
+                  : 'editor.theUnchangedResearchBriefTemplateOffersAGuided',
+              )}
+            >
+              <Play size={14} fill="currentColor" />
+              {t('editor.runDemo')}
+            </button>
+          ) : null}
         </div>
       </header>
       <div className="workspace-toolbar">

@@ -1,0 +1,182 @@
+apiVersion: knotra/v1
+kind: Pipeline
+metadata:
+  name: build-tic-tac-toe
+  title: Build a playable game
+  description: Generate game logic, let the engine test and iterate, then download and play it.
+spec:
+  files:
+    - game-contract.md
+    - game.test.mjs
+    - check.mjs
+    - verify.mjs
+    - shell.html
+  models:
+    planner:
+      connection: model_main
+      requires: [structuredOutput]
+    developer:
+      connection: model_main
+      requires: [structuredOutput]
+  sandboxes:
+    javascript:
+      profile: node_box
+  inputs:
+    brief:
+      description:
+        Describe the game implementation. The fixed API and independent tests still apply.
+      schema: { type: string, minLength: 1 }
+      default: |
+        Build classic 3x3 tic-tac-toe with an unbeatable, deterministic computer opponent.
+        X plays first. A player wins with three marks in a row, column, or diagonal.
+        A full board without a winner is a draw. Do not mutate the supplied board.
+        Implement the exact winner(board), makeMove(board, index, player), and
+        chooseMove(board, player) CommonJS API in game-contract.md. The supplied browser
+        interface already handles display, keyboard controls, scores, and restarting.
+  nodes:
+    plan:
+      type: llm
+      description: Produce a concise implementation plan for the game rules.
+      inputs:
+        brief:
+          schema: { type: string, minLength: 1 }
+          bind: { from: inputs.brief }
+      llm:
+        model: planner
+        prompt:
+          text: |
+            Write an implementation plan of at most 80 words for the supplied brief.
+            The API is winner(board), makeMove(board, index, player), chooseMove(board, player).
+            Check eight winning lines, copy nine-cell boards, and reject illegal moves.
+            Use plain minimax without memoization or pruning. A helper returns a score
+            relative to the fixed computer mark, maximized on its turn and minimized on
+            the opponent's turn. The outer chooseMove returns the best index and takes
+            immediate wins first. Return the plan output string. The engine runs tests.
+      outputs:
+        plan:
+          schema: { type: string, minLength: 1 }
+    build:
+      type: loop
+      description: Generate code, test it, and carry exact feedback into at most four iterations.
+      inputs:
+        brief:
+          schema: { type: string, minLength: 1 }
+          bind: { from: inputs.brief }
+        plan:
+          schema: { type: string, minLength: 1 }
+          bind: { from: nodes.plan.outputs.plan }
+      loop:
+        maxIterations: 4
+        onLimit: fail
+        state:
+          source:
+            schema: { type: string }
+            initial: { value: '' }
+            next: { from: body.outputs.source_text }
+          feedback:
+            schema: { type: string }
+            initial: { value: '' }
+            next: { from: body.outputs.feedback }
+        with:
+          brief: { from: args.brief }
+          plan: { from: args.plan }
+          previous_source: { from: state.source }
+          feedback: { from: state.feedback }
+        body:
+          inputs:
+            brief: { schema: { type: string, minLength: 1 } }
+            plan: { schema: { type: string, minLength: 1 } }
+            previous_source: { schema: { type: string } }
+            feedback: { schema: { type: string } }
+          nodes:
+            generate:
+              type: llm
+              description:
+                Generate one complete source module using the fixed API and test feedback.
+              inputs:
+                brief:
+                  schema: { type: string, minLength: 1 }
+                  bind: { from: inputs.brief }
+                plan:
+                  schema: { type: string, minLength: 1 }
+                  bind: { from: inputs.plan }
+                previous_source:
+                  schema: { type: string }
+                  bind: { from: inputs.previous_source }
+                feedback:
+                  schema: { type: string }
+                  bind: { from: inputs.feedback }
+              llm:
+                model: developer
+                prompt: { file: game-contract.md }
+              outputs:
+                source:
+                  schema: { type: string, minLength: 1, maxLength: 16000 }
+            check:
+              type: code
+              description:
+                Run fixed tests and return factual feedback for the next engine iteration.
+              sandbox: javascript
+              inputs:
+                source:
+                  schema: { type: string, minLength: 1, maxLength: 16000 }
+                  bind: { from: nodes.generate.outputs.source }
+              code:
+                command: [node, /package/check.mjs]
+              outputs:
+                passed: { schema: { type: boolean } }
+                feedback: { schema: { type: string, minLength: 1 } }
+                source_text: { schema: { type: string, minLength: 1 } }
+                source:
+                  artifact: { mediaTypes: [text/javascript] }
+                  collect: { path: game.js, mediaType: text/javascript }
+          outputs:
+            passed:
+              schema: { type: boolean }
+              bind: { from: nodes.check.outputs.passed }
+            feedback:
+              schema: { type: string, minLength: 1 }
+              bind: { from: nodes.check.outputs.feedback }
+            source_text:
+              schema: { type: string, minLength: 1 }
+              bind: { from: nodes.check.outputs.source_text }
+            source:
+              artifact: { mediaTypes: [text/javascript] }
+              bind: { from: nodes.check.outputs.source }
+        until: body.outputs.passed
+    verify:
+      type: code
+      description: Independently verify the final source and package a self-contained browser game.
+      sandbox: javascript
+      inputs:
+        source:
+          artifact: { mediaTypes: [text/javascript] }
+          bind: { from: nodes.build.outputs.source }
+          mount: incoming/game.js
+      code:
+        command: [node, /package/verify.mjs]
+      outputs:
+        summary:
+          schema: { type: string, minLength: 1 }
+        game:
+          artifact: { mediaTypes: [text/html] }
+          collect: { path: index.html, mediaType: text/html }
+        test_report:
+          artifact: { mediaTypes: [application/json] }
+          collect: { path: test-report.json, mediaType: application/json }
+  outputs:
+    summary:
+      schema: { type: string, minLength: 1 }
+      bind: { from: nodes.verify.outputs.summary }
+    iterations:
+      schema: { type: integer, minimum: 1, maximum: 4 }
+      bind: { from: nodes.build.outputs.iterations }
+    game:
+      artifact: { mediaTypes: [text/html] }
+      bind: { from: nodes.verify.outputs.game }
+    test_report:
+      artifact: { mediaTypes: [application/json] }
+      bind: { from: nodes.verify.outputs.test_report }
+    source:
+      artifact: { mediaTypes: [text/javascript] }
+      bind: { from: nodes.build.outputs.source }

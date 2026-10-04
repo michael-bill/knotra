@@ -1,0 +1,11 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["cost", "speed", "control", "support"],
+  "properties": {
+    "cost": { "type": "integer", "minimum": 1, "maximum": 100 },
+    "speed": { "type": "integer", "minimum": 1, "maximum": 100 },
+    "control": { "type": "integer", "minimum": 1, "maximum": 100 },
+    "support": { "type": "integer", "minimum": 1, "maximum": 100 }
+  }
+}

@@ -138,6 +138,8 @@ export function Modal({
 }) {
   const { t } = useI18n();
   const ref = useRef<HTMLDivElement>(null);
+  const closeRef = useRef(onClose);
+  closeRef.current = onClose;
   useEffect(() => {
     const previous = document.activeElement as HTMLElement;
     const panel = ref.current!;
@@ -148,7 +150,7 @@ export function Modal({
     ];
     if (!panel.contains(document.activeElement)) (focusables()[0] ?? panel).focus();
     function key(e: KeyboardEvent) {
-      if (e.key === 'Escape') onClose();
+      if (e.key === 'Escape') closeRef.current();
       if (e.key === 'Tab') {
         const items = focusables();
         const first = items[0];
@@ -167,7 +169,7 @@ export function Modal({
       document.removeEventListener('keydown', key);
       previous?.focus();
     };
-  }, [onClose]);
+  }, []);
   return (
     <div
       className="modal-backdrop"

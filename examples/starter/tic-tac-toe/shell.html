@@ -1,0 +1,460 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="dark" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'none'; script-src 'unsafe-inline' 'unsafe-eval'; style-src 'unsafe-inline'; connect-src 'none'; base-uri 'none'; form-action 'none'"
+    />
+    <title>Tic-tac-toe · Built with Knotra</title>
+    <style>
+      * {
+        box-sizing: border-box;
+      }
+      :root {
+        font-family: Inter, ui-sans-serif, system-ui, sans-serif;
+        color: #eeeaf5;
+        background: #101116;
+      }
+      body {
+        margin: 0;
+        min-height: 100vh;
+        display: grid;
+        place-items: center;
+        padding: 30px 20px;
+        background:
+          radial-gradient(ellipse at 10% 10%, #22243c 0, transparent 55%),
+          radial-gradient(ellipse at 90% 95%, #133c35 0, transparent 55%), #101116;
+      }
+      button,
+      select {
+        font: inherit;
+      }
+      button {
+        cursor: pointer;
+      }
+      button:focus-visible,
+      select:focus-visible,
+      summary:focus-visible {
+        outline: 3px solid #b3a5ff;
+        outline-offset: 4px;
+      }
+      main {
+        width: min(100%, 460px);
+      }
+      header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 14px;
+        margin-bottom: 28px;
+      }
+      .brand {
+        font-size: 12px;
+        font-weight: 750;
+        letter-spacing: 0.2em;
+      }
+      select {
+        background: #24262d;
+        color: #d8d4e1;
+        border: 1px solid #3f404b;
+        border-radius: 9px;
+        padding: 7px 9px;
+      }
+      .eyebrow {
+        color: #9ae4ca;
+        font-size: 11px;
+        letter-spacing: 0.11em;
+        font-weight: 700;
+        display: flex;
+        align-items: center;
+        gap: 7px;
+      }
+      .dot {
+        width: 6px;
+        height: 6px;
+        border-radius: 50%;
+        background: currentColor;
+      }
+      h1 {
+        font-size: clamp(38px, 10vw, 52px);
+        letter-spacing: -0.055em;
+        line-height: 1.08;
+        margin: 14px 0 12px;
+      }
+      .intro {
+        color: #a8a7b6;
+        font-size: 14px;
+        line-height: 1.6;
+        margin-bottom: 26px;
+        max-width: 37ch;
+      }
+      .panel {
+        border: 1px solid #ffffff17;
+        border-radius: 24px;
+        padding: 24px;
+        background: #171a22e6;
+        box-shadow: 0 20px 80px #0003;
+      }
+      .controls {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 12px;
+        color: #b5b2c4;
+        font-size: 13px;
+      }
+      .choice {
+        display: flex;
+        gap: 5px;
+        padding: 4px;
+        border-radius: 11px;
+        background: #0f1118;
+      }
+      .choice button {
+        border: 0;
+        border-radius: 7px;
+        color: #858494;
+        background: transparent;
+        min-width: 39px;
+        min-height: 32px;
+        font-weight: 750;
+      }
+      .choice button[aria-pressed='true'] {
+        color: #11181b;
+        background: #a1e5ce;
+      }
+      #status {
+        font-size: 16px;
+        margin: 22px 0 17px;
+        font-weight: 650;
+        min-height: 24px;
+      }
+      #board {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 9px;
+      }
+      .cell {
+        aspect-ratio: 1;
+        border: 1px solid #ffffff0d;
+        border-radius: 14px;
+        background: #232732;
+        color: #a1e5ce;
+        font-size: clamp(35px, 12vw, 66px);
+        font-weight: 450;
+        line-height: 1;
+        transition:
+          background 0.15s,
+          transform 0.15s;
+      }
+      .cell:not(:disabled):hover {
+        background: #313948;
+        transform: translateY(-2px);
+      }
+      .cell:disabled {
+        cursor: default;
+      }
+      .cell[data-mark='O'] {
+        color: #bba9ff;
+      }
+      .cell.winning {
+        background: #28463f;
+        border-color: #9ae4ca6b;
+      }
+      .scores {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        text-align: center;
+        margin: 23px 0;
+      }
+      .scores span {
+        display: block;
+        color: #9492a6;
+        font-size: 11px;
+        margin-bottom: 5px;
+      }
+      .scores strong {
+        font-size: 21px;
+        font-weight: 650;
+      }
+      .scores div + div {
+        border-left: 1px solid #ffffff0f;
+      }
+      #restart {
+        width: 100%;
+        min-height: 43px;
+        border: 1px solid #ffffff20;
+        border-radius: 11px;
+        background: #ffffff08;
+        color: #edeaf5;
+        font-weight: 600;
+        font-size: 13px;
+      }
+      #restart:hover {
+        background: #ffffff12;
+      }
+      details {
+        margin-top: 22px;
+        color: #858394;
+        font-size: 11px;
+        line-height: 1.65;
+      }
+      summary {
+        cursor: pointer;
+        color: #aaa7b8;
+      }
+      #report {
+        white-space: pre-wrap;
+        overflow-wrap: anywhere;
+      }
+      footer {
+        text-align: center;
+        color: #77758a;
+        font-size: 11px;
+        margin-top: 22px;
+      }
+      @media (prefers-reduced-motion: reduce) {
+        * {
+          transition: none !important;
+        }
+      }
+      @media (max-width: 380px) {
+        .panel {
+          padding: 17px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <header>
+        <span class="brand">KNOTRA / PLAY</span>
+        <select id="language" aria-label="Language / Язык">
+          <option value="en">English</option>
+          <option value="ru">Русский</option>
+        </select>
+      </header>
+      <div class="eyebrow">
+        <span class="dot"></span><span data-copy="verified">GENERATED. TESTED. READY TO PLAY.</span>
+      </div>
+      <h1 data-copy="title">Your next move.</h1>
+      <p class="intro" data-copy="intro">
+        A model wrote the rules. The engine tested every response. Can you hold it to a draw?
+      </p>
+      <section class="panel" aria-label="Tic-tac-toe / Крестики-нолики">
+        <div class="controls">
+          <span data-copy="playAs">You play as</span>
+          <div class="choice" role="group" aria-label="Your mark / Ваша фигура">
+            <button type="button" id="as-x" aria-pressed="true">X</button>
+            <button type="button" id="as-o" aria-pressed="false">O</button>
+          </div>
+        </div>
+        <p id="status" role="status" aria-live="polite"></p>
+        <div id="board" role="group" aria-label="Game board / Игровое поле"></div>
+        <div class="scores" aria-label="Session score / Счёт за сессию">
+          <div><span data-copy="you">YOU</span><strong id="you-score">0</strong></div>
+          <div><span data-copy="draws">DRAWS</span><strong id="draw-score">0</strong></div>
+          <div>
+            <span data-copy="computer">COMPUTER</span><strong id="computer-score">0</strong>
+          </div>
+        </div>
+        <button type="button" id="restart" data-copy="restart">New round ↗</button>
+      </section>
+      <details>
+        <summary data-copy="verification">What did the independent tests verify?</summary>
+        <p id="report"></p>
+      </details>
+      <footer data-copy="footer">
+        Built by a Knotra pipeline · Works offline · No data is sent
+      </footer>
+    </main>
+    <script>
+      const decode = (value) =>
+        new TextDecoder().decode(
+          Uint8Array.from(atob(value), (character) => character.charCodeAt(0)),
+        );
+      const gameModule = { exports: {} };
+      new Function('module', 'exports', decode('__GAME_BASE64__'))(gameModule, gameModule.exports);
+      const game = gameModule.exports;
+      const report = JSON.parse(decode('__REPORT_BASE64__'));
+      const words = {
+        en: {
+          title: 'Your next move.',
+          verified: 'GENERATED. TESTED. READY TO PLAY.',
+          intro:
+            'A model wrote the rules. The engine tested every response. Can you hold it to a draw?',
+          playAs: 'You play as',
+          you: 'YOU',
+          draws: 'DRAWS',
+          computer: 'COMPUTER',
+          restart: 'New round ↗',
+          verification: 'What did the independent tests verify?',
+          footer: 'Built by a Knotra pipeline · Works offline · No data is sent',
+          yourTurn: 'Your turn',
+          thinking: 'Computer is thinking…',
+          draw: 'A perfect balance. It’s a draw.',
+          win: 'You won!',
+          lose: 'Computer wins. Another round?',
+          failure: 'The game stopped. Start a new round to retry.',
+          square: 'Square',
+          empty: 'empty',
+          checkSummary: 'checks passed',
+          positionSummary: 'positions explored',
+          verifiedSummary:
+            'All winning lines, legal moves, immutable boards, deterministic decisions, and every opponent continuation as X and O.',
+        },
+        ru: {
+          title: 'Ваш следующий ход.',
+          verified: 'СОЗДАНО. ПРОВЕРЕНО. МОЖНО ИГРАТЬ.',
+          intro:
+            'Модель написала правила, а движок проверил каждый ответ. Сможете свести игру вничью?',
+          playAs: 'Вы играете за',
+          you: 'ВЫ',
+          draws: 'НИЧЬИ',
+          computer: 'КОМПЬЮТЕР',
+          restart: 'Новая партия ↗',
+          verification: 'Что проверили независимые тесты?',
+          footer: 'Создано пайплайном Knotra · Работает офлайн · Данные не отправляются',
+          yourTurn: 'Ваш ход',
+          thinking: 'Компьютер думает…',
+          draw: 'Идеальный баланс. Ничья.',
+          win: 'Вы выиграли!',
+          lose: 'Компьютер выиграл. Ещё партию?',
+          failure: 'Игра остановилась. Начните новую партию.',
+          square: 'Клетка',
+          empty: 'пусто',
+          checkSummary: 'проверок пройдено',
+          positionSummary: 'позиций исследовано',
+          verifiedSummary:
+            'Все выигрышные линии, допустимые ходы, неизменность исходного поля, повторяемость решений и все продолжения соперника за X и O.',
+        },
+      };
+      let language = navigator.language.startsWith('ru') ? 'ru' : 'en';
+      let board = Array(9).fill(null);
+      let human = 'X';
+      let turn = 'X';
+      let outcome = null;
+      let timer;
+      let broken = false;
+      const scores = { you: 0, draw: 0, computer: 0 };
+      const cells = Array.from({ length: 9 }, (_, index) => {
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = 'cell';
+        button.addEventListener('click', () => move(index));
+        button.addEventListener('keydown', (event) => {
+          const steps = { ArrowLeft: -1, ArrowRight: 1, ArrowUp: -3, ArrowDown: 3 };
+          if (!(event.key in steps)) return;
+          event.preventDefault();
+          let next = index;
+          for (let count = 0; count < 9; count++) {
+            next = (next + steps[event.key] + 9) % 9;
+            if (!cells[next].disabled) {
+              cells[next].focus();
+              break;
+            }
+          }
+        });
+        document.getElementById('board').append(button);
+        return button;
+      });
+      function render() {
+        const text = words[language];
+        document.documentElement.lang = language;
+        document.getElementById('language').value = language;
+        document.querySelectorAll('[data-copy]').forEach((element) => {
+          element.textContent = text[element.dataset.copy];
+        });
+        document.getElementById('as-x').setAttribute('aria-pressed', String(human === 'X'));
+        document.getElementById('as-o').setAttribute('aria-pressed', String(human === 'O'));
+        document.getElementById('status').textContent = broken
+          ? text.failure
+          : outcome === 'draw'
+            ? text.draw
+            : outcome
+              ? outcome === human
+                ? text.win
+                : text.lose
+              : turn === human
+                ? `${text.yourTurn} · ${human}`
+                : text.thinking;
+        const winning =
+          [
+            [0, 1, 2],
+            [3, 4, 5],
+            [6, 7, 8],
+            [0, 3, 6],
+            [1, 4, 7],
+            [2, 5, 8],
+            [0, 4, 8],
+            [2, 4, 6],
+          ].find(
+            (line) =>
+              outcome && outcome !== 'draw' && line.every((index) => board[index] === outcome),
+          ) ?? [];
+        cells.forEach((cell, index) => {
+          cell.textContent = board[index] ?? '';
+          cell.dataset.mark = board[index] ?? '';
+          cell.disabled = broken || !!outcome || turn !== human || board[index] !== null;
+          cell.classList.toggle('winning', winning.includes(index));
+          cell.setAttribute(
+            'aria-label',
+            `${text.square} ${index + 1}: ${board[index] ?? text.empty}`,
+          );
+        });
+        for (const [name, count] of Object.entries(scores))
+          document.getElementById(`${name}-score`).textContent = count;
+        document.getElementById('report').textContent =
+          `${report.checks} ${text.checkSummary} · ${report.positions} ${text.positionSummary}.\n\n${text.verifiedSummary}\n\nSHA-256: ${report.sourceSha256}`;
+      }
+      function finishMove() {
+        outcome = game.winner(board);
+        if (outcome) scores[outcome === 'draw' ? 'draw' : outcome === human ? 'you' : 'computer']++;
+        turn = turn === 'X' ? 'O' : 'X';
+        render();
+        if (!outcome && turn !== human) timer = setTimeout(computerMove, 280);
+      }
+      function computerMove() {
+        try {
+          board = game.makeMove(board, game.chooseMove(board, turn), turn);
+          finishMove();
+          if (!outcome) cells.find((cell) => !cell.disabled)?.focus({ preventScroll: true });
+        } catch {
+          broken = true;
+          render();
+        }
+      }
+      function move(index) {
+        if (broken || outcome || turn !== human || board[index] !== null) return;
+        try {
+          board = game.makeMove(board, index, human);
+          finishMove();
+        } catch {
+          broken = true;
+          render();
+        }
+      }
+      function restart(player = human) {
+        clearTimeout(timer);
+        human = player;
+        board = Array(9).fill(null);
+        turn = 'X';
+        outcome = null;
+        broken = false;
+        render();
+        if (human === 'O') timer = setTimeout(computerMove, 280);
+      }
+      document.getElementById('as-x').addEventListener('click', () => restart('X'));
+      document.getElementById('as-o').addEventListener('click', () => restart('O'));
+      document.getElementById('restart').addEventListener('click', () => restart());
+      document.getElementById('language').addEventListener('change', (event) => {
+        language = event.target.value;
+        render();
+      });
+      render();
+    </script>
+  </body>
+</html>
