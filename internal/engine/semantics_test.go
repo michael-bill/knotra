@@ -207,8 +207,12 @@ func TestConcurrencyLimitQueuesLeafAttempts(t *testing.T) {
 
 func TestUnknownOutcomeBlocksQueuedLeaf(t *testing.T) {
 	h := newHarness(t)
+	var unknownInstance atomic.Value
+	unknownInstance.Store("")
 	h.leaf = func(request ExecuteRequest) ExecuteResult {
-		if request.NodeID == "a" {
+		// Independent ready projections can complete in either order. Whichever
+		// leaf acquires the first execution slot must block the remaining leaf.
+		if unknownInstance.CompareAndSwap("", request.InstanceID) {
 			return ExecuteResult{Failure: &Failure{Code: "UNKNOWN", Unknown: true, OperationID: "op"}}
 		}
 		return ExecuteResult{Outputs: contract.Values{"value": jsonValue("ok")}}
@@ -217,10 +221,15 @@ func TestUnknownOutcomeBlocksQueuedLeaf(t *testing.T) {
 	p.Profile.Spec.Limits.MaxConcurrentNodes = 1
 	resumeAt := h.env.Now().Add(2 * time.Second)
 	h.env.RegisterDelayedCallback(func() {
+		instanceID := unknownInstance.Load().(string)
+		if instanceID == "" {
+			t.Error("no leaf produced an unknown outcome before resolution")
+			return
+		}
 		h.env.SignalWorkflow(
 			ResolveSignalName,
 			ResolutionSignal{
-				InstanceID:  rootID("a"),
+				InstanceID:  instanceID,
 				OperationID: "op",
 				Decision:    "completed",
 				ResponseID:  "evidence",
@@ -233,11 +242,22 @@ func TestUnknownOutcomeBlocksQueuedLeaf(t *testing.T) {
 	if result.Status != "succeeded" {
 		t.Fatalf("%+v", result)
 	}
+	if len(h.calls) != 2 {
+		t.Fatalf("external calls=%d, want 2", len(h.calls))
+	}
 
+	unknownID := unknownInstance.Load().(string)
+	queuedStarts := 0
 	for _, event := range h.events {
-		if event.NodeID == "b" && event.Status == "running" && event.Attempt == 1 && event.Time.Before(resumeAt) {
-			t.Fatal("new external work started while resolution was pending")
+		if event.Kind == "node" && event.InstanceID != unknownID && event.Status == "running" && event.Attempt == 1 {
+			queuedStarts++
+			if event.Time.Before(resumeAt) {
+				t.Fatal("new external work started while resolution was pending")
+			}
 		}
+	}
+	if queuedStarts != len(h.calls)-1 {
+		t.Fatalf("queued starts=%d, want %d", queuedStarts, len(h.calls)-1)
 	}
 }
 
