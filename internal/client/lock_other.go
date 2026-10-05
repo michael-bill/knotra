@@ -1,4 +1,4 @@
-//go:build !darwin && !linux && !freebsd && !openbsd && !netbsd && !dragonfly
+//go:build !windows && !darwin && !linux && !freebsd && !openbsd && !netbsd && !dragonfly
 
 package client
 
@@ -8,5 +8,5 @@ import (
 )
 
 func (c *Client) lockCommand(context.Context, string) (func(), error) {
-	return nil, errors.New("durable CLI command journal requires a supported Unix platform")
+	return nil, errors.New("durable CLI command journal requires Windows or a supported Unix platform")
 }
