@@ -1,108 +1,144 @@
 # Knotra
 
-Knotra runs AI workflows for developers who need checked results, human approval and saved execution
-history. Describe a process in YAML, run it through the CLI or desktop, inspect its evidence and
-files, and approve the result. The engine preserves state across restarts.
+### AI workflows you can verify, inspect and resume.
 
-The main example is **research → verification in code → human approval → dossier**. Agents extract
-evidence from supplied materials; Python checks quotations and calculates scores. A reviewer
-inspects the files before the engine publishes a ZIP with the approval record.
-[Try the workflow](docs/first-run.md) · [Verification and limits](docs/verification.md).
+Turn a task into a repeatable process: models do the reasoning, code checks the result, and people
+approve the steps that need judgment. Knotra keeps the execution history and files across restarts.
 
-## Features
+[Quick start](#quick-start) · [See it run](#workflow-in-pictures) · [Documentation](#documentation)
+· [Download CLI](https://github.com/michael-bill/knotra/releases/latest)
 
-Knotra v1 includes a YAML compiler, a Temporal-based engine, HTTP API, CLI, and desktop. The
-contract supports nine node types: `llm`, `agent`, `code`, `tool`, `switch`, `human`, `foreach`,
-`loop` and `pipeline`.
+| Define the process                               | Verify the result                                          | Keep control                                                            |
+| ------------------------------------------------ | ---------------------------------------------------------- | ----------------------------------------------------------------------- |
+| YAML graphs, typed inputs and reusable packages. | Fixed tests, artifact checks and explicit pass/fail gates. | Inspect model calls and tools, set limits, and wait for human approval. |
 
-- Typed JSON data, files, CEL expressions, branching, and parallel graphs.
-- Multiple independent runs simultaneously, including instances of the same package.
-- Ollama, OpenAI Responses, and Anthropic Messages, an agent loop with explicit termination, MCP via
-  Streamable HTTP and isolated stdio.
-- Separate Docker environments, resource limits and network constraints, explicit grants of tools
-  and secrets.
-- Saved results, human responses, command receipts, limits, and resolution of unknown external
-  operation outcomes.
-- Live events via SSE, artifact retrieval, structured logs, and optional OpenTelemetry.
-
-Models are configured in the engine profile; OpenAI and Anthropic keys are read from the server
-environment. [Adapters](internal/adapters/README.md) describe parameters and limits. Desktop uses
-the same HTTP API as CLI. [Desktop instructions](app/README.md) describe native run and preview.
+Use it for code generation with test feedback, release evidence, reviewed research, and other tasks
+that need several steps and an inspectable result. Start with a small game, then follow the larger
+service release workflow below.
 
 ## Quick Start
 
-Install and run Docker (Colima works on macOS), Docker Compose, and Ollama. Download the
-[CLI for macOS or Linux](https://github.com/michael-bill/knotra/releases/latest), unpack the
-archive, and execute from its directory:
+Install Docker, Docker Compose and Ollama; Colima works on macOS. Unpack the
+[CLI for macOS or Linux](https://github.com/michael-bill/knotra/releases/latest), then run:
 
 ```sh
 ./knotra doctor
-./knotra quickstart
+./knotra quickstart --dir "$PWD/knotra-data"
 ```
 
-Go and separate PostgreSQL/Temporal installation are not needed: the archive contains CLI and Linux
-helpers for both Docker architectures. Quickstart starts persistent services, downloads `qwen3.5:9b`
-if necessary, creates editable examples, and retrieves `greeting.txt`. First runs may take a while.
-The command leaves the engine running and prints an address for desktop. Ctrl-C stops the engine;
-repeating the same command reuses saved data and the original greeting run.
+Quickstart starts persistent PostgreSQL and Temporal, prepares the local model and examples, and
+produces `greeting.txt`. No Go installation is needed. First startup includes image/model downloads.
+Leave the terminal running and connect desktop to the printed engine address. Repeating quickstart
+with the same directory reuses saved data.
 
-For building from source, Go from `go.mod` and Make are needed:
+Then run the game in a second terminal:
+
+```sh
+./knotra run knotra-data/examples/tic-tac-toe/pipeline.yaml --profile local --wait
+```
+
+Use `artifacts list --run RUN_ID` and `artifacts download ARTIFACT_ID --output index.html` to
+retrieve the game. Use your chosen directory if you changed `--dir`. [First run](docs/first-run.md)
+explains inspection, correction and review.
+
+Building from source instead:
 
 ```sh
 make build helper
 bin/knotra quickstart --dir "$PWD/.knotra/quickstart"
 ```
 
-Five [starter workflows](examples/starter/README.md) are available in the app. Start with **Hello,
-model**, then open **Research, verify and approve**. [First run and recovery](docs/first-run.md)
-take you through one small process; [pilot plan](docs/pilot.md) helps verify usefulness on five
-developers.
-
-[Settings and cloud profiles](docs/running.md) include connecting existing services, secrets, and
-recovery. [CLI help](internal/cli/README.md) describes commands and exit codes. Compose quickstart
-is intended for development and evaluation on a single machine.
-
 ## Workflow in pictures
 
-These screenshots follow the runnable
-[portfolio showcase](examples/showcase/portfolio-review/README.md): 24 nodes, three evidence agents
-and six parallel scenario branches.
+### Start small: build and repair a game
 
-**Follow the workflow.** Agents read the sources while the remaining branches wait for verified
-evidence. Scenario reports converge into decision briefs, a dossier and human approval.
+The [game workflow](examples/starter/tic-tac-toe/pipeline.yaml) generates JavaScript, runs fixed
+independent tests and carries failures into a bounded correction loop. You can also supply an
+existing module. The [repair exercise](examples/showcase/game-repair/README.md) deliberately starts
+with an incorrect opponent: its first test fails, and the next iteration uses that exact failure to
+repair it. A separate sandbox verifies the final code before producing a playable offline HTML file.
 
-![Research workflow graph](docs/media/research-graph.png)
+![Passing tests after correcting the initial candidate](docs/media/game-correction.png)
 
-**Inspect the agent cycle.** The first model iteration requests `files.read`. The second uses the
-returned text and calls `knotra_finish` with structured evidence.
+<details>
+<summary>Inspect the initial failure</summary>
 
-![Two model iterations within one agent](docs/media/agent-cycle.png)
+![The initial opponent fails an executed game test](docs/media/game-failed-tests.png)
 
-**Check the comparison.** Code verifies source facts and quotations, applies constraints and
-calculates scores for the fictional sample offers.
+</details>
 
-![Verified comparison of sample offers](docs/media/verified-comparison.png)
+**Play the result.** The downloadable game includes the verified source and test report.
 
-**Review before publication.** Inbox keeps the dossier and comparison beside the request for an
-explicit approval, reviewer name and comments.
+<details>
+<summary>Open the playable result</summary>
 
-![Human review request and its evidence](docs/media/human-review.png)
+![The verified game running in a browser](docs/media/playable-game.png)
 
-**Retrieve the approved files.** Artifacts retain the reviewed dossier, its checksum and execution
-origin. Export the dossier or ZIP with the approval record and supporting files.
+</details>
 
-![Approved dossier with its checksum, origin and export action](docs/media/reviewed-dossier.png)
+### Apply it to a release process
 
-## Development
+The runnable [service fleet release gate](examples/showcase/release-gate/README.md) checks six
+services through 30 nodes. It accepts an explicit repository snapshot and can generate lanes for
+another service inventory. The supplied sample executes real tests; replace its services and check
+adapters with your team's release inputs to run production experiments.
 
-```sh
-make test
-make check
-```
+**Follow parallel work.** Six service lanes run regression tests, API compatibility checks and
+configuration policy checks before the agents assess the verified results.
 
-Regular tests do not require Ollama, Docker, Temporal, or PostgreSQL. Checks of real services are
-enabled explicitly via environment variables; [contribution guide](CONTRIBUTING.md) describes how to
-run them. When working with your own DB, tests create and delete only their own temporary schemas.
+![Service fleet workflow in progress](docs/media/release-graph.png)
+
+<details>
+<summary>Inspect agents, executed checks, human approval and exported evidence</summary>
+
+**Inspect the agent cycle.** A model requests the check evidence and release policy through
+`files.read`, then returns structured recommendations through `knotra_finish`. Code verifies its
+citations against the executed checks.
+
+![Two model iterations and actual tool reads](docs/media/agent-cycle.png)
+
+**Inspect executed checks.** Each service report records test counts, failures and the snapshot
+hash. This run executed 36 regression tests and passed all 18 release gates.
+
+![Executed regression results tied to the repository snapshot](docs/media/release-checks.png)
+
+**Authorize the evidence packet.** Inbox keeps the dossier and checks beside the review request. The
+release owner supplies their name, change ticket and comments.
+
+![Release review and change ticket before publication](docs/media/human-review.png)
+
+**Export the reviewed bytes.** The final ZIP contains the repository snapshot, executed checks,
+agent recommendations, dossier and authorization record with SHA-256 hashes. Approval publishes this
+packet; connecting an actual deployment requires a separate integration.
+
+![Published authorization record with reviewed file hashes](docs/media/authorized-release.png)
+
+</details>
+
+## What you can build
+
+- **Typed workflows:** nine node types — `llm`, `agent`, `code`, `tool`, `switch`, `human`,
+  `foreach`, `loop`, `pipeline` — with parallel branches, nested iterations and JSON/file inputs.
+- **Model and tool steps:** Ollama, OpenAI Responses, Anthropic Messages, and MCP through Streamable
+  HTTP or isolated stdio. Profiles bind logical model names to providers.
+- **Controlled execution:** Docker sandboxes, explicit tool/secret grants, network restrictions and
+  run budgets.
+- **Durable review:** saved human requests, completed results, command receipts and explicit
+  handling of unknown external outcomes.
+- **Inspection:** live graph and SSE events, model/tool activity, artifact export, history rewind
+  and comparisons between runs.
+
+The CLI and Tauri desktop use the same Go HTTP API. Five
+[starter workflows](examples/starter/README.md) are bundled; larger showcases live in the
+repository.
+
+## Current scope
+
+Knotra currently runs on one controlled host. Quickstart is for development and evaluation; shared
+storage, authenticated multi-user approval, RBAC and retention policies remain further work.
+Recovery preserves workflow state and completed results; it does not restore an arbitrary live
+program or undo external effects. [Execution semantics](docs/notation/execution.md) define these
+boundaries. [Verification](docs/verification.md) records what has actually been tested.
 
 ## Architecture
 
@@ -126,61 +162,30 @@ flowchart TD
 The diagram shows main connections. Temporal additionally uses its own persistent storage, separate
 from the Knotra database.
 
-## Technology Stack
-
-| Area                              | Solution                                                 |
-| --------------------------------- | -------------------------------------------------------- |
-| Engine and executors              | Go                                                       |
-| CLI                               | Go + Cobra                                               |
-| Desktop                           | Tauri 2 + Rust + React/TypeScript; SQLite for local data |
-| Notation and data contracts       | YAML 1.2 + JSON Schema                                   |
-| Conditions and simple expressions | CEL                                                      |
-| Reliable execution                | Temporal + Go SDK                                        |
-| API                               | HTTP/JSON + OpenAPI; SSE for events                      |
-| Knotra data                       | PostgreSQL + pgx                                         |
-| Models                            | Provider adapters                                        |
-| MCP                               | Official Go SDK                                          |
-| Environments                      | Docker via Engine API                                    |
-| Artifacts                         | File storage initially; S3 adapter later                 |
-| Diagnostics                       | Structured logs + OpenTelemetry                          |
-| Single-machine deployment         | Docker Compose                                           |
-
-CLI and server are built into one executable `knotra`. Linux helper for sandbox is built separately
-for the Docker daemon architecture. Temporal and PostgreSQL preserve state; the engine data
-directory preserves artifacts and large payload histories.
+The engine and CLI use Go; execution uses Temporal, PostgreSQL and Docker. Desktop uses Tauri/Rust,
+React/TypeScript, CodeMirror and React Flow. YAML and JSON Schema define the contract; CEL handles
+expressions. See [architecture](docs/architecture.md) for storage, ownership and recovery.
 
 ## Documentation
 
-| Document                                             | Content                                                                      |
-| ---------------------------------------------------- | ---------------------------------------------------------------------------- |
-| [Product Vision](docs/vision.md)                     | Purpose, scenarios, principles and project boundaries                        |
-| [Architecture](docs/architecture.md)                 | Components, execution, storage, isolation and recovery                       |
-| [Notation](docs/notation.md)                         | Navigation through the full YAML v1 contract                                 |
-| [Contract v1](docs/notation/v1.md)                   | All fields, ports, bindings and nine node types                              |
-| [Execution](docs/notation/execution.md)              | States, branching, loops, files, repetitions and recovery                    |
-| [Engine Profile](docs/notation/engine-profile.md)    | Connections, secrets, sandbox, permissions and limits                        |
-| [Contract Validation](docs/notation/validation.md)   | Package, YAML/CEL, semantic rules and diagnostics                            |
-| [JSON Schema](schemas/knotra-v1.schema.json)         | Machine-readable schema for Pipeline and EngineProfile                       |
-| [Contract Fixtures](contracts/v1/fixtures/README.md) | Positive and negative cases; reproducible validation                         |
-| [Technology Stack](docs/technology-stack.md)         | Selected technologies, their role and trade-offs                             |
-| [Startup and Recovery](docs/running.md)              | Environment preparation, storage, settings and operational boundaries        |
-| [Implementation Checks](docs/verification.md)        | Reproducible integration scenarios and validation boundaries                 |
-| [Desktop](app/README.md)                             | Installation, engine connection and interface checks                         |
-| [HTTP API](docs/api/desktop-v1.md)                   | Common CLI and desktop protocol; [OpenAPI](docs/api/desktop-v1.openapi.json) |
-| [Temporal](docs/temporal.md)                         | History, large data, Continue-As-New and durable timers                      |
-| [Development Phases](docs/roadmap.md)                | First useful version, checks and open solutions                              |
+| Start here                                           | Reference                                         |
+| ---------------------------------------------------- | ------------------------------------------------- |
+| [First run and examples](docs/first-run.md)          | [Pipeline notation](docs/notation.md)             |
+| [Engine setup and providers](docs/running.md)        | [Engine profile](docs/notation/engine-profile.md) |
+| [Desktop](app/README.md)                             | [CLI commands](internal/cli/README.md)            |
+| [Verified behavior and limits](docs/verification.md) | [HTTP API](docs/api/desktop-v1.md)                |
+| [Architecture](docs/architecture.md)                 | [Temporal implementation](docs/temporal.md)       |
+| [Roadmap](docs/roadmap.md)                           | [JSON Schema](schemas/knotra-v1.schema.json)      |
 
-Vision and stack record agreed principles. The structural JSON Schema is supplemented by a semantic
-compiler and resource availability checks upon startup acceptance.
+## Contributing
 
-In implementation, we maintain separation of source loading, validation, compilation of the
-immutable plan and execution; shared constructs follow consistent rules. Quality criteria are
-described in
-[implementation rules](docs/notation/validation.md#9-implementation-boundaries-and-code-clarity).
+```sh
+make test
+make check
+```
 
-## Participation and License
+Default tests need no model weights or paid API keys. Real-service checks are opt-in; see
+[CONTRIBUTING](CONTRIBUTING.md). Report bugs through Issues and submit changes through pull
+requests. For vulnerabilities, follow [SECURITY](SECURITY.md).
 
-The project is distributed under the [MIT](LICENSE) license. Bug reports and suggestions are
-submitted via Issues; changes — via pull request following [contribution guide](CONTRIBUTING.md).
-For vulnerability reports see [SECURITY](SECURITY.md), for communication —
-[CODE_OF_CONDUCT](CODE_OF_CONDUCT.md).
+[MIT](LICENSE) · [Code of conduct](CODE_OF_CONDUCT.md)

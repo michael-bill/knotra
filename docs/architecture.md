@@ -1,9 +1,15 @@
 # Knotra Architecture
 
-Status: architectural boundaries verified against the implementation on October 4, 2026. The engine
-and CLI implementation is described in the [run guide](running.md),
-[HTTP API contract](api/desktop-v1.md) and [Temporal review](temporal.md). Below are preserved
-architectural principles, including directions for subsequent development.
+Knotra separates the process definition from an agent's decisions. Pipelines define dependencies,
+contracts, checks and approvals; agents choose actions only within their granted tools and limits.
+Every run freezes its package and configuration. This makes its provenance inspectable, without
+promising identical model output on a new run.
+
+The engine and CLI use Go, Temporal, PostgreSQL and Docker; desktop uses Tauri/Rust and React. YAML
+parsing and JSON Schema checks are supplemented by a semantic compiler, while CEL evaluates bounded
+expressions without external I/O. Model protocols share an agent runtime and operation log. Versions
+are pinned in dependency manifests. See [setup](running.md), [API](api/desktop-v1.md) and
+[Temporal](temporal.md) for their operational details.
 
 ## Components
 

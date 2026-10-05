@@ -20,7 +20,9 @@ schedules for new features are not assigned.
   localStorage.
 - Quickstart with persistent infrastructure, doctor and CLI archives with both Linux helper
   architectures.
-- Five domain scenarios; research with code verification, approval and publication after restart.
+- Five starter scenarios, including game generation, fixed tests and bounded code repair.
+- Service fleet release gate: executable regression checks, API/configuration policy, verified agent
+  citations and an approved packet tied to the repository snapshot.
 - Live run graph: nested instances, attempts, tools, response stream, rewind and comparison.
 - Checks with real Ollama, Docker, MCP, Temporal and PostgreSQL, including parallel runs and
   recovery after SIGKILL.
@@ -29,8 +31,8 @@ Configuration is provided in [running guide](running.md), checks — in [report]
 ready commands — in [CLI reference](../internal/cli/README.md). Acceptance scenario is located in
 [`examples/integration`](../examples/integration/README.md).
 
-Product verification plan on five developers is in [pilot](pilot.md). Actual pilot and paid cloud
-API calls require participants and keys; automatic checks do not replace them.
+Paid cloud API checks require credentials and an explicit model ID; protocol fixtures do not replace
+them.
 
 ## Next Directions
 
