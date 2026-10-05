@@ -9,8 +9,9 @@ evidence from supplied materials; Python checks quotations and calculates scores
 inspects the files before the engine publishes a ZIP with the approval record.
 [Try the workflow](docs/first-run.md) · [Verification and limits](docs/verification.md).
 
-[Watch the 2-minute recovery demo](docs/media/review-recovery.webm) — real local Ollama, Docker,
-Temporal and PostgreSQL; review survives SIGKILL before publication.
+[Watch the recovery demo](docs/media/review-recovery.mp4) — real local Ollama, Docker, Temporal and
+PostgreSQL; review survives SIGKILL before publication. Recorded at 2880×1620 with readable English
+captions.
 
 ![Live research and approval graph](docs/media/review-graph.png)
 

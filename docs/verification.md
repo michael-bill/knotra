@@ -22,9 +22,12 @@ adapter refactor. A complete reviewed research run analyzed the supplied fiction
 evidence in code, paused for review, survived SIGKILL and accepted its response through the browser.
 Run `8339dfde-b8e5-4059-b25e-cf67cc4bafd0` completed with no diagnostics. Published
 `approved-dossier.md` remained byte-identical to the reviewed draft, SHA-256
-`955dee8f62a9ff9a4ba7d6c723f5bf45fb434f999576463c10921f305fb65aae`. The ZIP's dossier, comparison
-and review hashes were checked against `review.json` and the original review context.
-[Recorded demonstration](media/review-recovery.webm).
+`955dee8f62a9ff9a4ba7d6c723f5bf45fb434f999576463c10921f305fb65aae`. The ZIP's dossier and comparison
+matched the source hashes in `review.json` and the original review context. A second real run,
+`cd93b2a8-8494-46a3-a576-1e7454b30538`, records the corrected Inbox and recovery flow at 2880×1620.
+Its saved request and both review file hashes were compared before and after SIGKILL. The video uses
+lossless source screenshots and one H.264 encode with visible English captions.
+[Recorded demonstration](media/review-recovery.mp4).
 
 The first archive smoke check found that Colima could not mount a helper from an unshared temporary
 extraction directory. Quickstart now copies the verified helper into its persistent directory under
@@ -34,8 +37,9 @@ the corrected run above verifies publication after this fix. A fresh standalone 
 All four macOS/Linux CLI archives include both Linux helpers and `SHA256SUMS`.
 
 Frontend checks passed 126 unit tests and the production build. The browser suite passed 70 default
-scenarios; the affected review/translation checks then passed all nine cases, including rejection of
-corrupted file bytes without losing the human response draft. The actual recorded browser run
+scenarios before the Inbox correction; the affected review/translation checks then passed all eleven
+cases. These include long-ID layout checks at 1024 and 1440 px, missing run metadata, and rejection
+of corrupted file bytes without losing the human response draft. The actual recorded browser run
 reported no page errors. Existing paid/cloud and other opt-in browser scenarios remain separate.
 
 The five-developer pilot is prepared in [pilot](pilot.md); no user interviews or usefulness metrics
@@ -145,9 +149,9 @@ parse/structural fixtures passed.
 | Repository formatting and documentation links  | Prettier, gofmt, rustfmt and Black passed; 23 Markdown files had no missing local link targets |
 
 At that review, the real execution graph, agent message view and token streaming were still future
-work; the live execution inspection work above implements them. Ollama remains the only implemented
-model provider. No SQL migrations or dependency lockfiles changed in this re-review. The
-reproduction commands below apply to both reviews.
+work; the live execution inspection work above implements them. At that review, Ollama was the only
+model provider; the provider work above adds OpenAI and Anthropic. No SQL migrations or dependency
+lockfiles changed in this re-review. The reproduction commands below apply to both reviews.
 
 ## Initial readability review on 4 October 2026
 
@@ -326,8 +330,9 @@ caps each run at six concurrent nodes, 128 node instances, 40 model calls, 100 t
 30-minute deadline. Ollama may serialize inference even while the engine executes independent work
 concurrently.
 
-The engine currently implements the Ollama model adapter, and the live model acceptance uses
-`qwen3.5:9b`. OpenAI and Anthropic adapters are not implemented; provider examples in a contract do
-not establish runtime support. The functional MCP service exercises HTTP sessions and idempotency;
-separate adapter tests exercise stdio transport and sandbox/network restrictions. A passing scenario
-is evidence for these paths, not a guarantee for every external service or every possible pipeline.
+The engine implements Ollama, OpenAI Responses and Anthropic Messages. Live model acceptance uses
+local `qwen3.5:9b`; OpenAI and Anthropic are checked with protocol fixtures and real engine
+recovery, without paid API calls. The functional MCP service exercises HTTP sessions and
+idempotency; separate adapter tests exercise stdio transport and sandbox/network restrictions. A
+passing scenario is evidence for these paths, not a guarantee for every external service or every
+possible pipeline.

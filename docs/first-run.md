@@ -68,14 +68,16 @@ publication, cancel the run. `approved: false` does not match the schema.
 
 ## Demonstration in 2–3 Minutes
 
-[Watch the recorded run](media/review-recovery.webm). It uses actual local services and an automated
-acceptance reviewer. Idle time is shortened; the graph, request and files are real.
+[Watch the recorded run](media/review-recovery.mp4). It uses actual local services and an automated
+acceptance reviewer. The capture starts after model inference; the graph, request, restart and files
+are real. The MP4 is recorded at 2880×1620 from lossless screenshots, encoded once, and includes
+visible English captions.
 
-1. Show `greeting.txt` after quickstart and start the research workflow.
-2. Show the graph and agent tools; skip model waiting during recording.
-3. Open dossiers in Inbox, match the choice with calculated estimates.
-4. Stop and restart quickstart. Show the same request ID and files.
-5. Answer the request, download ZIP, and open `review.json`.
+1. Open the real run graph with research completed and publication waiting for review.
+2. Inspect the source-reading agents and their saved tool calls.
+3. Read the dossier in Inbox and check its calculated recommendation.
+4. Stop and restart the engine. Open the same request and verified comparison again.
+5. Approve, export the ZIP, and inspect the reviewer and file hashes in `review.json`.
 
 [Implementation Checks](verification.md) separate real services from cloud fixtures.
 [Pilot with Five Developers](pilot.md) checks whether this process solves a useful task.
