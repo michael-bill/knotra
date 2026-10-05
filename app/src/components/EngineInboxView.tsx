@@ -156,28 +156,30 @@ function EngineResponse({
           {t('execution.viewRun')}
         </button>
       </header>
-      <p className="review-prompt">{request.prompt}</p>
-      <p className="small muted">
-        {t('execution.deadlineTime', { time: time(request.deadline, locale) })}
-      </p>
-      {Object.entries(request.inputs.artifacts ?? {}).flatMap(([name, value]) =>
-        (Array.isArray(value) ? value : [value]).map((artifact, index) => (
-          <ReviewArtifact
-            key={`${artifact.id}/${artifact.sha256}`}
-            name={Array.isArray(value) ? `${name}[${index}]` : name}
-            artifact={artifact}
-            connected={!!engine.info}
-          />
-        )),
-      )}
-      <details>
-        <summary>{t('execution.inputs')}</summary>
-        <pre className="json-view">{JSON.stringify(request.inputs, null, 2)}</pre>
-      </details>
-      <details>
-        <summary>{t('execution.responseSchema')}</summary>
-        <pre className="json-view">{JSON.stringify(request.responseSchema, null, 2)}</pre>
-      </details>
+      <div className="review-content">
+        <p className="review-prompt">{request.prompt}</p>
+        <p className="small muted">
+          {t('execution.deadlineTime', { time: time(request.deadline, locale) })}
+        </p>
+        {Object.entries(request.inputs.artifacts ?? {}).flatMap(([name, value]) =>
+          (Array.isArray(value) ? value : [value]).map((artifact, index) => (
+            <ReviewArtifact
+              key={`${artifact.id}/${artifact.sha256}`}
+              name={Array.isArray(value) ? `${name}[${index}]` : name}
+              artifact={artifact}
+              connected={!!engine.info}
+            />
+          )),
+        )}
+        <details>
+          <summary>{t('execution.inputs')}</summary>
+          <pre className="json-view">{JSON.stringify(request.inputs, null, 2)}</pre>
+        </details>
+        <details>
+          <summary>{t('execution.responseSchema')}</summary>
+          <pre className="json-view">{JSON.stringify(request.responseSchema, null, 2)}</pre>
+        </details>
+      </div>
       <div className="response-form">
         <label className="field">
           {t('execution.responseOutputPorts')}

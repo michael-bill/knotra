@@ -1799,6 +1799,32 @@ kbd {
   min-width: 0;
   max-width: 100%;
 }
+.review-content {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  padding: 24px 27px;
+  min-width: 0;
+}
+.review-content .review-prompt {
+  margin: 0;
+}
+.review-content .execution-artifact {
+  margin: 0;
+}
+.review-content > details {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 12px 14px;
+  font-size: 11px;
+}
+.review-content > details > summary {
+  cursor: pointer;
+}
+.review-content > details .json-view {
+  margin: 12px 0 0;
+  max-height: 340px;
+}
 .review-artifact .json-view,
 .artifact-text {
   min-width: 0;
