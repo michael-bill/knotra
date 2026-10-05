@@ -11,6 +11,7 @@ spec:
     - check.mjs
     - verify.mjs
     - shell.html
+    - seed.mjs
   models:
     planner:
       connection: model_main
@@ -33,6 +34,14 @@ spec:
         Implement the exact winner(board), makeMove(board, index, player), and
         chooseMove(board, player) CommonJS API in game-contract.md. The supplied browser
         interface already handles display, keyboard controls, scores, and restarting.
+    initial_source:
+      description:
+        Optional existing CommonJS module. Test it first, then repair using actual failures. Leave
+        empty to generate from scratch.
+      schema:
+        type: string
+        maxLength: 16000
+      default: ''
   nodes:
     plan:
       type: llm
@@ -65,6 +74,11 @@ spec:
         plan:
           schema: { type: string, minLength: 1 }
           bind: { from: nodes.plan.outputs.plan }
+        initial_source:
+          schema:
+            type: string
+          bind:
+            from: inputs.initial_source
       loop:
         maxIterations: 4
         onLimit: fail
@@ -82,13 +96,40 @@ spec:
           plan: { from: args.plan }
           previous_source: { from: state.source }
           feedback: { from: state.feedback }
+          initial_source:
+            from: args.initial_source
         body:
           inputs:
             brief: { schema: { type: string, minLength: 1 } }
             plan: { schema: { type: string, minLength: 1 } }
             previous_source: { schema: { type: string } }
             feedback: { schema: { type: string } }
+            initial_source:
+              schema:
+                type: string
           nodes:
+            seed:
+              type: code
+              description: Test supplied existing code before asking the model to change it.
+              when: inputs.initial_source != "" && inputs.previous_source == ""
+              sandbox: javascript
+              inputs:
+                source:
+                  schema:
+                    type: string
+                    maxLength: 16000
+                  bind:
+                    from: inputs.initial_source
+              code:
+                command:
+                  - node
+                  - /package/seed.mjs
+              outputs:
+                source:
+                  schema:
+                    type: string
+                    minLength: 1
+                    maxLength: 16000
             generate:
               type: llm
               description:
@@ -112,6 +153,7 @@ spec:
               outputs:
                 source:
                   schema: { type: string, minLength: 1, maxLength: 16000 }
+              when: inputs.initial_source == "" || inputs.previous_source != ""
             check:
               type: code
               description:
@@ -120,7 +162,10 @@ spec:
               inputs:
                 source:
                   schema: { type: string, minLength: 1, maxLength: 16000 }
-                  bind: { from: nodes.generate.outputs.source }
+                  bind:
+                    coalesce:
+                      - from: nodes.seed.outputs.source
+                      - from: nodes.generate.outputs.source
               code:
                 command: [node, /package/check.mjs]
               outputs:

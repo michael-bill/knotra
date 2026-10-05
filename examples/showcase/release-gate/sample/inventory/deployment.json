@@ -1,0 +1,11 @@
+{
+  "run_as_uid": 65532,
+  "read_only_root": true,
+  "privileged": false,
+  "host_network": false,
+  "drop_capabilities": ["ALL"],
+  "image": "registry.example.invalid/inventory@sha256:4444444444444444444444444444444444444444444444444444444444444444",
+  "rollback_image": "registry.example.invalid/inventory@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "memory_mib": 256,
+  "canary_percent": 5
+}

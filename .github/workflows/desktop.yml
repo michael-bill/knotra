@@ -63,3 +63,6 @@ jobs:
       - run:
           PYTHONDONTWRITEBYTECODE=1 /tmp/knotra-contract-venv/bin/python -m unittest discover -s
           examples/showcase/portfolio-review/tests -v
+      - run:
+          PYTHONDONTWRITEBYTECODE=1 /tmp/knotra-contract-venv/bin/python -m unittest discover -s
+          examples/showcase/release-gate/tests -v

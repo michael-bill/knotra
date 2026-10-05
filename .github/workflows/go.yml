@@ -27,6 +27,9 @@ jobs:
       - run: go mod download
       - run: make check
       - run: make build
+      - run:
+          bin/knotra validate examples/showcase/release-gate/pipeline.yaml --profile
+          examples/local/profile.yaml
 
   integration:
     runs-on: ubuntu-latest

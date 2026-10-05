@@ -1,0 +1,28 @@
+{
+  "operations": {
+    "GET /v1/orders/{id}": {
+      "request": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          }
+        },
+        "required": ["id"]
+      },
+      "response": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": ["ready", "pending"]
+          }
+        },
+        "required": ["id", "status"]
+      }
+    }
+  }
+}

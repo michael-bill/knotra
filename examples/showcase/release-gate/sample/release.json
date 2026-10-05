@@ -1,0 +1,53 @@
+{
+  "release": "commerce-2026.10.05",
+  "services": [
+    {
+      "id": "orders",
+      "path": "orders",
+      "baseline_api": "orders/baseline-api.json",
+      "candidate_api": "orders/candidate-api.json",
+      "deployment": "orders/deployment.json",
+      "minimum_tests": 6
+    },
+    {
+      "id": "billing",
+      "path": "billing",
+      "baseline_api": "billing/baseline-api.json",
+      "candidate_api": "billing/candidate-api.json",
+      "deployment": "billing/deployment.json",
+      "minimum_tests": 6
+    },
+    {
+      "id": "identity",
+      "path": "identity",
+      "baseline_api": "identity/baseline-api.json",
+      "candidate_api": "identity/candidate-api.json",
+      "deployment": "identity/deployment.json",
+      "minimum_tests": 6
+    },
+    {
+      "id": "inventory",
+      "path": "inventory",
+      "baseline_api": "inventory/baseline-api.json",
+      "candidate_api": "inventory/candidate-api.json",
+      "deployment": "inventory/deployment.json",
+      "minimum_tests": 6
+    },
+    {
+      "id": "notifications",
+      "path": "notifications",
+      "baseline_api": "notifications/baseline-api.json",
+      "candidate_api": "notifications/candidate-api.json",
+      "deployment": "notifications/deployment.json",
+      "minimum_tests": 6
+    },
+    {
+      "id": "search",
+      "path": "search",
+      "baseline_api": "search/baseline-api.json",
+      "candidate_api": "search/candidate-api.json",
+      "deployment": "search/deployment.json",
+      "minimum_tests": 6
+    }
+  ]
+}

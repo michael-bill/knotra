@@ -31,20 +31,21 @@ values; do not reject boards based on move counts or whose turn it is.
 
 ## Minimax recipe
 
-`other(X) = O`; `other(O) = X`. Keep `me` fixed as the original computer mark; only `turn`
-alternates. The recursive helper returns a SCORE, never an index. Use `let` for variables that are
-reassigned.
+Define one helper `opposite(mark)`, returning "O" for "X" and "X" for "O". Use this function
+everywhere; do not also declare a string variable with the same name. Keep `me` fixed as the
+original computer mark; only `turn` alternates. The recursive helper returns a SCORE, never an
+index. Use `let` for variables that are reassigned.
 
 ```text
 score(position, turn, me):
   outcome = winner(position)
   if outcome equals me: return +1
-  if outcome equals other(me): return -1
+  if outcome equals opposite(me): return -1
   if outcome equals "draw": return 0
   best = -2 if turn equals me, otherwise +2
   for each empty index in position:
     next = copy position; set next[index] = turn
-    value = score(next, other(turn), me)
+    value = score(next, opposite(turn), me)
     best = max(best, value) if turn equals me, otherwise min(best, value)
   return best
 
@@ -56,7 +57,7 @@ chooseMove(board, me):
   bestScore = -2; bestIndex = null
   for each empty index in ascending order:
     next = copy board; set next[index] = me
-    value = score(next, other(me), me)
+    value = score(next, opposite(me), me)
     if value > bestScore:
       bestScore = value
       bestIndex = index
@@ -69,4 +70,6 @@ empty positions and must not be used as a cache key.
 
 The independent tests cover all winning lines, draws, legal and illegal moves, immutability,
 immediate wins/blocks, repeatable choices, and every legal opponent continuation against the
-computer as X and O. Return the complete corrected source, not a patch or a test report.
+computer as X and O. When repairing, address the supplied `feedback` before returning. Syntax errors
+also fail tests; remove duplicate declarations and keep helper names distinct from local variables.
+Return the complete corrected source, not a patch or a test report.

@@ -60,7 +60,7 @@ be empty). Cancel the run if the evidence is insufficient.
 Publication copies the reviewed dossier without model revision and verifies it against the source
 ZIP. `review.json` records the reviewer, comments and SHA-256 of both reviewed files. The final ZIP
 contains the original evidence, comparison, dossier and review record. The
-[first-run guide](../../docs/first-run.md) gives CLI commands and a short demonstration script.
+[review entrypoint](research-dossier/review.yaml) declares the response schema and artifact outputs.
 
 ## Play the generated game
 
@@ -72,6 +72,11 @@ iterations, stopping on passing tests or failing at the limit. A separate sandbo
 collected code again before assembling `index.html` with the supplied interface. Download the HTML
 artifact and open it in a browser to play offline. The source and test report are separate artifacts
 for inspection.
+
+Optionally supply an existing module through `initial_source`. The engine tests it as the first
+candidate before requesting a correction. The [repair exercise](../showcase/game-repair/README.md)
+provides an intentionally incorrect opponent to demonstrate actual test feedback and correction.
+Leave the input empty to generate from scratch.
 
 ## Review a publication
 
