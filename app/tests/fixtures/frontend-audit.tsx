@@ -39,31 +39,33 @@ const engine: EngineController = {
   profiles: [],
   resources: [],
   pending: [],
-  requests: ['first', 'second'].map((name): EngineRequest => ({
-    id: `request-${name}`,
-    runId: `run-${name}`,
-    instanceId: `root/${name}`,
-    attemptId: 'attempt-1',
-    status: 'open',
-    prompt: `Review ${name} request.`,
-    createdAt: '2026-10-01T00:00:00Z',
-    deadline: '2030-01-01T00:00:00Z',
-    inputs: {
-      values: {},
-      artifacts:
-        name === 'first'
-          ? {
-              document: {
-                id: 'artifact-1',
-                mediaType: 'text/plain',
-                size: 5,
-                sha256: '2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824',
-              },
-            }
-          : {},
-    },
-    responseSchema: { type: 'object' },
-  })),
+  requests: ['first', 'second'].map(
+    (name): EngineRequest => ({
+      id: `request-${name}`,
+      runId: `run-${name}`,
+      instanceId: `root/${name}`,
+      attemptId: 'attempt-1',
+      status: 'open',
+      prompt: `Review ${name} request.`,
+      createdAt: '2026-10-01T00:00:00Z',
+      deadline: '2030-01-01T00:00:00Z',
+      inputs: {
+        values: {},
+        artifacts:
+          name === 'first'
+            ? {
+                document: {
+                  id: 'artifact-1',
+                  mediaType: 'text/plain',
+                  size: 5,
+                  sha256: '2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824',
+                },
+              }
+            : {},
+      },
+      responseSchema: { type: 'object' },
+    }),
+  ),
   connect: async () => {},
   disconnect: async () => {},
   refresh: async () => {},

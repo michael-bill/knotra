@@ -861,7 +861,7 @@
   "observe.outputsVerified": "Outputs verified",
   "observe.outputValidationFailed": "Output validation failed",
   "history.absent": "Not recorded at this point",
-  "history.previewLimited": "Preview limited to 24 KiB.",
+  "history.previewLimited": "Preview limited to 24,576 characters.",
   "history.replay": "Replay",
   "history.savedState": "Saved execution state",
   "history.replayExplanation": "Move through recorded state changes. This view does not execute or repeat any operations.",

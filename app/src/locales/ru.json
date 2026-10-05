@@ -861,7 +861,7 @@
   "observe.outputsVerified": "Выходные данные проверены",
   "observe.outputValidationFailed": "Выходные данные не прошли проверку",
   "history.absent": "На этом этапе не записано",
-  "history.previewLimited": "Предпросмотр ограничен 24 КиБ.",
+  "history.previewLimited": "Предпросмотр ограничен 24 576 символами.",
   "history.replay": "История исполнения",
   "history.savedState": "Сохранённое состояние исполнения",
   "history.replayExplanation": "Просматривайте записанные изменения состояния. Этот экран не запускает и не повторяет операции.",
