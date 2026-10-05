@@ -70,8 +70,7 @@ publication, cancel the run. `approved: false` does not match the schema.
 
 [Watch the recorded run](media/review-recovery.mp4). It uses actual local services and an automated
 acceptance reviewer. The capture starts after model inference; the graph, request, restart and files
-are real. The MP4 is recorded at 2880×1620 from lossless screenshots, encoded once, and includes
-visible English captions.
+are real.
 
 1. Open the real run graph with research completed and publication waiting for review.
 2. Inspect the source-reading agents and their saved tool calls.
