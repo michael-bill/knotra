@@ -6,13 +6,16 @@ import SourceEditor from '../../src/components/SourceEditor';
 import WorkspaceView from '../../src/components/WorkspaceView';
 import { Modal } from '../../src/components/ui';
 import { connectEngine } from '../../src/lib/engine/client';
-import type { EngineRequest } from '../../src/lib/engine/types';
+import type { EngineRequest, EngineRun } from '../../src/lib/engine/types';
 import type { EngineController } from '../../src/lib/engine/useEngine';
 import { validatePipeline } from '../../src/lib/validation';
 import type { Workspace } from '../../src/lib/types';
 import foreachSource from '../../../contracts/v1/fixtures/positive/foreach/pipeline.yaml?raw';
 import '../../src/styles.css';
 
+const params = new URLSearchParams(location.search);
+const instanceId = (name: string) =>
+  params.has('longIds') ? `n_${(name === 'first' ? 'a' : 'b').repeat(64)}` : `root/${name}`;
 const engine: EngineController = {
   sessionKey: 'audit-fixture',
   info: {
@@ -25,7 +28,34 @@ const engine: EngineController = {
   connecting: false,
   syncing: false,
   error: '',
-  runs: [],
+  runs: params.has('missingRuns')
+    ? []
+    : ['first', 'second'].map(
+        (name): EngineRun => ({
+          id: `run-${name}`,
+          definitionId: 'definition-1',
+          title: `Research ${name}`,
+          status: 'running',
+          createdAt: '2026-10-01T00:00:00Z',
+          updatedAt: '2026-10-01T00:00:00Z',
+          profile: 'local',
+          package: { entrypoint: 'pipeline.yaml', source: '', files: [] },
+          inputs: {},
+          inputArtifacts: {},
+          outputs: {},
+          artifacts: [],
+          instances: [
+            {
+              id: instanceId(name),
+              nodeId: `review_${name}`,
+              scope: 'root',
+              status: 'waiting_human',
+            },
+          ],
+          diagnostics: [],
+          availableActions: [],
+        }),
+      ),
   artifacts: [
     {
       id: 'artifact-1',
@@ -41,9 +71,9 @@ const engine: EngineController = {
   pending: [],
   requests: ['first', 'second'].map(
     (name): EngineRequest => ({
-      id: `request-${name}`,
+      id: params.has('longIds') ? `h_${name.repeat(16)}` : `request-${name}`,
       runId: `run-${name}`,
-      instanceId: `root/${name}`,
+      instanceId: instanceId(name),
       attemptId: 'attempt-1',
       status: 'open',
       prompt: `Review ${name} request.`,

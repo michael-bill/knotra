@@ -1740,6 +1740,12 @@ kbd {
   color: var(--text);
   font-weight: 500;
 }
+.request-list strong,
+.request-list small,
+.request-list time {
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
 .request-list small,
 .request-list time {
   font-size: 10px;
@@ -1762,8 +1768,18 @@ kbd {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 16px;
   padding: 24px 27px;
   border-bottom: 1px solid var(--border);
+}
+.review-card > header > div {
+  min-width: 0;
+  flex: 1;
+  overflow-wrap: anywhere;
+}
+.review-card > header > button,
+.response-footer > button {
+  flex-shrink: 0;
 }
 .review-card h2 {
   font-size: 20px;
@@ -1776,6 +1792,8 @@ kbd {
   font-size: 11px;
   color: var(--text-muted);
   margin: 21px 27px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 .brief-preview {
   border: 1px solid var(--border);
@@ -1838,6 +1856,8 @@ kbd {
   align-items: center;
   font-size: 9px;
   color: var(--text-subtle);
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 .form-error {
   color: var(--text-secondary);

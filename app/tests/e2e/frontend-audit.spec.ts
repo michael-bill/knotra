@@ -1,11 +1,53 @@
 import { test, expect } from '@playwright/test';
 
+for (const width of [1024, 1440]) {
+  test(`Inbox keeps opaque request IDs inside their cards at ${width}px`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 940 });
+    for (const missingRuns of [false, true]) {
+      await page.goto(
+        `/tests/fixtures/frontend-audit.html?component=inbox&longIds=1${missingRuns ? '&missingRuns=1' : ''}`,
+      );
+      await expect(page.locator('.review-card h2')).toHaveText(
+        missingRuns ? 'HUMAN REQUEST' : 'review_first',
+      );
+      await expect(page.locator('.request-list button.active')).toContainText(
+        missingRuns ? 'run-first' : 'Research first',
+      );
+      const bounds = await page.evaluate(() => {
+        const rect = (selector: string) =>
+          document.querySelector(selector)!.getBoundingClientRect();
+        const list = rect('.request-list');
+        const title = rect('.request-list strong');
+        const card = rect('.review-card');
+        const heading = rect('.review-card h2');
+        const run = rect('.review-card > header > button');
+        const id = rect('.response-footer small');
+        const submit = rect('.response-footer > button');
+        return {
+          listFits: title.right <= list.right,
+          headingFits: heading.right <= run.left,
+          footerFits: id.right <= submit.left,
+          pageFits: card.right <= innerWidth,
+          noScroll: document.documentElement.scrollWidth <= innerWidth,
+        };
+      });
+      expect(bounds).toEqual({
+        listFits: true,
+        headingFits: true,
+        footerFits: true,
+        pageFits: true,
+        noScroll: true,
+      });
+    }
+  });
+}
+
 test('switching human requests preserves each unsent response and marks the displayed request', async ({
   page,
 }) => {
   await page.goto('/tests/fixtures/frontend-audit.html?component=inbox');
-  const first = page.getByRole('button', { name: /root\/first/ });
-  const second = page.getByRole('button', { name: /root\/second/ });
+  const first = page.getByRole('button', { name: /review_first/ });
+  const second = page.getByRole('button', { name: /review_second/ });
   await expect(first).toHaveClass('active');
   const response = page.getByRole('textbox', { name: 'Engine review response' });
   await response.fill('{"feedback":"First review in progress"}');

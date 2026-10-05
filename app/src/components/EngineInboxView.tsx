@@ -26,6 +26,13 @@ export function EngineInboxView({
   const setDrafts = onResponseDraftsChange ?? setLocalDrafts;
   const requests = engine.requests.filter((request) => request.status === 'open');
   const request = requests.find((request) => request.id === selected) ?? requests[0];
+  const requestName = (item: EngineRequest) =>
+    engine.runs
+      .find((run) => run.id === item.runId)
+      ?.instances.find((instance) => instance.id === item.instanceId)?.nodeId ??
+    t('execution.humanRequest');
+  const runTitle = (item: EngineRequest) =>
+    engine.runs.find((run) => run.id === item.runId)?.title ?? item.runId;
   return (
     <section className="page inbox-page">
       <header className="page-heading">
@@ -48,8 +55,8 @@ export function EngineInboxView({
                 onClick={() => setSelected(item.id)}
               >
                 <Inbox size={17} />
-                <strong>{item.instanceId}</strong>
-                <small>{item.runId}</small>
+                <strong>{requestName(item)}</strong>
+                <small>{runTitle(item)}</small>
                 <time>{time(item.createdAt, locale)}</time>
               </button>
             ))}
@@ -57,6 +64,8 @@ export function EngineInboxView({
           <EngineResponse
             key={request.id}
             request={request}
+            title={requestName(request)}
+            runTitle={runTitle(request)}
             engine={engine}
             onRun={onRun}
             value={drafts[request.id] ?? '{}'}
@@ -82,6 +91,8 @@ export function EngineInboxView({
 
 function EngineResponse({
   request,
+  title,
+  runTitle,
   engine,
   onRun,
   value,
@@ -89,6 +100,8 @@ function EngineResponse({
   onSubmitted,
 }: {
   request: EngineRequest;
+  title: string;
+  runTitle: string;
   engine: EngineController;
   onRun: (id: string) => void;
   value: string;
@@ -136,7 +149,8 @@ function EngineResponse({
       <header>
         <div>
           <span className="eyebrow">{t('execution.humanRequest')}</span>
-          <h2>{request.instanceId}</h2>
+          <h2>{title}</h2>
+          <p className="small muted">{runTitle}</p>
         </div>
         <button className="text-button" onClick={() => onRun(request.runId)}>
           {t('execution.viewRun')}
