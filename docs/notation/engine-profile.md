@@ -538,10 +538,8 @@ attempt per execution contract; there is no separate hidden transport retry coun
 
 Upon exhausting the counter, a new operation is not sent and a limit error is created.
 `maxConcurrentNodes` limits parallelism by waiting for a free slot; occupied slots in themselves are
-not an error. Upon timeout expiration, planning stops, and active work receives cancellation.
-Completed external effects are not rolled back.
-
-These limits are not monetary budget and do not promise precise provider billing accounting. An
+not an error. Upon timeout expiration, planning stops, and active work receives cancellation. These
+limits are not monetary budget and do not promise precise provider billing accounting. An
 interrupted request may be charged, and tokens may become known only after response. V1 contains no
 fields for monetary limits and global quota between independent root runs; an operator may
 additionally limit infrastructure.

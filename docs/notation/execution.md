@@ -232,8 +232,7 @@ a new logical result.
 
 Publication of controlling `foreach`, `loop` and `pipeline` nodes is also atomic for the parent
 graph. Successful nested instance results remain in history, but parent consumers receive only the
-controlling node's completed output. Publication does not roll back effects of executed external
-operations.
+controlling node's completed output.
 
 ## 7. Common result contract
 
@@ -762,9 +761,7 @@ requests, and active attempts. The engine stops admission of new work, cancels w
 cancellation to supporting providers, and stops sandbox processes. Successfully completed instances
 and their published results are preserved.
 
-Cancellation does not roll back external effects, does not delete a document published to an
-external system, and does not mean that a remote service has ceased an already accepted request. If
-after cancellation the write operation outcome is unknown, this fact remains in history and run
+If after cancellation the write operation outcome is unknown, this fact remains in history and run
 diagnostics. Cancellation of an open human request forbids further acceptance of a response to it.
 
 Publication race with cancellation is resolved by the first committed operation: publication
@@ -774,10 +771,4 @@ saved as outcome evidence without transitioning the cancelled instance to `succe
 
 After restart, the executor restores confirmed states and counters. Saved successful nodes are not
 re-executed. Incomplete publication is restored idempotently. For an incomplete external operation,
-the outcome is determined or section 19 applies. Presence of a workflow record does not grant right
-to assume process memory or sandbox file recovery.
-
-Continuation of the same agent attempt is permitted only with a consistent checkpoint of messages,
-completed operations and files. If absent, a new safe attempt per sections 18–19 or stop with
-diagnostics is allowed. The executor does not declare recovery successful via silent re-execution of
-all actions.
+the outcome is determined or section 19 applies.

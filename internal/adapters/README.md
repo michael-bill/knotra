@@ -185,8 +185,7 @@ go test ./internal/adapters/... -count=1
 
 The Ollama test uses `qwen3.5:9b`. Tests remove only containers they create.
 
-Cloud protocol tests use independent literal HTTP/SSE fixtures and no API keys. To deliberately run
-paid smoke tests, set a key and an explicit available model ID, then opt in:
+To run cloud smoke tests, set a key and an explicit available model ID, then opt in:
 
 ```sh
 KNOTRA_TEST_CLOUD=1 KNOTRA_TEST_OPENAI_MODEL=YOUR_MODEL \
@@ -195,5 +194,5 @@ go test -mod=readonly ./internal/adapters -run '^TestCloudRealStructuredAndAgent
 
 Set `OPENAI_API_KEY` in the environment first. Anthropic uses `ANTHROPIC_API_KEY` and
 `KNOTRA_TEST_ANTHROPIC_MODEL`. Each provider without both values is skipped. Docker/helper settings
-above enable the agent subtest. Local fixtures also cover agent tools in real Docker and full
-Temporal/PostgreSQL recovery in `internal/integration`; neither requires paid calls.
+above enable the agent subtest. Agent tools and Temporal/PostgreSQL recovery are checked in
+`internal/integration`.

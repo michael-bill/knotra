@@ -223,14 +223,12 @@ storage model are required; Compose is not a production recipe.
 After engine restart, completed external responses are read from the log. If the record outcome is
 unknown or the working environment of an unfinished agent is lost, the engine requires explicit
 state resolution instead of re-executing the command. `runs resolve` accepts proven outcomes and
-verified outputs; `resume` does not bypass this check. Cancellation does not roll back changes in
-external systems.
+verified outputs; `resume` does not bypass this check.
 
 Containers have their own watchdog: after an abnormal termination of the engine process, heartbeat
 stoppage stops them approximately 45 seconds later. Agent/code are additionally limited by attempt
 deadline. Upon next startup the engine cleans remaining containers and temporary directories only
-for its own engine ID. The working environment of an unfinished attempt is not restored from
-temporary files.
+for its own engine ID.
 
 The engine implements **Ollama**, **OpenAI Responses** and **Anthropic Messages**. An unknown
 `provider` is rejected at admission. MCP supports Streamable HTTP and stdio within an isolated

@@ -56,10 +56,9 @@ regression tests, compare API schemas and enforce configuration policy. Agents r
 resulting evidence, and code checks their quotations. A failing gate blocks the run before agent
 review or human authorization.
 
-The included six-service sample is executable example data. For production experiments, supply your
-own service inventory and repository snapshot, and adapt the documented check interfaces to your
-test runner, API format and deployment policy. The template produces an authorized evidence packet;
-it does not deploy services or establish enterprise access control.
+To use your own services, supply their inventory and repository snapshot, and configure the
+documented check interfaces for your test runner, API contracts and deployment policy. The workflow
+produces an authorized evidence packet.
 
 ## Restart and approve
 

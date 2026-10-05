@@ -31,15 +31,11 @@ Configuration is provided in [running guide](running.md), checks — in [report]
 ready commands — in [CLI reference](../internal/cli/README.md). Acceptance scenario is located in
 [`examples/integration`](../examples/integration/README.md).
 
-Paid cloud API checks require credentials and an explicit model ID; protocol fixtures do not replace
-them.
-
 ## Next Directions
 
 | Direction                           | What is required                                                       |
 | ----------------------------------- | ---------------------------------------------------------------------- |
 | Shared artifacts and multiple hosts | Object storage, shared payloads and worker ownership model             |
-| Agent recovery within attempt       | Persisted conversation, tool results and workspace snapshot            |
 | Long-running runs on update         | Workflow versioning and compatibility check of saved histories         |
 | New run from selected place         | Explicit reuse of results without changing old run                     |
 | Operations                          | Event/file retention, backup and storage quotas                        |
@@ -47,10 +43,8 @@ them.
 | Desktop delivery                    | Signed builds, notarization and check of each supported OS             |
 | Quality assessment                  | Domain examples, model/prompt comparison, quality and cost measurement |
 
-Local mode without Temporal requires a separate architectural solution. Workflow recovery does not
-promise recovery of a live container or continuation of the program with an arbitrary instruction.
-Cancellation does not roll back external effects. Current guarantees are described in
-[execution semantics](notation/execution.md).
+Local mode without Temporal requires a separate architectural solution. Execution behavior is
+described in [execution semantics](notation/execution.md).
 
 ## Criteria for Extensions
 

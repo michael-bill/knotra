@@ -107,7 +107,7 @@ The engine returns `availableActions` based on authoritative state and permissio
 renders only these actions and never changes execution status optimistically:
 
 - `POST /runs/{runId}/cancel`, body `{}`: request cancellation. Receipt `{accepted:true,runId}` does
-  not mean all active work has stopped. Published effects are not rolled back.
+  not mean all active work has stopped.
 - `POST /runs/{runId}/resume`, body `{}`: continue the SAME saved attempt/checkpoint only if the
   engine says it is safe. It is not retry or a new run.
 - `POST /runs/{runId}/instances/{instanceId}/resolve`, body `{outcome,evidence,outputs?}`: record

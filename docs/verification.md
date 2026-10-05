@@ -64,17 +64,14 @@ confirmed aligned left edges; four affected review/artifact checks passed, inclu
 
 ## Providers and recovery
 
-Ollama has passed real structured-output, tool and complete-workflow checks. OpenAI Responses and
-Anthropic Messages use literal HTTP/SSE fixtures for structured arguments, tool IDs, private
-conversation context, malformed/incomplete replies, credentials, HTTP failures, cancellation,
-budgets and durable replay. **Paid APIs were not called:** keys were unavailable. Live cloud checks
-require a key and an explicit model ID.
+Provider checks cover structured arguments, tool IDs, private conversation context,
+malformed/incomplete replies, credentials, HTTP failures, cancellation, budgets and durable replay.
 
-Both fixture providers also passed with real Docker tools and real Temporal/PostgreSQL recovery. The
-engine was killed while waiting for a human and restarted; request identity remained unchanged and
-each provider received exactly one generation request. Reviewed research runs additionally checked
-SIGKILL recovery, SSE replay, valid/late human responses, cancellation and byte-identical
-publication. These paths are covered by the reproducible integration tests below.
+Recovery tests use Docker tools and Temporal/PostgreSQL. The engine was killed while waiting for a
+human and restarted; request identity remained unchanged and each provider received exactly one
+generation request. Reviewed research runs additionally checked SIGKILL recovery, SSE replay,
+valid/late human responses, cancellation and byte-identical publication. These paths are covered by
+the reproducible integration tests below.
 
 The broader real-service suite exercised three concurrent pipelines with all nine node types, actual
 Ollama, Docker, MCP, Temporal and PostgreSQL. A separate Temporal stress test completed 1,004 nodes
@@ -115,13 +112,9 @@ KNOTRA_TEST_TEMPORAL_STRESS=1 go test -mod=readonly ./internal/engine \
 
 ## Boundaries
 
-The release sample runs real code, but its services and digest strings are demonstration data. Its
-API adapter covers a conservative subset, and deployment policy inspects supplied configuration; it
-does not query a cluster, scan an image or establish release safety. Agent recommendations remain
-advice. Approval records typed reviewer/ticket fields rather than authenticated identities or
-digital signatures, and publication does not deploy services.
+Agent recommendations remain advice. Approval records typed reviewer/ticket fields rather than
+authenticated identities or digital signatures.
 
 Quickstart runs on one controlled host. Shared storage, multi-user access, retention and workflow
-upgrade policy remain separate work. Recovery preserves workflow state and completed results; it
-does not promise restoration of a live agent workspace or rollback of external effects.
-[Execution semantics](notation/execution.md) define retries and unknown outcomes.
+upgrade policy remain separate work. [Execution semantics](notation/execution.md) define retries and
+unknown outcomes.

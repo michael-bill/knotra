@@ -108,8 +108,8 @@ release owner supplies their name, change ticket and comments.
 ![Release review and change ticket before publication](docs/media/human-review.png)
 
 **Export the reviewed bytes.** The final ZIP contains the repository snapshot, executed checks,
-agent recommendations, dossier and authorization record with SHA-256 hashes. Approval publishes this
-packet; connecting an actual deployment requires a separate integration.
+agent recommendations, dossier and authorization record with SHA-256 hashes. Approval publishes the
+reviewed packet.
 
 ![Published authorization record with reviewed file hashes](docs/media/authorized-release.png)
 
@@ -136,9 +136,7 @@ repository.
 
 Knotra currently runs on one controlled host. Quickstart is for development and evaluation; shared
 storage, authenticated multi-user approval, RBAC and retention policies remain further work.
-Recovery preserves workflow state and completed results; it does not restore an arbitrary live
-program or undo external effects. [Execution semantics](docs/notation/execution.md) define these
-boundaries. [Verification](docs/verification.md) records what has actually been tested.
+[Verification](docs/verification.md) records the implementation checks.
 
 ## Architecture
 

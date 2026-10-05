@@ -6,9 +6,8 @@ through isolated sandboxes and saved human requests.
 
 The supplied commerce snapshot contains six small executable Python services: orders, billing,
 identity, inventory, notifications and search. Their regression tests exercise prices, rounding,
-authorization expiry, stock reservations, duplicate delivery and Unicode search normalization. These
-are demonstration services, not a customer's production system. Every result shown in the
-screenshots comes from executing the supplied snapshot.
+authorization expiry, stock reservations, duplicate delivery and Unicode search normalization. Every
+result shown in the screenshots comes from executing the supplied snapshot.
 
 ## What executes
 
@@ -16,7 +15,7 @@ The default graph has 30 nodes and six parallel service lanes. Each lane runs th
 
 - Python `unittest` regression tests, including a minimum executed-test count and source-byte
   checks.
-- Conservative request/response compatibility against the declared baseline API contract.
+- Request/response compatibility against the declared baseline API contract.
 - Nine rules on the declared deployment configuration: non-root UID, read-only root, no privilege or
   host networking, dropped capabilities, pinned image, memory limit, bounded canary and pinned
   rollback image.
@@ -33,7 +32,7 @@ labeled from executed checks. A human then authorizes the packet with a reviewer
 comments.
 
 Publication preserves the reviewed bytes and packages the snapshot, executed results, cited reviews
-and `authorization.json` with their SHA-256 hashes. It does not deploy anything.
+and `authorization.json` with their SHA-256 hashes.
 
 ## Run the supplied snapshot
 
@@ -110,16 +109,15 @@ compiled lanes exactly; adding a service cannot silently leave it unchecked. The
 The regression adapter discovers `test_*.py` with Python `unittest`. Supply the project dependencies
 in a trusted, pinned sandbox image; this package does not install dependencies during a run. For
 other languages or CI systems, replace that adapter while retaining the evidence IDs, snapshot
-identity, nonzero executed-test count and explicit failure result. The API adapter supports only
-`type`, `properties`, `required`, `enum` and `items`; it is not a full OpenAPI compatibility tool.
-Deployment checks inspect the supplied JSON configuration, including the syntax of image digests;
-they do not query a cluster, resolve registry images or conduct a security audit.
+identity, nonzero executed-test count and explicit failure result. API contracts use `type`,
+`properties`, `required`, `enum` and `items`. Deployment configuration uses the JSON structure in
+the [sample](sample/orders/deployment.json).
 
 This is a reusable release evidence gate for controlled production and enterprise experiments. Its
-useful boundaries are actual test execution, deterministic blockers, scoped model analysis, durable
-review and immutable files. Production deployment, authenticated approval identities,
-organization-specific policy and operational readiness of the engine remain separate integration
-work. A typed reviewer string is not an identity verification or digital signature.
+workflow combines actual test execution, deterministic blockers, scoped model analysis, durable
+review and immutable files. Authenticated approval identities and organization-specific policy
+remain separate integration work. A typed reviewer string is not an identity verification or digital
+signature.
 
 ## Verify and exercise a blocker
 

@@ -176,13 +176,7 @@ will be executed exactly once" is not provided.
 The first level of recovery saves completed nodes and process state. An unfinished operation may
 require retry or verification of its outcome.
 
-Continuing an agent mid-node requires coordinated saving of messages, tool results, and files. A
-workflow checkpoint is not a snapshot of the sandbox file system. The recovery level within a node
-is determined separately and checked for failures.
-
-A cancellation request stops scheduling new work and is passed to active executors. Already
-performed external actions are not rolled back automatically. Compensating actions, if needed, are
-described separately.
+A cancellation request stops scheduling new work and is passed to active executors.
 
 ## Isolated Environments
 
