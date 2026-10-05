@@ -5,17 +5,17 @@ budgets, artifacts and operation journals are supplied through `Hooks`. Use `Wit
 request-scoped journal/budget binding while retaining run-scoped MCP sessions. Call `ReleaseRun`
 after a run becomes terminal and `Close` on server shutdown.
 
-The initial model adapter is Ollama's native `/api/chat` API. Admission checks installed models and
-capabilities, and stores model digests. A changed model digest is rejected before the next
-generation request. Supported parameters are `temperature`, `top_k`, `top_p`, `min_p`, `seed`,
-`num_predict`, `num_ctx`, `repeat_penalty`, `repeat_last_n`, `stop`, `think`, and `keep_alive`.
-Prompts and typed input envelopes are separate messages. Provider tool names map unambiguously to
-grants; `knotra_finish` is reserved for the runtime.
+Model providers are Ollama native `/api/chat`, OpenAI `/responses` and Anthropic `/messages`. Ollama
+Admission checks installed models and capabilities, and stores model digests. A changed model digest
+is rejected before the next generation request. Supported parameters are `temperature`, `top_k`,
+`top_p`, `min_p`, `seed`, `num_predict`, `num_ctx`, `repeat_penalty`, `repeat_last_n`, `stop`,
+`think`, and `keep_alive`. Prompts and typed input envelopes are separate messages. Provider tool
+names map unambiguously to grants; `knotra_finish` is reserved for the runtime.
 
-Ollama replies are streamed. Visible text is coalesced every 100 ms or 1 KiB, with an immediate
-first fragment and a final flush. The adapter also accepts a single complete JSON response. Content,
-tool calls and provider-private context are assembled before the existing operation journal commits
-the complete response. An incomplete or malformed stream cannot publish a successful completion;
+Model replies are streamed. Visible text is coalesced every 100 ms or 1 KiB, with an immediate first
+fragment and a final flush. The adapter also accepts a single complete JSON response. Content, tool
+calls and provider-private context are assembled before the existing operation journal commits the
+complete response. An incomplete or malformed stream cannot publish a successful completion;
 replaying a recorded response never starts another generation.
 
 Hooks may implement `ExecutionObserver` to receive `model.started`, `model.delta`,
@@ -34,6 +34,45 @@ history page. They redact resolved engine credentials and host sandbox paths, an
 provider-hidden reasoning. Redaction spans fragment boundaries. The complete operation response
 remains internal so the next model turn can receive the context required by the
 [Ollama streaming tool protocol](https://docs.ollama.com/capabilities/tool-calling#tool-calling-with-streaming).
+
+## Cloud model protocols
+
+Both cloud adapters require `auth.key: {secretRef: ...}`. Default bases include `/v1`:
+`https://api.openai.com/v1` and `https://api.anthropic.com/v1`. Override `baseUrl` for a trusted
+proxy or fixture; redirects are disabled. Credentials and upstream error bodies never enter
+observations. Pipeline parameters cannot replace auth, messages, tool definitions or output schema.
+
+| Provider  | Parameters                                                                                                                                           | Defaults                                          |
+| --------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------- |
+| OpenAI    | `temperature` (0–2), `top_p` (0–1), `max_output_tokens` (positive integer), `reasoning_effort` (`none`, `minimal`, `low`, `medium`, `high`, `xhigh`) | Other settings use API defaults; `store: false`   |
+| Anthropic | `temperature` (0–1), `top_p` (0–1), `top_k` (nonnegative integer), `max_tokens` (positive integer), `stop_sequences` (nonempty string array)         | `max_tokens: 4096`; protocol version `2023-06-01` |
+
+Anthropic rejects simultaneous `temperature` and `top_p`. Token limits are bounded at 1,048,576;
+models can impose smaller limits. Accepted parameters are adapter syntax, not a guarantee that every
+model accepts every setting. Extended thinking configuration, vision and provider-hosted tools are
+not exposed.
+
+Admission queries the selected model catalog entry, stores the resolved ID and checks it again
+before sending a generation. Cloud catalogs do not provide a verifiable weight digest or portable
+per-model capability contract. Text/tools describes the supported adapter protocol; users must
+select a model with function calling. `imageInput` is rejected. Model IDs can still point to
+provider-managed changes, so cloud outputs are not reproducible weight snapshots.
+
+An `llm` call forces the `knotra_output` tool with the node output schema. Knotra validates its
+arguments using the full local JSON Schema validator. OpenAI tools use `strict: false` to preserve
+optional fields and schema constructs outside its strict subset. Agent tools use the same local
+argument validation and `knotra_finish` contract as Ollama. Tool IDs correlate results across turns;
+private Responses reasoning items and Anthropic signatures are preserved only in conversation state.
+See the official [Responses](https://platform.openai.com/docs/api-reference/responses) and
+[Messages](https://docs.anthropic.com/en/api/messages) protocols.
+
+SSE handles fragmented arguments, multiline data and terminal events. Malformed, incomplete, refused
+or token-truncated responses cannot publish success; completed invalid protocol results are
+journaled so replay does not generate again. HTTP 401/403 map to `MODEL_AUTH_FAILED`, 429 to
+`MODEL_RATE_LIMITED`; 408, 429 and server errors are retryable by the engine policy. The adapter
+performs no hidden retries. Explicit retry of an interrupted model read can incur another paid call;
+operation journaling is not a provider billing guarantee. Token usage is observed when supplied, not
+converted to monetary cost.
 
 MCP uses the official Go SDK, with transport reconnection disabled. Both Streamable HTTP and
 sandboxed stdio are supported. Admission snapshots schemas, and runtime validates arguments and
@@ -145,3 +184,16 @@ go test ./internal/adapters/... -count=1
 ```
 
 The Ollama test uses `qwen3.5:9b`. Tests remove only containers they create.
+
+Cloud protocol tests use independent literal HTTP/SSE fixtures and no API keys. To deliberately run
+paid smoke tests, set a key and an explicit available model ID, then opt in:
+
+```sh
+KNOTRA_TEST_CLOUD=1 KNOTRA_TEST_OPENAI_MODEL=YOUR_MODEL \
+go test -mod=readonly ./internal/adapters -run '^TestCloudRealStructuredAndAgent$' -count=1 -v
+```
+
+Set `OPENAI_API_KEY` in the environment first. Anthropic uses `ANTHROPIC_API_KEY` and
+`KNOTRA_TEST_ANTHROPIC_MODEL`. Each provider without both values is skipped. Docker/helper settings
+above enable the agent subtest. Local fixtures also cover agent tools in real Docker and full
+Temporal/PostgreSQL recovery in `internal/integration`; neither requires paid calls.

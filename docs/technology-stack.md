@@ -1,61 +1,63 @@
-# Технологический стек
+# Technology Stack
 
-Сверено с кодом 4 октября 2026 года. Версии закреплены в `go.mod`, `go.sum`, `app/bun.lock`,
-`app/src-tauri/Cargo.lock` и `compose.yaml`. Практическая настройка описана в
-[руководстве запуска](running.md) и [desktop README](../app/README.md).
+Verified against code on October 5, 2026. Versions are locked in `go.mod`, `go.sum`, `app/bun.lock`,
+`app/src-tauri/Cargo.lock` and `compose.yaml`. Practical setup is described in
+[startup guide](running.md) and [desktop README](../app/README.md).
 
-| Область                   | Реализация                                           | Назначение                                               |
-| ------------------------- | ---------------------------------------------------- | -------------------------------------------------------- |
-| Движок, API, CLI и helper | Go; Cobra для CLI                                    | Сетевые операции, управление исполнением, команды        |
-| YAML                      | `go.yaml.in/yaml/v3` и собственные строгие проверки  | Ограниченный профиль YAML 1.2 с точной диагностикой      |
-| JSON Schema               | `santhosh-tekuri/jsonschema/v6`, Draft 2020-12       | Структура документов, входы и выходы                     |
-| Выражения                 | `google/cel-go`                                      | Ограниченные вычисления без внешнего I/O                 |
-| Оркестрация               | Temporal Go SDK                                      | Workflow, Activities, история, ожидания и восстановление |
-| API                       | HTTP/JSON, OpenAPI и SSE                             | Общая граница CLI, desktop и browser preview             |
-| Данные движка             | PostgreSQL + `pgx/v5`                                | Миграции, операции, запросы, проекции и метаданные       |
-| Модели                    | Собственный HTTP-адаптер Ollama                      | Проверка capabilities и агентный цикл                    |
-| MCP                       | Официальный `modelcontextprotocol/go-sdk`            | Streamable HTTP и stdio в sandbox                        |
-| Sandbox                   | Docker Engine API через Unix socket; Linux Go helper | Файлы, процессы, лимиты, сеть и watchdog                 |
-| Артефакты и payload       | Локальные файлы + метаданные PostgreSQL              | Байты вне истории Temporal                               |
-| Диагностика               | JSON slog + OpenTelemetry OTLP/HTTP                  | Трассы, счётчик HTTP и длительность запросов             |
-| Интерфейс                 | React, TypeScript, Vite                              | Редактор, граф, запуски, review и артефакты              |
-| Редактор и граф           | CodeMirror, React Flow + Dagre                       | YAML и визуальные связи                                  |
-| Native desktop            | Tauri 2, Rust, reqwest, rusqlite                     | HTTP/SSE, SQLite, проверка файлов и системные диалоги    |
-| Frontend-инструменты      | Bun, Vitest, Playwright, Prettier                    | Зависимости, проверки и форматирование                   |
-| Инфраструктура разработки | Docker Compose                                       | PostgreSQL и Temporal development server                 |
+| Area                        | Implementation                                     | Purpose                                                   |
+| --------------------------- | -------------------------------------------------- | --------------------------------------------------------- |
+| Engine, API, CLI and helper | Go; Cobra for CLI                                  | Network operations, execution management, commands        |
+| YAML                        | `go.yaml.in/yaml/v3` and own strict checks         | Limited YAML 1.2 profile with precise diagnostics         |
+| JSON Schema                 | `santhosh-tekuri/jsonschema/v6`, Draft 2020-12     | Document structure, inputs and outputs                    |
+| Expressions                 | `google/cel-go`                                    | Limited computations without external I/O                 |
+| Orchestration               | Temporal Go SDK                                    | Workflow, Activities, history, waits and recovery         |
+| API                         | HTTP/JSON, OpenAPI and SSE                         | General boundary for CLI, desktop and browser preview     |
+| Engine data                 | PostgreSQL + `pgx/v5`                              | Migrations, operations, queries, projections and metadata |
+| Models                      | HTTP adapters Ollama, OpenAI, Anthropic            | Capability check and agent loop                           |
+| MCP                         | Official `modelcontextprotocol/go-sdk`             | Streamable HTTP and stdio in sandbox                      |
+| Sandbox                     | Docker Engine API via Unix socket; Linux Go helper | Files, processes, limits, network and watchdog            |
+| Artifacts and payload       | Local files + PostgreSQL metadata                  | Bytes outside Temporal history                            |
+| Diagnostics                 | JSON slog + OpenTelemetry OTLP/HTTP                | Traces, HTTP counter and request duration                 |
+| Interface                   | React, TypeScript, Vite                            | Editor, graph, runs, review and artifacts                 |
+| Editor and graph            | CodeMirror, React Flow + Dagre                     | YAML and visual connections                               |
+| Native desktop              | Tauri 2, Rust, reqwest, rusqlite                   | HTTP/SSE, SQLite, file checks and system dialogs          |
+| Frontend tools              | Bun, Vitest, Playwright, Prettier                  | Dependencies, checks and formatting                       |
+| Development infrastructure  | Docker Compose                                     | PostgreSQL and Temporal development server                |
 
-## Границы компонентов
+## Component Boundaries
 
-Пользовательский код выполняется в образе sandbox. Python и другие зависимости кубика
-устанавливаются в этот образ, а не в процесс Go-движка. Docker Go SDK не используется: клиент Engine
-API реализован в `internal/adapters/docker.go`. Docker CLI используется для определения контекста и
-подготовки образов.
+User code runs in the sandbox image. Python and other node dependencies are installed into this
+image, not into the Go engine process. The Docker Go SDK is not used: the Engine API client is
+implemented in `internal/adapters/docker.go`. The Docker CLI is used to determine context and
+prepare images.
 
-YAML-библиотека предоставляет дерево с позициями исходника. Knotra дополнительно отклоняет aliases,
-anchors, duplicate keys, запрещённые теги и числовые формы. JSON Schema дополняется семантическим
-компилятором; один библиотечный parse не является проверкой контракта. Правила заданы в
-[нотации](notation/validation.md).
+The YAML library provides a tree with source positions. Knotra additionally rejects aliases,
+anchors, duplicate keys, forbidden tags and numeric forms. JSON Schema is supplemented by a semantic
+compiler; one library parse is not a contract check. Rules are specified in
+[notation](notation/validation.md).
 
-Workflow управляет графом детерминированно. Внешние операции выполняют Activities. Temporal
-сохраняет историю, PostgreSQL — принятые команды и проекции, файловый каталог — артефакты и крупные
-payload. Для восстановления нужны все три слоя. Снимок workflow не восстанавливает автоматически
-файловую систему агента. Подробности — в [архитектуре](architecture.md) и [Temporal](temporal.md).
+Workflow manages the graph deterministically. External operations execute Activities. Temporal
+stores history, PostgreSQL stores accepted commands and projections, and the file catalog stores
+artifacts and large payloads. All three layers are needed for recovery. A workflow snapshot does not
+automatically restore the agent's file system. Details — in [architecture](architecture.md) and
+[Temporal](temporal.md).
 
-Первый модельный адаптер — Ollama. OpenAI, Anthropic и S3 остаются направлениями развития.
-Конфигурация другого `provider` отклоняется при admission. Транспортная совместимость API сама по
-себе не гарантирует одинаковые capabilities моделей.
+Ollama native chat, OpenAI Responses and Anthropic Messages are implemented. Their request formats,
+parameters and streaming responses are handled separately; the agent loop and operation log are
+shared. Cloud catalogs confirm model ID availability but not weight immutability. S3 remains a
+development direction. Details — in [adapters](../internal/adapters/README.md).
 
-Desktop сохраняет черновики и клиентские квитанции в SQLite; browser preview — в localStorage.
-Авторитетное исполнение всегда находится в Go-движке. Demo исполняет только подготовленные локальные
-данные. [API](api/desktop-v1.md) фиксирует одинаковый протокол для клиентов.
+Desktop saves drafts and client receipts in SQLite; browser preview — in localStorage. Authoritative
+execution always resides in the Go engine. Demo executes only prepared local data.
+[API](api/desktop-v1.md) fixes the same protocol for clients.
 
-## Поставка и проверка
+## Delivery and Verification
 
-API и worker сейчас работают в одном процессе на одном хосте. Compose запускает инфраструктуру
-разработки отдельно; он не является production-рецептом. Удалённый доступ требует HTTPS и bearer
-token. Для независимых пользователей нужны отдельные решения доступа, хранения и усиленной изоляции.
+API and worker currently run in one process on one host. Compose runs development infrastructure
+separately; it is not a production recipe. Remote access requires HTTPS and bearer token. Separate
+access, storage and enhanced isolation solutions are needed for independent users.
 
-Go проверяется `make check`, frontend — Vitest, TypeScript build, Prettier и Playwright, native-код
-— `cargo test --locked` и rustfmt. Python-скрипты используют Black; вспомогательная проверка
-fixtures имеет собственный requirements-файл. Точные команды и реальные сценарии приведены в
-[CONTRIBUTING](../CONTRIBUTING.md) и [отчёте о проверках](verification.md).
+Go is checked by `make check`, frontend — Vitest, TypeScript build, Prettier and Playwright, native
+code — `cargo test --locked` and rustfmt. Python scripts use Black; auxiliary fixture checks have
+their own requirements file. Exact commands and real scenarios are provided in
+[CONTRIBUTING](../CONTRIBUTING.md) and [verification report](verification.md).

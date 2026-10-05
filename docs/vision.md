@@ -1,140 +1,141 @@
-# Видение Knotra
+# Knotra Vision
 
-Статус: направление продукта сверено с реализацией 4 октября 2026 года. Актуальные возможности и
-дальнейшие направления описаны в [дорожной карте](roadmap.md).
+Status: product direction verified with implementation on October 5, 2026. Current capabilities and
+further directions are described in the [roadmap](roadmap.md).
 
-## Назначение
+## Purpose
 
-Knotra позволяет описать ИИ-процесс целиком, выполнить его под своим управлением и разобраться в
-полученном результате.
+Knotra lets developers describe a complete AI workflow, execute it under their control and inspect
+how its result was produced.
 
-Пользователь задаёт кубики, их входы и выходы, зависимости, модели, инструкции, инструменты,
-окружения и правила исполнения. Движок принимает описание, проверяет его и выполняет процесс.
-Desktop предоставляет редактор и наблюдение, CLI — доступ для человека и автоматизации; оба
-используют общий HTTP API.
+The user defines nodes, their inputs and outputs, dependencies, models, instructions, tools,
+environments, and execution rules. The engine accepts the description, validates it, and executes
+the process. Desktop provides an editor and monitoring, CLI — access for humans and automation; both
+use a common HTTP API.
 
-Пример процесса: получить тему исследования, собрать материалы через MCP, проанализировать их с
-помощью модели и Python, создать документ и передать его человеку на проверку. Приёмочный сценарий в
-`examples/integration` проверяет анализ CSV, агентный код, MCP, review и итоговый отчёт. Предметные
-наборы оценки качества остаются направлением развития.
+Example process: obtain a research topic, gather materials via MCP, analyze them using a model and
+Python, create a document, and pass it to a human for review. The acceptance scenario in
+`examples/integration` checks CSV analysis, agent code, MCP, review, and the final report. Domain
+datasets for quality assessment remain a development direction.
 
-## Границы текущего этапа
+## Current Stage Boundaries
 
-В текущий этап входят:
+The current stage includes:
 
-- Нотация и формат переносимого пакета пайплайна.
-- Движок и исполнители кубиков.
-- Подключения к моделям и MCP.
-- Изолированные окружения для команд и файлов.
-- Хранение состояния, событий и результатов.
-- HTTP API, CLI и desktop-клиент.
+- Pipeline notation and portable package format.
+- Engine and node executors.
+- Connections to models and MCP.
+- Isolated environments for commands and files.
+- Storage of state, events, and results.
+- HTTP API, CLI, and desktop client.
 
-Desktop на Tauri/React реализован как клиент API. Локальные черновики и клиентские журналы отделены
-от авторитетного состояния исполнения движка.
+Desktop on Tauri/React is implemented as an API client. Local drafts and client logs are separated
+from the engine's authoritative execution state.
 
-Первое развёртывание ориентировано на использование под своим управлением на одной машине:
-компьютере пользователя или сервере. Публичный сервис для независимых пользователей потребует
-отдельной проработки изоляции, квот, доступа и эксплуатации.
+The first deployment is oriented for use under your control on a single machine: user computer or
+server. A public service for independent users will require separate development of isolation,
+quotas, access, and operations.
 
-## Основной принцип исполнения
+## Main Execution Principle
 
-Пайплайн задаёт структуру процесса: какие действия должны быть выполнены, как передаются данные и
-при каких условиях выбираются ветки.
+The pipeline defines the process structure: which actions must be performed, how data is passed, and
+under what conditions branches are selected.
 
-Агент получает автономность внутри своего кубика. Он может выбирать разрешённые инструменты, писать
-и выполнять программы, читать материалы и повторять действия до получения результата или достижения
-лимита.
+The agent receives autonomy within its node. It can choose allowed tools, write and execute
+programs, read materials, and repeat actions until a result is obtained or a limit is reached.
 
-Агент не меняет произвольно структуру пайплайна. Расширение процесса выражается управляемыми
-конструкциями: обработкой коллекций, циклами и подпайплайнами. Все три конструкции поддерживаются в
-v1.
+The agent does not arbitrarily change the pipeline structure. Process expansion is expressed through
+controlled constructs: collection processing, loops, and subpipelines. All three constructs are
+supported in v1.
 
-## Принципы продукта
+## Product Principles
 
-### Явные контракты
+### Explicit Contracts
 
-У пайплайна и кубиков есть входы и выходы. Структурированные данные проверяются по схеме. Файлы
-передаются как артефакты с идентификаторами и метаданными.
+Pipelines and nodes have inputs and outputs. Structured data is validated against a schema. Files
+are passed as artifacts with identifiers and metadata.
 
-Связи отражают передачу данных и зависимости исполнения. Пользователь должен понимать, почему кубик
-запустился и откуда получил вход.
+Connections reflect data transfer and execution dependencies. The user must understand why a node
+started and where it received its input from.
 
-### Проверка до запуска
+### Pre-Execution Validation
 
-Движок проверяет формат, связи, обязательные параметры, доступность подключений и необходимые
-возможности моделей. Часть проверок выполняется CLI без подключения к движку.
+The engine checks format, connections, required parameters, connection availability, and necessary
+model capabilities. Some checks are performed by CLI without connecting to the engine.
 
-Статическая проверка не гарантирует доступность внешнего сервиса в будущем или качество ответа
-модели. Результаты исполнения проверяются отдельно.
+Static validation does not guarantee future availability of an external service or model response
+quality. Execution results are checked separately.
 
-### Зафиксированное описание запуска
+### Fixed Run Description
 
-Запуск использует неизменяемую версию пакета и разрешённых настроек. Редактирование создаёт
-следующую версию и не меняет уже запущенный процесс.
+Each run uses an immutable version of the package and allowed settings. Editing creates a new
+version and does not change an already started process.
 
-Фиксация входов и конфигурации позволяет объяснить происхождение результата. Она не гарантирует
-дословное совпадение новых ответов модели или неизменность внешних сервисов.
+Freezing inputs and configuration makes the result's provenance explainable. It does not guarantee
+verbatim matching of new model responses or immutability of external services.
 
-### Наблюдаемое исполнение
+### Observable Execution
 
-Desktop и CLI показывают состояния экземпляров кубиков, текущие попытки, события, ошибки, входы и
-выходы запуска, запросы человека и артефакты. Граф с подсветкой состояний в desktop сейчас доступен
-для guided demo; реальный запуск представлен списком экземпляров и timeline.
+Desktop and CLI show node instance states, current attempts, events, errors, run inputs and outputs,
+human requests, and artifacts. The real run is represented as a graph with selection of nested
+instances, step inspector, and timeline.
 
-Дальнейшее развитие наблюдения включает граф реального запуска с выбором экземпляров, входы и выходы
-отдельных кубиков, историю попыток, вызовы инструментов, доступные сообщения модели, длительность и
-учёт использования модели.
+The inspector shows node inputs and outputs, attempts, tool calls, available model messages,
+duration, and token count when the provider returns them. Rewind reads saved states; comparison
+matches instances across runs. Cost in money and domain-specific quality assessment are not yet
+calculated.
 
-История относится к конкретным запускам, экземплярам кубиков и попыткам. Она доступна после
-переподключения клиента.
+History relates to specific runs, node instances, and attempts. It is available after reconnecting
+the client.
 
-### Управляемая автономность
+### Controlled Autonomy
 
-Инструменты, секреты, сеть и ресурсы выдаются явно. Ограничения движка задают верхнюю границу прав
-пайплайна. Лимиты могут действовать на отдельный кубик и на весь запуск.
+Tools, secrets, network, and resources are issued explicitly. Engine constraints set the upper bound
+of pipeline rights. Limits can act on a single node and on the entire run.
 
-Человек может отвечать на запросы, проверять результаты и подтверждать действия согласно политике
-пайплайна. Ожидание человека является сохранённым состоянием исполнения.
+A human can respond to requests, check results, and confirm actions according to pipeline policy.
+Waiting for a human is saved execution state.
 
-### Восстановление с понятными гарантиями
+### Recovery with Clear Guarantees
 
-Продолжение процесса, повтор попытки и новый запуск с выбранного места — разные операции.
-Завершённая работа учитывается при восстановлении, а действия с неопределённым исходом требуют
-специальной обработки.
+Continuing the process, retrying an attempt, and relaunching from a selected point are different
+operations. Completed work is accounted for during recovery, while actions with uncertain outcomes
+require special handling.
 
-Отмена прекращает дальнейшую работу по мере обработки запроса. Она не отменяет автоматически уже
-выполненные внешние действия.
+Cancellation stops further work as the request is processed. It does not roll back external actions
+already performed.
 
-### Переносимость
+### Portability
 
-Пайплайн поставляется как пакет с главным YAML и связанными файлами. Конфигурация размещения
-связывает логические подключения и секреты с конкретным движком.
+The pipeline is delivered as a package with the main YAML and related files. Deployment
+configuration binds logical connections and secrets to a specific engine.
 
-Локальный и удалённый клиенты используют одинаковую модель API. Перенос процесса не означает
-автоматическую передачу переменных окружения, файлов или учётных данных компьютера пользователя.
+Local and remote clients use the same API model. Moving a process does not mean automatic transfer
+of environment variables, files, or user computer credentials.
 
-## Основные сущности
+## Main Entities
 
-| Сущность           | Смысл                                                                 |
-| ------------------ | --------------------------------------------------------------------- |
-| Пакет пайплайна    | YAML, промпты, схемы, скрипты и другие объявленные материалы          |
-| Версия пайплайна   | Зафиксированное содержимое пакета                                     |
-| Запуск             | Исполнение версии с определёнными входами и настройками               |
-| Определение кубика | Описанная в пайплайне операция                                        |
-| Экземпляр кубика   | Конкретная операция в запуске, включая элемент коллекции или итерацию |
-| Попытка            | Отдельная попытка исполнения экземпляра                               |
-| Подключение        | Настройки доступа к модели, MCP или другому внешнему сервису          |
-| Окружение          | Изолированная рабочая среда для файлов и команд                       |
-| Артефакт           | Сохранённый файл или набор файлов с происхождением и метаданными      |
-| Событие            | Запись о ходе исполнения или действии пользователя                    |
+| Entity           | Meaning                                                                |
+| ---------------- | ---------------------------------------------------------------------- |
+| Pipeline package | YAML, prompts, schemas, scripts and other declared materials           |
+| Pipeline version | Fixed content of the package                                           |
+| Run              | Execution of a version with specific inputs and settings               |
+| Node definition  | Operation described in the pipeline                                    |
+| Node instance    | Specific operation in a run, including collection element or iteration |
+| Attempt          | Separate execution attempt of an instance                              |
+| Connection       | Access settings to a model, MCP or another external service            |
+| Environment      | Isolated working environment for files and commands                    |
+| Artifact         | Saved file or set of files with provenance and metadata                |
+| Event            | Record of execution progress or user action                            |
 
-## Критерий полезности первой версии
+## Utility Criterion for First Version
 
-Пользователь должен суметь описать небольшой реальный процесс, проверить его, запустить через CLI
-или desktop, наблюдать за выполнением, ответить на запрос к человеку и получить итоговые файлы.
+The user must be able to describe a small real-world process, verify it, run it via CLI or desktop,
+observe its execution, respond to a human request, and obtain final files.
 
-После перезапуска движка пользователь должен видеть сохранённую историю и корректное состояние
-запуска. При ошибке должно быть понятно, какой кубик и какая операция не завершились, что можно
-повторить и где исход действия неизвестен.
+After restarting the engine, the user must see saved history and correct run state. In case of an
+error, it must be clear which node and which operation did not complete, what can be repeated, and
+where the operation outcome is unknown.
 
-Границы гарантий первой версии и последовательность работ описаны в [этапах разработки](roadmap.md).
+First version guarantee boundaries and work sequence are described in
+[development stages](roadmap.md).

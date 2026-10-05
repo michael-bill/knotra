@@ -156,3 +156,21 @@ decisions.
 Knotra is MIT licensed. Contributions are made under the same [license](LICENSE). Follow the
 [community conduct](CODE_OF_CONDUCT.md) and report vulnerabilities privately according to
 [SECURITY](SECURITY.md).
+
+## Cloud adapters and release bundles
+
+Default adapter tests use literal Responses/Messages fixtures, including fragmented SSE, malformed
+responses, auth/status handling, tool ID correlation, budgets and operation replay. Real Docker
+agent checks use `KNOTRA_TEST_HELPER` and `KNOTRA_TEST_WORKDIR`. The recovery suite includes both
+fixture providers against real PostgreSQL/Temporal when `KNOTRA_TEST_RECOVERY=1`; the generation
+count must remain one across process restart.
+
+Paid smoke tests require explicit `KNOTRA_TEST_CLOUD=1`, a provider key and
+`KNOTRA_TEST_OPENAI_MODEL` or `KNOTRA_TEST_ANTHROPIC_MODEL`. See the
+[adapter guide](internal/adapters/README.md); credentials alone never enable paid tests.
+
+`scripts/package-release.sh VERSION` builds four macOS/Linux CLI archives, each containing both
+Linux helpers, license and startup instructions. `SHA256SUMS` covers all archives. A new `v*` tag
+runs checks, builds these bundles and publishes a GitHub release. Publish new commits/tags; never
+move an existing release tag to different source. Smoke-test `doctor` from an extracted archive
+outside the source checkout before tagging.

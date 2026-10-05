@@ -4,6 +4,61 @@ The implementation is checked at three levels: deterministic contract and workfl
 integration tests against PostgreSQL and Docker, and complete executions through the public CLI/API
 with real services.
 
+## Providers, onboarding and reviewed research on 5 October 2026
+
+`make check` passes Go formatting, vet and the full race suite. Default cloud tests use literal
+OpenAI Responses and Anthropic Messages HTTP/SSE fixtures. They cover fragmented structured
+arguments, tool IDs and private conversation context, malformed/incomplete replies, credentials,
+HTTP failures, cancellation, budgets and durable replay. Real paid APIs were **not called**: no API
+keys were available. Opt-in tests require both a key and an explicit model ID.
+
+Both fixture providers also passed with real Docker agent tools and real Temporal/PostgreSQL process
+recovery. The engine was killed at a human request and restarted; the request ID remained unchanged
+and each provider received exactly one generation request. The existing real recovery test also
+passed its artifact, SSE replay, CLI response/cancellation and late-answer checks.
+
+Actual local `qwen3.5:9b` passed structured-output/replay and agent-tool tests after the shared
+adapter refactor. A complete reviewed research run analyzed the supplied fictional offers, verified
+evidence in code, paused for review, survived SIGKILL and accepted its response through the browser.
+Run `8339dfde-b8e5-4059-b25e-cf67cc4bafd0` completed with no diagnostics. Published
+`approved-dossier.md` remained byte-identical to the reviewed draft, SHA-256
+`955dee8f62a9ff9a4ba7d6c723f5bf45fb434f999576463c10921f305fb65aae`. The ZIP's dossier, comparison
+and review hashes were checked against `review.json` and the original review context.
+[Recorded demonstration](media/review-recovery.webm).
+
+The first archive smoke check found that Colima could not mount a helper from an unshared temporary
+extraction directory. Quickstart now copies the verified helper into its persistent directory under
+its content digest and makes it executable for sandbox UID 65532. The failed run remains in history;
+the corrected run above verifies publication after this fix. A fresh standalone quickstart produced
+`greeting.txt`; repeating it retained run `f5b3b014-c14c-4fca-b0cd-f57c97638a87` and the same file.
+All four macOS/Linux CLI archives include both Linux helpers and `SHA256SUMS`.
+
+Frontend checks passed 126 unit tests and the production build. The browser suite passed 70 default
+scenarios; the affected review/translation checks then passed all nine cases, including rejection of
+corrupted file bytes without losing the human response draft. The actual recorded browser run
+reported no page errors. Existing paid/cloud and other opt-in browser scenarios remain separate.
+
+The five-developer pilot is prepared in [pilot](pilot.md); no user interviews or usefulness metrics
+are claimed by these automated checks.
+
+Reproduce cloud fixture recovery using the database and Temporal variables from the integration
+setup, plus `KNOTRA_TEST_RECOVERY=1`:
+
+```sh
+go test -mod=readonly -race -count=1 ./internal/integration \
+  -run '^Test(CloudProtocolsWithRealEngineRecovery|RealProcessRecovery)$' -v
+```
+
+For real Ollama/Docker adapter checks:
+
+```sh
+KNOTRA_TEST_HELPER="$PWD/.knotra/bin/sandbox-helper" \
+KNOTRA_TEST_WORKDIR="$PWD/.knotra/test-work" \
+KNOTRA_TEST_OLLAMA=http://127.0.0.1:11434 \
+go test -mod=readonly -race -count=1 ./internal/adapters \
+  -run '^Test(CloudDockerAgentToolsValidationAndReplay|CloudStructuredStreamingObservations|OllamaRealStructuredAndAgent|OllamaRealStructuredWithoutDocker)$' -v
+```
+
 ## Live execution inspection on 4 October 2026
 
 Real engine runs now open a live graph with per-instance states, durations, nested iteration scopes,

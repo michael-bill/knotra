@@ -1,169 +1,170 @@
-# Temporal в Knotra
+# Temporal in Knotra
 
-Ревью реализации и проверки выполнены 3 октября 2026 года. Используется Go SDK
-`go.temporal.io/sdk v1.49.0`; источником поведения конкретных API служит закреплённая версия SDK в
-`go.mod`. Инструкции запуска движка находятся в [running.md](running.md).
+The implementation review and verification were completed on October 3, 2026. The Go SDK
+`go.temporal.io/sdk v1.49.0` is used; the behavior source for specific APIs is the pinned SDK
+version in `go.mod`. Engine startup instructions are located in [running.md](running.md).
 
-4 октября выполнен повторный набор Go race/интеграционных проверок после ревью читаемости. AST
-workflow-кода сохранён; результаты новых desktop-проверок и команды воспроизведения находятся в
-[verification.md](verification.md). Численные измерения истории ниже относятся к исходному прогону 3
-октября.
+On October 4, a re-run of Go race/integration checks was performed after the readability review. The
+AST workflow code was preserved; results of new desktop checks and reproduction commands are in
+[verification.md](verification.md). Numerical history metrics below refer to the original run on
+October 3.
 
-## Граница workflow и activities
+## Workflow and activities boundary
 
-Один запуск Knotra — один Workflow ID и цепочка Temporal Run ID при Continue-As-New. Workflow
-`knotra.run` исполняет детерминированный граф: зависимости, CEL, ветвление, циклы, лимиты, дедлайны
-и состояние запросов. Вложенный `pipeline` создаёт область графа, а не отдельный Temporal child
-workflow.
+One Knotra run — one Workflow ID and a chain of Temporal Run IDs with Continue-As-New. The workflow
+`knotra.run` executes a deterministic graph: dependencies, CEL, branching, loops, limits, deadlines,
+and request state. Nested `pipeline` creates a graph scope, not a separate Temporal child workflow.
 
-Workflow не обращается к PostgreSQL, моделям, MCP, Docker или файловой системе. Внешняя работа
-находится в activities. Коллекции, влияющие на команды, обходятся в стабильном порядке; используются
-`workflow.Now`, `workflow.Go`, selectors и durable timers. Результаты внешних действий при replay
-берутся из истории. Требования к детерминизму описаны в
+The workflow does not access PostgreSQL, models, MCP, Docker, or the file system. External work
+resides in activities. Collections affecting commands are handled in stable order; `workflow.Now`,
+`workflow.Go`, selectors, and durable timers are used. Results of external actions during replay are
+taken from history. Determinism requirements are described in
 [Temporal Workflow Definition](https://docs.temporal.io/workflow-definition).
 
-| Activity                             | Ответственность                                          |
-| ------------------------------------ | -------------------------------------------------------- |
-| `knotra.plan`                        | Загрузить неизменяемый допущенный план по Run ID         |
-| `knotra.execute`                     | Исполнить одну попытку `llm`, `agent`, `code` или `tool` |
-| `knotra.project`                     | Идемпотентно сохранить состояние и событие               |
-| `knotra.request`                     | Создать или закрыть human/resolution request             |
-| `knotra.answer`, `knotra.resolution` | Разрешить гонку дедлайна/отмены с уже принятым ответом   |
+| Activity                             | Responsibility                                                 |
+| ------------------------------------ | -------------------------------------------------------------- |
+| `knotra.plan`                        | Load the immutable admitted plan by Run ID                     |
+| `knotra.execute`                     | Execute one attempt of `llm`, `agent`, `code`, or `tool`       |
+| `knotra.project`                     | Idempotently save state and event                              |
+| `knotra.request`                     | Create or close a human/resolution request                     |
+| `knotra.answer`, `knotra.resolution` | Resolve a deadline/cancellation race with an accepted response |
 
-Одна агентная попытка выполняется внутри одной activity. Модельные ходы и вызовы инструментов имеют
-отдельные записи журнала в PostgreSQL, но не создают отдельную Temporal activity на каждый ход. При
-потере незавершённой рабочей среды runtime не заявляет о восстановлении из отсутствующей контрольной
-точки: неизвестный исход требует предусмотренной контрактом остановки или подтверждения оператора.
+One agent attempt executes within one activity. Model moves and tool calls have separate log entries
+in PostgreSQL but do not create a separate Temporal activity for each move. If an unfinished
+workspace is lost, the runtime does not declare recovery from a missing checkpoint: an unknown
+outcome requires a contract-provided stop or operator confirmation.
 
-## Что передаётся и где хранится
+## What is passed and where it is stored
 
-Начальный production `RunInput` содержит Run ID, время допуска и входы. Полный план загружается
-через `knotra.plan`. При Continue-As-New передаются те же идентификаторы, входы и checkpoint; пакет
-и план в него повторно не включаются.
+The initial production `RunInput` contains Run ID, admission time, and inputs. The full plan is
+loaded via `knotra.plan`. With Continue-As-New, the same identifiers, inputs, and checkpoint are
+passed; the package and plan are not re-included.
 
-`ExecuteRequest` содержит текущий нормализованный узел, его проверенные входы, аргументы
-инструмента, цепочку бюджетов, разрешения и дедлайн. Полного плана и пакета в запросе activity нет.
-Хост activity получает их из immutable записи run. Промпт входит в описание конкретного узла и может
-передаваться как большой payload.
+`ExecuteRequest` contains the current normalized node, its verified inputs, tool arguments, budget
+chain, permissions, and deadline. The full plan and package are absent from the activity request.
+The activity host retrieves them from the immutable run record. The prompt is included in the
+specific node description and may be passed as a large payload.
 
-Payload codec выносит сериализованные payload размером от **8 KiB** в постоянный каталог `payloads`
-внутри `--data-dir`. В Temporal остаются encoding marker и SHA-256 ключ. Сохраняется весь исходный
-protobuf Payload, включая metadata. Одинаковый результат `knotra.plan` даёт один content-addressed
-blob во всех продолжениях запуска. Сохранение атомарно, файл синхронизируется до публикации ссылки;
-чтение ограничено размером открытого обычного файла и проверяет SHA-256.
+The Payload codec moves serialized payloads of **8 KiB** or more to the persistent catalog
+`payloads` inside `--data-dir`. In Temporal, only the encoding marker and SHA-256 key remain. The
+entire original protobuf Payload, including metadata, is preserved. Identical result `knotra.plan`
+yields one content-addressed blob across all run continuations. Saving is atomic; the file is
+synchronized before publishing the link; reading is limited by the size of an open regular file and
+checks SHA-256.
 
-Codec работает на границе SDK, вне детерминированного workflow. Это локальное постоянное хранилище,
-а не кеш. Для replay нужны Temporal history и эти файлы; для продолжения внешней работы нужны также
-PostgreSQL и хранилище артефактов. Удалять payload-файлы, пока соответствующая история нужна,
-нельзя. Автоматического сбора неиспользуемых payload после удаления истории пока нет.
+The codec operates at the SDK boundary, outside the deterministic workflow. This is local persistent
+storage, not a cache. Replay requires Temporal history and these files; continuing external work
+also requires PostgreSQL and artifact storage. Payload files must not be deleted while corresponding
+history is needed. Automatic collection of unused payloads after history deletion is not yet
+available.
 
-Отдельного скрытого лимита 256 MiB на агрегированный checkpoint нет: множество допустимых выходов
-узлов может в сумме превысить такой размер. Codec не делает состояние бесплатным: сериализация и
-replay всё ещё требуют RAM, CPU и дискового места пропорционально живому состоянию. Значительные
-объёмы байтов следует передавать артефактами. Ограничения пакета, JSON-портов и артефактов
-продолжают проверяться на своих границах.
+There is no separate hidden 256 MiB limit on the aggregated checkpoint: multiple admissible node
+outputs can collectively exceed such a size. The codec does not make state free: serialization and
+replay still require RAM, CPU, and disk space proportional to live state. Significant byte volumes
+should be passed as artifacts. Package, JSON port, and artifact limits continue to be checked at
+their boundaries.
 
-## Ограничения истории и размера команд
+## History and command size limits
 
-По [официальным лимитам Temporal](https://docs.temporal.io/evaluate/cloud/limits), предел истории —
-51 200 событий или 50 MB; предупреждения начинаются с 10 240 событий или 10 MB. Ограничение
-отдельного payload — 2 MB, транзакции истории и gRPC сообщения — 4 MB. Для self-hosted установки
-нужно учитывать фактическую конфигурацию сервиса, не повышать лимиты вместо управления ростом
-истории.
+Per [official Temporal limits](https://docs.temporal.io/evaluate/cloud/limits), the history limit is
+51,200 events or 50 MB; warnings start at 10,240 events or 10 MB. The single payload limit is 2 MB;
+history transactions and gRPC messages are 4 MB. For self-hosted installations, account for the
+actual service configuration; do not raise limits instead of managing history growth.
 
-Knotra запрашивает Continue-As-New при 8 000 событиях, 16 MiB истории или раньше, если SDK сообщает
-`GetContinueAsNewSuggested()`. После этого новые действия не допускаются. Уже начатые попытки,
-записи состояния и ответы завершаются; переход происходит без активных leaf attempts, human waits и
-неопределённых операций. Обработанные выходы, пропуски, счётчики, исходные дедлайны, позиции циклов
-и порядок foreach сохраняются. Поздние сигналы забираются перед переходом. Этот подход следует
+Knotra requests Continue-As-New at 8,000 events, 16 MiB history, or earlier if the SDK reports
+`GetContinueAsNewSuggested()`. After this, new actions are not admitted. Already started attempts,
+state records, and responses complete; transition occurs without active leaf attempts, human waits,
+or undefined operations. Processed outputs, skips, counters, original deadlines, loop positions, and
+foreach order are preserved. Late signals are consumed before transition. This approach follows
 [Go Continue-As-New](https://docs.temporal.io/develop/go/workflows/continue-as-new).
 
-Реализация ограничивает до 64 одновременно выполняющихся leaf attempts, до 64 метаданных activities
-и до 64 ожидающих human requests. Дополнительно резервируется место истории для разрешённых повторов
-уже допущенных попыток. Это backpressure, а не отказ графу с большим числом узлов; более узкие
-лимиты профиля сохраняются.
+The implementation limits to 64 concurrently executing leaf attempts, 64 metadata activities, and 64
+pending human requests. Additionally, history space is reserved for permitted retries of already
+admitted attempts. This is backpressure, not rejection of a graph with many nodes; narrower profile
+limits are preserved.
 
-Таймер узла создаётся после сохранения `ready`/`running`, поэтому очередь записи состояния
-ограничивает и поток новых timer commands. Дедлайн вычисляется до этой записи: очередь не даёт узлу
-дополнительное время. Уже истёкший узел не начинает внешнюю работу. Малый порог inline payload
-оставляет место для нескольких десятков одновременных аргументов, результатов, timer commands и
-служебных metadata в общей транзакции. Это проверяется также по реальным command-event batches;
-оценка только размера одного аргумента была бы недостаточна.
+The node timer is created after saving `ready`/`running`, so the state write queue limits and new
+timer commands flow. The deadline is calculated before this write: the queue does not give the node
+additional time. An already expired node does not start external work. A small inline payload
+threshold leaves room for several dozen simultaneous arguments, results, timer commands, and service
+metadata in a single transaction. This is also checked against real command-event batches; assessing
+only the size of a single argument would be insufficient.
 
-## Почему используются timers и ожидания
+## Why timers and waits are used
 
-`workflow.Sleep` в Temporal — durable timer, не блокирующий сон Go-потока. Таймер записан в истории
-и переживает остановку worker. Knotra использует эквивалентный `NewTimerWithOptions(...).Get(...)`,
-чтобы дать таймеру понятную подпись в UI. Назначения: срок запуска, срок узла/подпайплайна и backoff
-разрешённого повтора. Нет polling-loop с `time.Sleep` внутри workflow. Ожидание зависимости или
-ответа пользователя использует `workflow.Await`/signals. См.
+`workflow.Sleep` in Temporal — durable timer, non-blocking Go goroutine sleep. The timer is recorded
+in history and survives worker stoppage. Knotra uses an equivalent
+`NewTimerWithOptions(...).Get(...)` to give the timer a clear label in the UI. Purposes: start
+deadline, node/sub-pipeline deadline, and permitted retry backoff. There is no polling-loop with
+`time.Sleep` inside the workflow. Waiting for a dependency or user response uses
+`workflow.Await`/signals. See
 [Go durable timers](https://docs.temporal.io/develop/go/workflows/timers).
 
-Начало срока корневого запуска — durable admission time, поэтому очередь outbox, ожидание worker и
-загрузка плана не продлевают timeout. При гонке с ответом пользователя workflow проверяет уже
-зафиксированный в БД ответ: задержка доставки outbox не отменяет своевременно принятого решения.
+The start of the root run deadline — durable admission time, so the outbox queue, worker wait, and
+plan load do not extend the timeout. In a race with a user response, the workflow checks the already
+recorded in DB response: outbox delivery delay does not cancel a timely decision.
 
-## Повторы и публикация
+## Retries and publishing
 
-У `knotra.execute` отключён автоматический retry Temporal (`MaximumAttempts: 1`). Нотационная retry
-policy исполняется workflow после классификации результата адаптером. Небезопасный внешний вызов
-нельзя незаметно повторить из-за timeout activity или потери worker. Журнал фиксирует intent до
-вызова и результат до подтверждения; ошибка фиксации успешного внешнего результата означает unknown.
+Automatic Temporal retry (`MaximumAttempts: 1`) is disabled for `knotra.execute`. Notational retry
+policy is executed by the workflow after adapter result classification. An unsafe external call
+cannot be invisibly retried due to activity timeout or worker loss. The log records intent before
+call and result before confirmation; an error fixing a successful external result means unknown.
 
-У activities хранения состояния другая политика: `StartToCloseTimeout: 30s`, повторы с ограниченным
-backoff и без общего `ScheduleToCloseTimeout`. Временная недоступность PostgreSQL не превращает уже
-выбранный результат в потерянную публикацию после пяти минут. Запись использует disconnected
-context; дедлайны внешней работы при этом сохраняются. Недоступное хранилище должно быть
-восстановлено оператором — retry не исправляет потерянную БД или повреждённый диск.
+State-storage activities have a different policy: `StartToCloseTimeout: 30s`, retries with limited
+backoff and without common `ScheduleToCloseTimeout`. Temporary PostgreSQL unavailability does not
+turn an already selected result into a lost publish after five minutes. The write uses disconnected
+context; external work deadlines are preserved meanwhile. An unavailable storage must be restored by
+the operator — retry does not fix a lost DB or damaged disk.
 
-Бизнес-ошибка Knotra публикуется как failed run и возвращается в `RunResult`. Поэтому Temporal
-`COMPLETED` означает завершённую оркестрацию; успешность пайплайна проверяется по Knotra run/result,
-а не только по Temporal status.
+A Knotra business error is published as failed run and returned to `RunResult`. Therefore Temporal
+`COMPLETED` means completed orchestration; pipeline success is checked via Knotra run/result, not
+only Temporal status.
 
-## Отображение и обновления
+## Display and updates
 
-Workflow ID остаётся устойчивым UUID запуска. `StaticSummary` показывает `Knotra · <metadata.name>`,
-`StaticDetails` — имя и Run ID. Activity summaries показывают тип узла, Node ID, номер попытки либо
-сохраняемое состояние. Таймеры имеют подписи вроде `Node deadline: review` и
-`Retry backoff: enrich`. Промпты, входы и секреты в эти подписи не помещаются.
+Workflow ID remains a stable run UUID. `StaticSummary` shows `Knotra · <metadata.name>`,
+`StaticDetails` — name and Run ID. Activity summaries show node type, Node ID, attempt number, or
+saved state. Timers have labels like `Node deadline: review` and `Retry backoff: enrich`. Prompts,
+inputs, and secrets do not fit into these labels.
 
-План фиксирует compiler/CEL/adapter версии. Несовместимая версия отклоняется до внешней работы с
-диагностикой. Это не замена Temporal Worker Versioning: изменение порядка workflow commands требует
-replay-проверки и отдельной стратегии совместимости/развёртывания. Автоматическая бесшовная миграция
-работающих запусков между произвольными версиями workflow в текущую поставку не входит.
+The plan fixes compiler/CEL/adapter versions. An incompatible version is rejected before external
+work with diagnostics. This is not a replacement for Temporal Worker Versioning: changing workflow
+command order requires replay-check and separate compatibility/deployment strategy. Automatic
+seamless migration of running runs between arbitrary workflow versions to the current release is not
+included.
 
-## Стоимость исполнения и проверки
+## Execution cost and checks
 
-Production activity пока читает и декодирует полный `db.Plan(runID)` при каждом leaf-вызове. Таким
-образом, трафик к PostgreSQL и стоимость декодирования растут как размер плана × число leaf
-attempts, хотя аргументы и история Temporal остаются небольшими. Кеша плана нет. Перед его
-добавлением нужны измерения; безопасный кеш должен иметь ограничение памяти и сохранять
-неизменяемость данных между запусками.
+Production activity currently reads and decodes full `db.Plan(runID)` on every leaf call. Thus,
+PostgreSQL traffic and decoding cost grow as plan size × number of leaf attempts, although arguments
+and Temporal history remain small. No plan cache exists. Before adding it, measurements are needed;
+a safe cache must have memory limits and preserve data immutability between runs.
 
-`TestTemporalLargePlanAndHistoryContinuation` работает с настоящим локальным Temporal: 1 000
-switch-узлов, четыре leaf-узла с промптами по 900 000 байт и пакет с 3 600 000 байт supporting
-files. Внешняя работа leaf activities в этом тесте заменена контролируемым ответом. Он проверяет
-orchestration, отсутствие повторного исполнения, continuation, внешние payload, дедупликацию плана и
-UI summaries; это не benchmark PostgreSQL, Docker или модели. Время и объёмы истории выводятся в
-журнал теста.
+`TestTemporalLargePlanAndHistoryContinuation` works with real local Temporal: 1 000 switch nodes,
+four leaf nodes with 900 000 byte prompts and a package with 3 600 000 byte supporting files.
+External work of leaf activities in this test is replaced by a controlled response. It checks
+orchestration, no re-execution, continuation, external payload, plan deduplication, and UI
+summaries; this is not a PostgreSQL, Docker, or model benchmark. Time and history volumes are output
+to the test log.
 
-Последний проверенный запуск завершился за 106,98 секунды. Получились четыре истории, то есть три
-Continue-As-New; все 1 004 узла опубликовали успех ровно один раз, четыре leaf activities
-выполнились по одному разу. В истории сохранены 14 ссылок на внешние payload, полный план во всех
-продолжениях использует один blob.
+The last verified run finished in 106.98 seconds. Four histories were obtained, i.e., three
+Continue-As-New; all 1 004 nodes published success exactly once, four leaf activities executed once
+each. The history stores 14 references to external payload, full plan in all continuations uses one
+blob.
 
-| История | Событий | Размер событий, байт | Наибольшая группа command events, байт |
-| ------- | ------: | -------------------: | -------------------------------------: |
-| 1       |   4 099 |              714 417 |                                    522 |
-| 2       |   4 414 |              822 458 |                                 33 360 |
-| 3       |   4 513 |              885 295 |                                 33 216 |
-| 4       |   1 661 |              306 021 |                                 33 216 |
+| History | Events | Event Size, bytes | Largest command events group, bytes |
+| ------- | -----: | ----------------: | ----------------------------------: |
+| 1       |  4 099 |           714 417 |                                 522 |
+| 2       |  4 414 |           822 458 |                              33 360 |
+| 3       |  4 513 |           885 295 |                              33 216 |
+| 4       |  1 661 |           306 021 |                              33 216 |
 
-Размер группы — сумма protobuf-размеров `ActivityTaskScheduled`, `TimerStarted` и `TimerCanceled` с
-одним `WorkflowTaskCompletedEventId`; это наблюдение за командами истории, а не измерение полного
-сетевого RPC. Числа зависят от batching и конфигурации Temporal. Тест требует меньше 2 MiB для такой
-группы и меньше 12 000 событий/16 MiB для каждой истории. Replay всех четырёх завершённых историй
-тем же workflow прошёл без исполнения activities за 0,98 секунды.
+Group size is sum of protobuf sizes `ActivityTaskScheduled`, `TimerStarted` and `TimerCanceled` with
+one `WorkflowTaskCompletedEventId`; this is observation of history commands, not measurement of full
+network RPC. Numbers depend on batching and Temporal configuration. Test requires less than 2 MiB
+for such group and less than 12 000 events/16 MiB for each history. Replay of all four completed
+histories by same workflow passed without executing activities in 0.98 seconds.
 
 ```sh
 KNOTRA_TEST_TEMPORAL_STRESS=1 go test ./internal/engine \
@@ -173,14 +174,13 @@ KNOTRA_TEST_LARGE_PAYLOADS=1 go test ./internal/engine \
 go test -race ./internal/engine
 ```
 
-Endpoint по умолчанию `127.0.0.1:7233`, namespace `default`; переопределения —
-`KNOTRA_TEST_TEMPORAL` и `KNOTRA_TEST_NAMESPACE`. Stress-тест сохраняет payload в
-`.knotra/temporal-history/<workflow-id>`, чтобы записанная история оставалась читаемой после
-завершения теста. Отдельный codec-тест проверяет round-trip **269 484 032 байт (257 MiB)**. Unit
-regression с виртуальным временем проверяет публикацию после шестиминутной недоступности БД без
-повторения внешнего действия.
+Default endpoint `127.0.0.1:7233`, namespace `default`; overrides — `KNOTRA_TEST_TEMPORAL` and
+`KNOTRA_TEST_NAMESPACE`. Stress test stores payload in `.knotra/temporal-history/<workflow-id>` so
+recorded history remains readable after test completion. Separate codec test checks round-trip **269
+484 032 bytes (257 MiB)**. Unit regression with virtual time checks publish after six-minute DB
+unavailability without repeating external action.
 
-Для replay нужно сохранить payload-каталог и историю тестового запуска в Temporal:
+For replay, save the payload directory and test run history in Temporal:
 
 ```sh
 KNOTRA_TEST_REPLAY_WORKFLOW=knotra-history-13d1678d-5281-403e-af98-1dba2672b7af \
@@ -188,6 +188,6 @@ KNOTRA_TEST_REPLAY_RUN_ID=01a10163-4fa0-7a6b-8a95-66611cc0471f \
 go test ./internal/engine -run TestTemporalReplayRetainedHistory -count=1 -v
 ```
 
-Это проверенные идентификаторы указанного запуска; после нового stress-теста следует подставить его
-Workflow ID и **первый** Temporal Run ID. Replay читает сохранённые истории всей цепочки, не создаёт
-новый запуск и не вызывает activities.
+These are verified identifiers of the specified run; after a new stress test, substitute its
+Workflow ID and **first** Temporal Run ID. Replay reads saved histories of the entire chain, does
+not create a new run, and does not invoke activities.

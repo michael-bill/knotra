@@ -1,57 +1,62 @@
-# Этапы разработки
+# Development Stages
 
-Состояние на 4 октября 2026 года. Выполненные возможности отделены от дальнейших направлений; сроки
-новых функций не назначены.
+Status as of October 5, 2026. Implemented capabilities are separated from further directions;
+schedules for new features are not assigned.
 
-## Реализовано
+## Implemented
 
-- Контракт YAML v1, JSON Schema, строгий разбор, CEL, безопасный пакет файлов и семантический
-  компилятор. Все 39 fixtures проверяются Go-тестами.
-- Все девять типов кубиков: `llm`, `agent`, `code`, `tool`, `switch`, `human`, `foreach`, `loop`,
-  `pipeline`; вложенные графы, permissions и бюджеты.
-- Temporal workflow, PostgreSQL, неизменяемые определения и планы, durable timers, крупные payload
-  вне истории и Continue-As-New.
-- Ollama, собственный агентный цикл, Docker sandbox, MCP Streamable HTTP и изолированный stdio,
-  выдача секретов и сетевые ограничения.
-- HTTP API и CLI: admission, запуск, SSE, запросы человека, отмена, разрешение неизвестного исхода,
-  квитанции и артефакты.
-- Desktop на Tauri/React: редактирование YAML и графа, импорт/экспорт пакетов, подключение к
-  Go-движку, запуски, review и артефакты. Черновики и журналы сохраняются в SQLite; browser preview
-  использует localStorage.
-- Проверки с настоящими Ollama, Docker, MCP, Temporal и PostgreSQL, включая параллельные запуски и
-  восстановление после SIGKILL.
+- Contract YAML v1, JSON Schema, strict parsing, CEL, secure package files and semantic compiler.
+  All 39 fixtures are verified by Go tests.
+- All nine node types: `llm`, `agent`, `code`, `tool`, `switch`, `human`, `foreach`, `loop`,
+  `pipeline`; nested graphs, permissions and budgets.
+- Temporal workflow, PostgreSQL, immutable definitions and plans, durable timers, large payloads
+  outside history and Continue-As-New.
+- Ollama, OpenAI Responses, Anthropic Messages, custom agent loop, Docker sandbox, MCP Streamable
+  HTTP and isolated stdio, explicit secret grants and network restrictions.
+- HTTP API and CLI: admission, run submission, SSE, human requests, cancellation, resolution of
+  unknown outcome, receipts and artifacts.
+- Desktop on Tauri/React: YAML and graph editing, package import/export, connection to Go engine,
+  runs, review and artifacts. Drafts and logs are saved in SQLite; browser preview uses
+  localStorage.
+- Quickstart with persistent infrastructure, doctor and CLI archives with both Linux helper
+  architectures.
+- Five domain scenarios; research with code verification, approval and publication after restart.
+- Live run graph: nested instances, attempts, tools, response stream, rewind and comparison.
+- Checks with real Ollama, Docker, MCP, Temporal and PostgreSQL, including parallel runs and
+  recovery after SIGKILL.
 
-Настройка приведена в [руководстве запуска](running.md), проверки — в [отчёте](verification.md),
-готовые команды — в [справочнике CLI](../internal/cli/README.md). Приёмочный сценарий находится в
+Configuration is provided in [running guide](running.md), checks — in [report](verification.md),
+ready commands — in [CLI reference](../internal/cli/README.md). Acceptance scenario is located in
 [`examples/integration`](../examples/integration/README.md).
 
-## Следующие направления
+Product verification plan on five developers is in [pilot](pilot.md). Actual pilot and paid cloud
+API calls require participants and keys; automatic checks do not replace them.
 
-| Направление                          | Что требуется                                                                                  |
-| ------------------------------------ | ---------------------------------------------------------------------------------------------- |
-| Дополнительные модели                | Адаптеры с проверкой capabilities, учётом вызовов и документированными повторами               |
-| Наблюдение в desktop                 | Граф реального запуска, выбор вложенных экземпляров и итераций, подробности попыток и операций |
-| Общие артефакты и несколько хостов   | Объектное хранилище, совместные payload и модель владения worker                               |
-| Восстановление агента внутри попытки | Согласованные сообщения, результаты инструментов и снимок файлов                               |
-| Долгоживущие запуски при обновлении  | Версионирование workflow и проверка совместимости сохранённых историй                          |
-| Новый запуск с выбранного места      | Явное переиспользование результатов без изменения старого запуска                              |
-| Эксплуатация                         | Retention событий/файлов, резервное копирование и квоты хранилища                              |
-| Несколько пользователей              | Аутентификация, RBAC, квоты и усиленная изоляция                                               |
-| Desktop-поставка                     | Подписанные сборки, notarization и проверка каждой поддерживаемой ОС                           |
-| Оценка качества                      | Предметные примеры, сравнение моделей/промптов, измерение качества и стоимости                 |
+## Next Directions
 
-Локальный режим без Temporal требует отдельного архитектурного решения. Восстановление workflow не
-обещает восстановления живого контейнера или продолжения программы с произвольной инструкции. Отмена
-не откатывает внешние эффекты. Текущие гарантии описаны в
-[семантике исполнения](notation/execution.md).
+| Direction                           | What is required                                                       |
+| ----------------------------------- | ---------------------------------------------------------------------- |
+| Shared artifacts and multiple hosts | Object storage, shared payloads and worker ownership model             |
+| Agent recovery within attempt       | Persisted conversation, tool results and workspace snapshot            |
+| Long-running runs on update         | Workflow versioning and compatibility check of saved histories         |
+| New run from selected place         | Explicit reuse of results without changing old run                     |
+| Operations                          | Event/file retention, backup and storage quotas                        |
+| Multiple users                      | Authentication, RBAC, quotas and enhanced isolation                    |
+| Desktop delivery                    | Signed builds, notarization and check of each supported OS             |
+| Quality assessment                  | Domain examples, model/prompt comparison, quality and cost measurement |
 
-## Критерии для расширений
+Local mode without Temporal requires a separate architectural solution. Workflow recovery does not
+promise recovery of a live container or continuation of the program with an arbitrary instruction.
+Cancellation does not roll back external effects. Current guarantees are described in
+[execution semantics](notation/execution.md).
 
-Изменение контракта обновляет схему, диагностику, fixtures, runtime и документацию вместе. Новый
-адаптер проверяет permissions до внешнего действия. Изменение хранения сохраняет существующие данные
-и историю. Исполнение после сбоя, идемпотентность и неизвестный исход проверяются отдельно от
-успешного сценария.
+## Criteria for Extensions
 
-Проверки по умолчанию не требуют модельных весов или платных запросов. Реальная интеграция
-включается явно и документируется с точной командой. [Правила участия](../CONTRIBUTING.md) описывают
-процесс изменений.
+Contract change updates schema, diagnostics, fixtures, runtime and documentation together. New
+adapter checks permissions before external action. Storage change preserves existing data and
+history. Execution after failure, idempotency and unknown outcome are checked separately from
+successful scenario.
+
+Default checks do not require model weights or paid requests. Real integration is enabled explicitly
+documented with exact command. [Participation rules](../CONTRIBUTING.md) describe the change
+process.

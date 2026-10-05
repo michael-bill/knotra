@@ -1,572 +1,563 @@
-# Knotra v1: подключения, окружения и разрешения
+# Knotra v1: connections, environments and permissions
 
-Реализация находится в `internal/contract`, `internal/engine` и `internal/adapters`. Настройка
-описана в [руководстве запуска](../running.md), проверенные сценарии и границы поддержки — в
-[отчёте](../verification.md).
+Implementation is located in `internal/contract`, `internal/engine` and `internal/adapters`.
+Configuration is described in [startup guide](../running.md), verified scenarios and support
+boundaries — in [report](../verification.md).
 
-Статус: нормативный контракт v1, сверено с реализацией 4 октября 2026 года. Структурная JSON Schema
-и текстовая семантика применяются совместно. Требования к внешним системам проверяются при
-admission; неподдерживаемые провайдеры отклоняются до запуска.
+Status: normative contract v1, verified against implementation on October 5, 2026. Structural JSON
+Schema and textual semantics are applied jointly. Requirements for external systems are checked
+during admission; unsupported providers are rejected before startup.
 
-Этот документ определяет `kind: EngineProfile`, разрешение ресурсов `Pipeline` и ограничения их
-использования. [Основной контракт](v1.md) определяет граф и кубики, [проверки](validation.md) —
-этапы валидации, [JSON Schema](../../schemas/knotra-v1.schema.json) — структуру обоих документов.
-Семантические требования этого документа применяются дополнительно к JSON Schema.
+This document defines `kind: EngineProfile`, resource permissions in `Pipeline` and restrictions on
+their usage. [Main contract](v1.md) defines the graph and nodes, [checks](validation.md) —
+validation stages, [JSON Schema](../../schemas/knotra-v1.schema.json) — structure of both documents.
+Semantic requirements of this document apply additionally to JSON Schema.
 
-## 1. Граница конфигурации
+## 1. Configuration Boundary
 
-`Pipeline` — переносимый пакет процесса. `EngineProfile` — доверенная конфигурация конкретного
-движка, установленная его оператором. Пакет пайплайна не может загружать или изменять профиль, даже
-если содержит YAML с `kind: EngineProfile`.
+`Pipeline` — portable process package. `EngineProfile` — trusted configuration of a specific engine,
+installed by its operator. The pipeline package cannot load or modify the profile, even if it
+contains YAML with `kind: EngineProfile`.
 
-Движок выбирает один профиль для запуска до подготовки плана. Способ установки профиля, выбор
-профиля через API, адреса PostgreSQL и Temporal, доступ к Docker и настройки самого сервера
-относятся к конфигурации развёртывания и не являются полями этого формата. `metadata.name`
-идентифицирует профиль; `metadata.version` служит пользовательской меткой, а не механизмом доверия
-или неизменяемости.
+The engine selects one profile for startup before plan preparation. Profile installation method,
+profile selection via API, PostgreSQL and Temporal addresses, Docker access and server settings
+themselves belong to deployment configuration and are not fields of this format. `metadata.name`
+identifies the profile; `metadata.version` serves as a user label, not a trust or immutability
+mechanism.
 
-| Переносимый `Pipeline.spec`                                   | Доверенный `EngineProfile.spec`                                                |
-| ------------------------------------------------------------- | ------------------------------------------------------------------------------ |
-| `models.<alias>.connection` и необязательные настройки модели | Реальный провайдер, модель по умолчанию, адрес API и авторизация               |
-| `mcp.<alias>.connection`, область сессии                      | Транспорт, URL или команда MCP, credentials, перечень разрешённых инструментов |
-| `sandboxes.<alias>.profile`                                   | Образ, ресурсы, сеть и разрешения окружения                                    |
-| `secrets.<alias>.ref`                                         | Источник секретного значения в окружении движка                                |
-| Запрошенные лимиты и разрешения кубиков                       | Максимальные допустимые лимиты и возможности                                   |
+| Portable `Pipeline.spec`                                | Trusted `EngineProfile.spec`                                      |
+| ------------------------------------------------------- | ----------------------------------------------------------------- |
+| `models.<alias>.connection` and optional model settings | Real provider, default model, API address and authorization       |
+| `mcp.<alias>.connection`, session scope                 | Transport, URL or MCP command, credentials, list of allowed tools |
+| `sandboxes.<alias>.profile`                             | Image, resources, network and environment permissions             |
+| `secrets.<alias>.ref`                                   | Secret value source in the engine environment                     |
+| Requested node limits and permissions                   | Maximum allowable limits and capabilities                         |
 
-Имена справа являются **каноническими именами** внутри выбранного EngineProfile. Имена слева —
-**локальными alias** конкретного Pipeline. Одинаковое написание допустимо, но не меняет область
-разрешения ссылки. Например, `spec.models.writer.connection: production_model` связывает alias
-`writer` с каноническим подключением `production_model`.
+Names on the right are **canonical names** within the selected EngineProfile. Names on the left are
+**local aliases** of a specific Pipeline. Identical spelling is allowed but does not change the
+scope of reference resolution. For example, `spec.models.writer.connection: production_model` links
+alias `writer` with canonical connection `production_model`.
 
-Объявление alias не выдаёт агенту инструмент и не передаёт ему секретное значение. При подготовке
-плана движок разрешает все объявленные ссылки и проверяет их допустимость, в том числе в условных
-ветках и вложенных пайплайнах, которые могут не исполниться.
+Declaring an alias does not grant the agent a tool and does not pass it a secret value. During plan
+preparation, the engine resolves all declared references and checks their validity, including in
+conditional branches and nested pipelines that may not execute.
 
-Неизвестные поля запрещены. Идентификаторы разделов ресурсов соответствуют `[a-z][a-z0-9_]{0,63}`.
-Списки разрешений содержат точные имена без wildcard; повторения запрещены.
+Unknown fields are forbidden. Resource section identifiers correspond to `[a-z][a-z0-9_]{0,63}`.
+Permission lists contain exact names without wildcard; repetitions are forbidden.
 
-## 2. Корень EngineProfile
+## 2. EngineProfile Root
 
-| Поле             | Обязательность | Значение                                                  |
-| ---------------- | -------------- | --------------------------------------------------------- |
-| `apiVersion`     | Обязательно    | Строго `knotra/v1`                                        |
-| `kind`           | Обязательно    | Строго `EngineProfile`                                    |
-| `metadata`       | Обязательно    | Общие метаданные, как у Pipeline; `name` обязателен       |
-| `spec`           | Обязательно    | Конфигурация профиля                                      |
-| `spec.secrets`   | Необязательно  | Карта источников секретов; по умолчанию `{}`              |
-| `spec.models`    | Необязательно  | Карта подключений моделей; по умолчанию `{}`              |
-| `spec.mcp`       | Необязательно  | Карта MCP-подключений; по умолчанию `{}`                  |
-| `spec.sandboxes` | Необязательно  | Карта профилей изолированных окружений; по умолчанию `{}` |
-| `spec.limits`    | Обязательно    | Все пять верхних ограничений из раздела 8                 |
+| Field            | Requiredness | Value                                                |
+| ---------------- | ------------ | ---------------------------------------------------- |
+| `apiVersion`     | Required     | Strictly `knotra/v1`                                 |
+| `kind`           | Required     | Strictly `EngineProfile`                             |
+| `metadata`       | Required     | General metadata, as in Pipeline; `name` is required |
+| `spec`           | Required     | Profile configuration                                |
+| `spec.secrets`   | Optional     | Map of secret sources; default `{}`                  |
+| `spec.models`    | Optional     | Map of model connections; default `{}`               |
+| `spec.mcp`       | Optional     | Map of MCP connections; default `{}`                 |
+| `spec.sandboxes` | Optional     | Map of sandbox profiles; default `{}`                |
+| `spec.limits`    | Required     | All five upper limits from section 8                 |
 
-Отсутствующий необязательный раздел не заполняется обнаруженными подключениями машины. Пустой
-каталог не предоставляет соответствующую возможность. Поля с явным `null` не заменяют отсутствующие
-поля и отклоняются схемой.
+Missing optional sections are not filled with discovered machine connections. An empty catalog does
+not provide the corresponding capability. Fields with explicit `null` do not replace missing fields
+and are rejected by the schema.
 
-## 3. Секреты и переменные окружения
+## 3. Secrets and Environment Variables
 
-### 3.1. Источник в профиле
+### 3.1. Source in Profile
 
-Каждый `spec.secrets.<name>` содержит единственное обязательное поле `env`: имя переменной окружения
-по шаблону `[A-Za-z_][A-Za-z0-9_]*`.
+Each `spec.secrets.<name>` contains a single required field `env`: environment variable name
+following template `[A-Za-z_][A-Za-z0-9_]*`.
 
-`env` читается в доверенном компоненте движка, выполняющем подключение или создающем sandbox. Это
-окружение сервера/исполнителя Knotra. Окружение запустившего CLI компьютера не является источником,
-не передаётся автоматически и не участвует в подстановке.
+`env` is read in the trusted engine component performing the connection or creating sandbox. This is
+the Knotra server/executor environment. The environment of the CLI computer that started it is not a
+source, is not passed automatically and does not participate in substitution.
 
-Отсутствующее или пустое значение используемого секрета вызывает ошибку доступности подключения до
-запуска соответствующей внешней операции. Развёртывание обязано обеспечить одинаковый источник для
-исполнителей, которым разрешено выполнять такую операцию. Локальная офлайн-проверка Pipeline может
-проверить только ссылку, а не наличие секретного значения на сервере.
+Missing or empty value of the used secret causes a connection availability error before startup of
+the corresponding external operation. Deployment must ensure a common source for executors allowed
+to perform such an operation. Local offline Pipeline check can verify only the link, not the
+presence of the secret value on the server.
 
-Профиль и план хранят имя источника, а не его значение. Движок разрешает секрет непосредственно
-перед использованием. Ротация переменной влияет на последующие использования, в том числе в
-продолженном запуске; смена самого имени источника в профиле не меняет зафиксированный план уже
-принятого запуска. История может содержать имя секрета и факт обращения, но не значение.
+Profile and plan store the source name, not its value. The engine resolves the secret immediately
+before use. Variable rotation affects subsequent usages, including in a resumed run; changing the
+source name itself in the profile does not change the fixed plan of an already accepted run. History
+may contain the secret name and access fact, but not the value.
 
-### 3.2. Ссылки в доверенных подключениях
+### 3.2. Links in trusted connections
 
-В `models.<connection>.auth.<field>` допустим только объект `{secretRef: <canonical-secret-name>}`.
-Поле `<field>` определяет адаптер провайдера.
+Only the object `{secretRef: <canonical-secret-name>}` is allowed in
+`models.<connection>.auth.<field>`. The provider adapter defines `<field>`.
 
-MCP `headers` и `env` используют один из двух взаимоисключающих объектов:
+MCP `headers` and `env` use one of two mutually exclusive objects:
 
-| Объект                | Смысл                                               |
-| --------------------- | --------------------------------------------------- |
-| `{value: "..."}`      | Буквальная строка для несекретного значения         |
-| `{secretRef: <name>}` | Полное значение канонического секрета EngineProfile |
+| Object                | Meaning                                          |
+| --------------------- | ------------------------------------------------ |
+| `{value: "..."}`      | Literal string for non-secret value              |
+| `{secretRef: <name>}` | Full value of the EngineProfile canonical secret |
 
-Префиксы, конкатенация, CEL, `${...}` и шаблонизация в этих объектах не выполняются. Если
-HTTP-заголовку нужен `Bearer …`, источник секрета содержит всю строку заголовка. Непустые ключи,
-CR/LF и остальные требования транспорта проверяются после разрешения значения; секрет не включается
-в текст ошибки.
+Prefixes, concatenation, CEL, `${...}`, and templating are not performed in these objects. If an
+HTTP header needs `Bearer …`, the secret source contains the entire header string. Nonempty field
+names, CR/LF restrictions and other transport requirements are checked after value resolution; the
+secret is not included in the error text.
 
-Вызов модели или MCP разрешает доверенному адаптеру использовать credentials этого подключения. Он
-не предоставляет самому пайплайну право прочитать или экспортировать эти credentials. Поэтому секрет
-авторизации модели не требуется дублировать в `Pipeline.spec.secrets` или
+Calling a model or MCP allows the trusted adapter to use this connection's credentials. It does not
+grant the pipeline itself the right to read or export these credentials. Therefore, the model
+authorization secret does not need to be duplicated in `Pipeline.spec.secrets` or
 `pipeline.permissions.secrets`.
 
-### 3.3. Явная передача секрета в sandbox
+### 3.3. Explicit secret passing to sandbox
 
-`Pipeline.spec.secrets.<alias>` содержит единственное поле `ref`, которое указывает каноническое имя
-EngineProfile. Поля `env` у кубиков `agent` и `code` задают карту переменных окружения. Для каждой
-переменной допустим ровно один вариант:
+`Pipeline.spec.secrets.<alias>` contains a single field `ref`, which specifies the canonical
+EngineProfile name. Fields `env` in nodes `agent` and `code` set the environment variable map. For
+each variable, exactly one option is allowed:
 
-| Объект                              | Смысл                                              |
-| ----------------------------------- | -------------------------------------------------- |
-| `{value: "..."}`                    | Буквальная строка                                  |
-| `{secret: <pipeline-secret-alias>}` | Значение объявленного alias секрета этого Pipeline |
+| Object                              | Meaning                                             |
+| ----------------------------------- | --------------------------------------------------- |
+| `{value: "..."}`                    | Literal string                                      |
+| `{secret: <pipeline-secret-alias>}` | Value of the declared alias secret of this Pipeline |
 
-Отсутствующий `env` означает `{}`. Значения не могут быть выражениями или привязками данных. Для
-передачи входных данных в программу используются контракты кубика, описанные в основном документе.
+Missing `env` means `{}`. Values cannot be expressions or data bindings. For passing input data to a
+program, node contracts described in the main document are used.
 
-Для `{secret: token}` должны одновременно выполняться условия:
+For `{secret: token}`, the following conditions must simultaneously be met:
 
-1. Alias `token` объявлен в текущем `Pipeline.spec.secrets`.
-2. Его `ref` существует в EngineProfile.
-3. Каноническое имя секрета входит в `allowedSecrets` выбранного профиля sandbox.
-4. При вызове вложенного Pipeline каноническое имя секрета входит во все действующие
-   `pipeline.permissions.secrets` его предков.
+1. Alias `token` is declared in the current `Pipeline.spec.secrets`.
+2. Its `ref` exists in EngineProfile.
+3. The canonical secret name is included in `allowedSecrets` of the selected sandbox profile.
+4. When calling a nested Pipeline, the canonical secret name is included in all active
+   `pipeline.permissions.secrets` of its ancestors.
 
-Подготовка плана отклоняет неразрешённый секрет. Движок не должен удалять запрещённую переменную и
-продолжать с другим смыслом программы.
+Plan preparation rejects an unresolved secret. The engine must not remove a forbidden variable and
+continue with another program meaning.
 
-Sandbox не наследует переменные окружения CLI, API-сервера или worker-процесса. Базовое окружение
-формируется из зафиксированного образа и служебных значений runtime; затем применяются явно заданные
-переменные. Зарезервированные переменные интерфейса исполнения, определённые основным контрактом,
-нельзя перекрывать пользовательским `env`.
+Sandbox does not inherit environment variables from CLI, API server, or worker process. The base
+environment is formed from the fixed image and runtime service values; then explicitly set variables
+are applied. Reserved execution interface variables defined by the main contract cannot be
+overridden by user `env`.
 
-Выдача секрета в sandbox означает, что программа внутри может его прочитать. Движок должен исключать
-собственные credentials из автоматического вывода, истории и плана; произвольная программа с явно
-выданным секретом может включить его в свой результат. Отдельного механизма автоматического
-доказательства отсутствия секретов в пользовательских данных контракт не обещает.
+Issuing a secret to sandbox means that the program inside can read it. The engine must exclude its
+own credentials from automatic output, history, and plan; an arbitrary program with an explicitly
+issued secret may include it in its result. A separate mechanism for automatically proving the
+absence of secrets in user data is not promised by the contract.
 
-## 4. Подключения моделей
+## 4. Model connections
 
 ### 4.1. EngineProfile.spec.models
 
-| Поле подключения | Обязательность / значение по умолчанию | Семантика                                                                     |
-| ---------------- | -------------------------------------- | ----------------------------------------------------------------------------- |
-| `provider`       | Обязательно                            | Идентификатор установленного адаптера                                         |
-| `model`          | Обязательно                            | Непустой идентификатор модели по умолчанию                                    |
-| `baseUrl`        | Необязательно                          | Базовый URL API; при отсутствии используется документированный адрес адаптера |
-| `auth`           | По умолчанию `{}`                      | Карта полей авторизации; каждое значение — `{secretRef: ...}`                 |
-| `parameters`     | По умолчанию `{}`                      | Значения параметров провайдера по умолчанию, представимые в JSON              |
+| Connection field | Requiredness / default value | Semantics                                                       |
+| ---------------- | ---------------------------- | --------------------------------------------------------------- |
+| `provider`       | Required                     | Identifier of the installed adapter                             |
+| `model`          | Required                     | Non-empty default model identifier                              |
+| `baseUrl`        | Optional                     | Base API URL; if absent, the documented adapter address is used |
+| `auth`           | Default `{}`                 | Authorization fields map; each value is `{secretRef: ...}`      |
+| `parameters`     | Default `{}`                 | Default provider parameter values, representable in JSON        |
 
-`baseUrl`, если указан, должен быть абсолютным HTTP(S) URL без userinfo и fragment. Его
-нормализацию, требуемый суффикс пути и допустимость HTTP определяет адаптер. Сетевые обращения не
-направляются на значение, полученное из модели, промпта или входов Pipeline. Неизвестный `provider`,
-неизвестное поле `auth`, недостающая обязательная авторизация и неподдерживаемый параметр являются
-ошибками подготовки подключения.
+`baseUrl`, if specified, must be an absolute HTTP(S) URL without userinfo and fragment. Its
+normalization, required path suffix, and HTTP allowance are determined by the adapter. Network calls
+are not directed to a value obtained from a model, prompt, or Pipeline inputs. Unknown `provider`,
+unknown field `auth`, missing mandatory authorization, and unsupported parameter are connection
+preparation errors.
 
-Установленный адаптер обязан предоставить проверяемое описание своих полей `auth`, `parameters` и
-возможностей модели. Общая схема допускает их расширение, но не даёт разрешения передавать
-неизвестные поля произвольно в API. Набор реализованных адаптеров версионируется вместе с движком;
-имя адаптера в профиле не устанавливает его автоматически.
+The installed adapter must provide a verifiable description of its fields `auth`, `parameters`, and
+model capabilities. The general scheme allows their extension but does not grant permission to
+arbitrarily pass unknown fields to the API. The set of implemented adapters is versioned together
+with the engine; the adapter name in the profile does not install it automatically.
 
-Текущий движок реализует только `provider: ollama`; другие значения отклоняются при admission. Общий
-формат подключения описывает границу расширения, а не наличие адаптеров других провайдеров.
-Поддерживаемые поля Ollama приведены в [документации адаптеров](../../internal/adapters/README.md).
+The current engine implements `ollama`, `openai`, and `anthropic`. Cloud connections require
+`auth.key` with `secretRef`. Parameters, addresses, and capability check boundaries are given in
+[adapter documentation](../../internal/adapters/README.md). For cloud models, admission records the
+available model ID, not weight digest. Support for text/tools relates to the adapter protocol; a
+specific model must support function calling. `imageInput` is currently available only in Ollama.
 
 ### 4.2. Pipeline.spec.models
 
-| Поле ресурса | Обязательность / значение по умолчанию | Семантика                                                              |
-| ------------ | -------------------------------------- | ---------------------------------------------------------------------- |
-| `connection` | Обязательно                            | Каноническое имя `EngineProfile.spec.models`                           |
-| `model`      | По умолчанию модель подключения        | Закрепление конкретного идентификатора модели                          |
-| `parameters` | По умолчанию `{}`                      | Явные переопределения параметров подключения                           |
-| `requires`   | По умолчанию `[]`                      | Требуемые возможности: `toolCalling`, `structuredOutput`, `imageInput` |
+| Resource Field | Required / Default Value | Semantics                                                              |
+| -------------- | ------------------------ | ---------------------------------------------------------------------- |
+| `connection`   | Required                 | Canonical name `EngineProfile.spec.models`                             |
+| `model`        | Default connection model | Binding of a specific model identifier                                 |
+| `parameters`   | Default `{}`             | Explicit connection parameter overrides                                |
+| `requires`     | Default `[]`             | Required capabilities: `toolCalling`, `structuredOutput`, `imageInput` |
 
-Эффективные параметры вычисляются поверхностным объединением по ключам: сначала
-`connection.parameters`, затем `Pipeline.models.<alias>.parameters`. Значение alias целиком заменяет
-значение совпавшего ключа, включая объект или массив. `null` является передаваемым JSON-значением,
-если адаптер его допускает; специальной операции удаления параметра нет.
+Effective parameters are computed via a shallow merge by key: first `connection.parameters`, then
+`Pipeline.models.<alias>.parameters`. The alias value entirely replaces the value of the matching
+key, including the object or array. `null` is a pass-through JSON value if the adapter allows it;
+there is no special removal operation for parameters.
 
-Параметры не могут переопределять `provider`, `baseUrl`, авторизацию, сообщения, схемы инструментов,
-схему ответа или другие части запроса, которыми управляет Knotra. Адаптер проверяет такие конфликты
-до выполнения. При отсутствии параметра применяется документированное поведение адаптера/API,
-зафиксированное в плане через версию адаптера и итоговую конфигурацию.
+Parameters cannot override `provider`, `baseUrl`, authorization, messages, tool schemas, response
+schema or other parts of the request managed by Knotra. The adapter checks such conflicts before
+execution. In the absence of a parameter, the documented behavior of the adapter/API is applied,
+recorded in the plan via adapter version and final configuration.
 
-`requires` дополняет требования, выведенные из типа кубика. Каждый `agent` требует `toolCalling`,
-даже если оно не перечислено в alias и ему не выданы внешние инструменты. Движок проверяет
-возможность исполнения и отклоняет неподдерживаемую конфигурацию; он не заменяет модель и не удаляет
-требование. Поддержка провайдером структурированного ответа не отменяет проверку результата по
-контракту Knotra.
+`requires` supplements requirements derived from the node type. Each `agent` requires `toolCalling`,
+even if it is not listed in alias and no external tools are issued to it. The engine checks
+feasibility and rejects unsupported configuration; it does not replace the model nor remove the
+requirement. Support from the provider for a structured response does not cancel the result check by
+Knotra contract.
 
-Поля `nodes.<id>.llm.model` и `nodes.<id>.agent.model` ссылаются на alias текущего Pipeline.
-Несколько alias могут использовать одно подключение с разными моделями и параметрами. Разрешение
-подключения во вложенном Pipeline разрешает именно выбранное подключение с такими переопределениями;
-v1 не содержит отдельного списка разрешённых моделей или параметров внутри подключения. Для
-разграничения прав на стороне провайдера используются соответствующие credentials и подключения
-EngineProfile.
+Fields `nodes.<id>.llm.model` and `nodes.<id>.agent.model` refer to the alias of the current
+Pipeline. Several aliases can use one connection with different models and parameters. Resolution of
+the connection in a nested Pipeline allows exactly the selected connection with such overrides; v1
+does not contain a separate list of allowed models or parameters within the connection. For
+distinguishing rights on the provider side, corresponding credentials and connections EngineProfile
+are used.
 
 ## 5. MCP
 
-### 5.1. Общие поля подключения
+### 5.1. General Connection Fields
 
-| Поле              | Обязательность / значение по умолчанию | Семантика                                                     |
-| ----------------- | -------------------------------------- | ------------------------------------------------------------- |
-| `transport`       | Обязательно                            | `streamable_http` или `stdio`                                 |
-| `allowedTools`    | Обязательно, допустим `[]`             | Точные имена MCP-инструментов, которые разрешено вызывать     |
-| `toolPolicies`    | По умолчанию `{}`                      | Политика эффекта и идемпотентности каждого инструмента        |
-| `allowRunSession` | По умолчанию `false`                   | Разрешение разделять MCP-сессию в области экземпляра Pipeline |
+| Field             | Required / Default Value | Semantics                                                       |
+| ----------------- | ------------------------ | --------------------------------------------------------------- |
+| `transport`       | Required                 | `streamable_http` or `stdio`                                    |
+| `allowedTools`    | Required, `[]` allowed   | Exact names of MCP tools that are allowed to be called          |
+| `toolPolicies`    | Default `{}`             | Effect and idempotency policy for each tool                     |
+| `allowRunSession` | Default `false`          | Permission to share an MCP session within one Pipeline instance |
 
-Имя инструмента соответствует `[A-Za-z0-9_.-]{1,128}`. `allowedTools: []` не разрешает вызовы.
-Обнаруженный сервером инструмент не становится разрешённым автоматически. Все ключи `toolPolicies`
-должны входить в `allowedTools`; отсутствие политики означает `effect: unknown` без ключа
-идемпотентности.
+Tool name corresponds to `[A-Za-z0-9_.-]{1,128}`. `allowedTools: []` does not allow calls. A tool
+discovered by the server does not become allowed automatically. All keys `toolPolicies` must be
+included in `allowedTools`; absence of policy means `effect: unknown` without idempotency key.
 
-Движок обнаруживает запрошенные инструменты и проверяет их входные схемы при подготовке запуска.
-Невозможно удовлетворить явный grant отсутствующего инструмента. Политика оператора имеет приоритет
-над описанием и annotations, возвращёнными сервером. Изменение имени или схемы инструмента после
-фиксации плана требует остановки соответствующего вызова с диагностикой несовместимости; новые
-инструменты не добавляются в план. Фиксация схемы не гарантирует неизменяемость удалённой
-реализации.
+The engine discovers requested tools and checks their input schemas during run preparation. It is
+impossible to satisfy an explicit grant for a missing tool. Operator policy has priority over
+description and annotations returned by the server. Changing name or schema of a tool after freezing
+the plan requires stopping the corresponding call with incompatibility diagnostics; new tools are
+not added to the plan. Schema fixation does not guarantee immutability of remote implementation.
 
-MCP sampling, roots, elicitation, prompts и resources не выдаются автоматически из этого раздела. V1
-определяет здесь вызовы инструментов; сервер не получает дополнительные обратные возможности только
-на основании успешного подключения.
+MCP sampling, roots, elicitation, prompts and resources are not issued automatically from this
+section. V1 defines tool calls here; the server receives no additional reverse capabilities solely
+based on successful connection.
 
 ### 5.2. Streamable HTTP
 
-Для `transport: streamable_http` обязательны `url` и общие обязательные поля. `url` — абсолютный
-HTTP(S) URL без userinfo и fragment; это полный endpoint MCP. Допустимость небезопасного HTTP
-определяется конфигурацией развёртывания. `headers` — необязательная карта `CredentialValue` из
-раздела 3.2, по умолчанию `{}`.
+For `transport: streamable_http`, `url` and general required fields are mandatory. `url` is an
+absolute HTTP(S) URL without userinfo and fragment; this is the full MCP endpoint. Whether
+unencrypted HTTP is allowed is determined by deployment configuration. `headers` is an optional map
+`CredentialValue` from section 3.2, default `{}`.
 
-Имена заголовков проверяются как HTTP field-name; совпадение без учёта регистра считается
-дубликатом. Заголовки транспорта (`Host`, `Content-Length`, `Connection`, `Transfer-Encoding`),
-согласования MCP и идентификатора сессии назначает клиент Knotra; перекрывать их через профиль
-запрещено. Настройки подключения не переезжают по redirect на другой origin вместе с credentials;
-такой redirect вызывает ошибку подключения. Авторизация v1 задаётся статическими заголовками из
-доверенного профиля; интерактивный OAuth flow не подразумевается.
+Header names are checked as HTTP field-name; case-insensitive match is considered a duplicate.
+Transport headers (`Host`, `Content-Length`, `Connection`, `Transfer-Encoding`), MCP negotiation and
+session identifiers are assigned by Knotra client; overriding them via profile is forbidden.
+Connection settings do not move along redirect to another origin together with credentials; such
+redirect causes connection error. Authorization v1 is set by static headers from trusted profile;
+interactive OAuth flow is not implied.
 
-HTTP-вызов выполняет доверенный MCP-клиент движка. Он не требует выдавать сети или HTTP credentials
-в sandbox агента.
+HTTP call executes a trusted MCP engine client. It does not require issuing network or HTTP
+credentials to the agent sandbox.
 
 ### 5.3. Stdio
 
-Для `transport: stdio` обязательны:
+For `transport: stdio`, the following are mandatory:
 
-| Поле           | Семантика                                                                           |
-| -------------- | ----------------------------------------------------------------------------------- |
-| `sandbox`      | Каноническое имя `EngineProfile.spec.sandboxes`, внутри которого запускается сервер |
-| `command`      | Непустой список строк: исполняемый файл и аргументы                                 |
-| `allowedTools` | Общий перечень доступных инструментов                                               |
+| Field          | Semantics                                                                     |
+| -------------- | ----------------------------------------------------------------------------- |
+| `sandbox`      | Canonical name `EngineProfile.spec.sandboxes`, inside which the server is run |
+| `command`      | Non-empty list of strings: executable file and arguments                      |
+| `allowedTools` | General list of available tools                                               |
 
-`env` — необязательная карта `CredentialValue`, по умолчанию `{}`. `command` запускается внутри
-отдельного sandbox MCP-сервера как argv без неявного shell, расширения `$VAR` и подстановки команд.
-Явный запуск shell допустим, если его указал оператор в `command`. Нужные программы и зависимости
-должны содержаться в образе.
+`env` — optional map `CredentialValue`, by default `{}`. `command` is run inside a separate sandbox
+MCP-server as argv without implicit shell, `$VAR` extensions and command substitution. Explicit
+shell run is allowed if the operator specified it in `command`. Required programs and dependencies
+must be contained in the image.
 
-Каждый `secretRef` в `env` должен существовать в профиле и входить в `allowedSecrets` выбранного
-sandbox. Это проверка доверенной конфигурации MCP. Пайплайн, имеющий право пользоваться данным
-подключением, не обязан дополнительно запрашивать raw credentials сервера или профиль его служебного
-sandbox.
+Each `secretRef` in `env` must exist in the profile and belong to `allowedSecrets` of the selected
+sandbox. This is a trusted MCP configuration check. A pipeline authorized to use this connection is
+not required to additionally request raw server credentials or the profile of its service sandbox.
 
-Запуск обслуживающего MCP-процесса — действие доверенного адаптера; `sandbox.allowedTools`
-ограничивает инструменты, выдаваемые агентам и кодовым кубикам, и не является запретом на запуск
-этого явно объявленного процесса. Ресурсы, сеть и `allowedSecrets` профиля применяются к нему
-полностью.
+Launching the supporting MCP process is an action of a trusted adapter; `sandbox.allowedTools`
+limits tools provided to agents and code nodes, and does not prohibit launching this explicitly
+declared process. Resources, network, and `allowedSecrets` of the profile apply to it fully.
 
-MCP-сервер не разделяет файловую систему, переменные окружения и процессы с агентом. Его
-stdin/stdout используются для MCP-протокола, stderr — для диагностического потока с исключением
-известных секретных значений. Ему не передаются Docker socket, файлы хоста и переменные
-worker-процесса.
+The MCP server does not share the file system, environment variables, and processes with the agent.
+Its stdin/stdout are used for the MCP protocol, stderr — for a diagnostic stream excluding known
+secret values. It is not passed Docker socket, host files, and worker-process variables.
 
-### 5.4. Alias и область сессии
+### 5.4. Alias and session scope
 
-`Pipeline.spec.mcp.<alias>` содержит обязательный `connection` — каноническое имя MCP-подключения, и
-необязательный `session`: `node` по умолчанию или `run`.
+`Pipeline.spec.mcp.<alias>` contains mandatory `connection` — canonical name of MCP connection, and
+optional `session`: `node` by default or `run`.
 
-| `session` | Область                                                                                                  |
-| --------- | -------------------------------------------------------------------------------------------------------- |
-| `node`    | Отдельная MCP-сессия на alias и попытку экземпляра кубика. Действия одного агента используют её повторно |
-| `run`     | Общая MCP-сессия на alias и один экземпляр исполнения данного Pipeline                                   |
+| `session` | Scope                                                                                                |
+| --------- | ---------------------------------------------------------------------------------------------------- |
+| `node`    | Separate MCP session on alias and attempt of node instance. Actions of one agent reuse it repeatedly |
+| `run`     | Common MCP session on alias and one execution instance of this Pipeline                              |
 
-`run` допустим только при `connection.allowRunSession: true`. Один вызов вложенного Pipeline
-образует собственную область сессий; разные вызовы не разделяют её. Разные alias одного подключения
-создают разные сессии. Разрешения каждого вызова проверяются независимо от разделяемой сессии.
+`run` is allowed only with `connection.allowRunSession: true`. One call of a nested pipeline forms
+its own session scope; different calls do not share it. Different aliases of one connection create
+different sessions. Permissions of each call are checked independently from the shared session.
 
-Вызовы внутри одной `run`-сессии выполняются последовательно. Порядок одновременно готовых веток не
-определяется YAML: если он влияет на результат, зависимость задаётся в графе. Изменяемое состояние
-сессии не считается выходом кубика и не заменяет передачу данных через порты.
+Calls within one `run`-session are executed sequentially. Order of simultaneously ready branches is
+not determined by YAML: if it affects the result, dependency is specified in the graph. Mutable
+state of the session is not considered node output and does not replace data transfer via ports.
 
-После потери сессии нельзя молча считать её внутреннее состояние восстановленным. Продолжение
-возможно только с поддерживаемой сервером сессией или по правилам повторного выполнения кубика; при
-неопределённом результате предыдущего действия применяется `onUnknownOutcome`. Состояние MCP-сервера
-не входит автоматически в контрольные точки Temporal.
+After session loss, its internal state cannot be silently considered restored. Continuation is
+possible only with a server-supported session or according to node re-execution rules; if the
+previous action result is uncertain, `onUnknownOutcome` is applied. MCP-server state does not
+automatically enter Temporal checkpoints.
 
-### 5.5. ToolPolicy и повторные вызовы
+### 5.5. ToolPolicy and repeated calls
 
-Каждая запись `toolPolicies.<tool>` содержит обязательный `effect` и необязательный
-`idempotencyArgument`.
+Each `toolPolicies.<tool>` record contains mandatory `effect` and optional `idempotencyArgument`.
 
-| `effect`  | Семантика                                                                                               |
+| `effect`  | Semantics                                                                                               |
 | --------- | ------------------------------------------------------------------------------------------------------- |
-| `read`    | Оператор подтверждает, что вызов не изменяет значимое внешнее состояние; повтор по политике допускается |
-| `write`   | Вызов изменяет внешнее состояние                                                                        |
-| `unknown` | Эффект не классифицирован; при неопределённом исходе обрабатывается как потенциальная запись            |
+| `read`    | Operator confirms that the call does not change significant external state; repeat by policy is allowed |
+| `write`   | Call changes external state                                                                             |
+| `unknown` | Effect is not classified; on uncertain outcome it is treated as a potential write                       |
 
-`effect` определяет допустимость повторов, а не выдаёт право вызова и не запрашивает подтверждение
-человека. Необходимое участие человека оформляется в графе. Автоматический повтор `write`/`unknown`
-допустим после доказанного отсутствия эффекта либо при действующем механизме идемпотентности
-сервиса. Иначе используется политика неопределённого исхода кубика.
+`effect` determines admissibility of repeats, and does not grant call right and does not require
+human confirmation. Required human participation is expressed in the graph. Automatic repeat
+`write`/`unknown` is allowed after proven absence of effect or with an active service idempotency
+mechanism. Otherwise, node uncertain outcome policy is used.
 
-`idempotencyArgument` — непустой JSON Pointer к полю строкового ключа в объекте аргументов
-инструмента. Все промежуточные сегменты должны ссылаться на объекты; адресация массивов не
-поддерживается. Поле по этому пути резервируется Knotra и должно допускаться входной схемой
-инструмента. Агент и `tool.arguments` не могут задавать его самостоятельно. Из схемы, показываемой
-модели, это поле и требование его присутствия исключаются. При вставке ключа движок создаёт
-отсутствующие промежуточные объекты; присутствующее значение другого типа является ошибкой
-аргументов. Затем движок валидирует полные аргументы по исходной схеме перед отправкой. Если схему
-инструмента нельзя корректно проецировать таким образом, подключение этого инструмента отклоняется
-при подготовке.
+`idempotencyArgument` — non-empty JSON Pointer to field of string key in tool arguments object. All
+intermediate segments must refer to objects; array addressing is not supported. Field along this
+path is reserved by Knotra and must be allowed by tool input schema. Agent and `tool.arguments`
+cannot set it independently. From the model-shown schema, this field and requirement of its presence
+are excluded. On key insertion, engine creates missing intermediate objects; present value of
+another type is an argument error. Then engine validates full arguments against original schema
+before sending. If tool schema cannot be correctly projected thus, connection of this tool is
+rejected during preparation.
 
-Движок создаёт устойчивый ключ для одного логического вызова инструмента и повторно использует его
-при разрешённых повторах этой операции. У прямого tool-кубика все execution.retry попытки одного
-экземпляра относятся к одному логическому MCP-вызову и сохраняют этот ключ. Новый логический вызов,
-новая итерация или новый запуск получают другой ключ. Запись ключа и намерения выполнить действие
-должна предшествовать отправке запроса. Оператор, задающий `idempotencyArgument`, подтверждает
-поддержку ключа внешним сервисом, его пригодную область уникальности и сохранение защиты на весь
-возможный интервал повторов в пределах timeout запуска. Если такая гарантия у сервиса отсутствует,
-поле не задаётся. Числовое время хранения ключей и преобразование серверного механизма
-идемпотентности не являются отдельными полями v1.
+The engine creates a stable key for one logical tool invocation and reuses it within allowed retries
+of that operation. For a direct tool node, all execution.retry attempts of one instance belong to
+one logical MCP call and preserve this key. A new logical invocation, new iteration, or new run
+receives another key. Recording the key and intent to perform an action must precede sending the
+request. The operator setting `idempotencyArgument` confirms support for the key by an external
+service, its valid uniqueness scope, and preservation of protection throughout the entire possible
+retry interval within the run timeout. If such a guarantee is absent from the service, the field is
+not set. Numeric key retention time and transformation of the server-side idempotency mechanism are
+not separate v1 fields.
 
-Наличие ключа не обещает exactly-once для произвольного MCP-сервера. Если срок или область защиты
-больше не подходят для безопасного повтора, исход остаётся неопределённым. Завершённый вызов не
-выполняется заново при проигрывании сохранённой истории.
+Presence of a key does not promise exactly-once for an arbitrary MCP server. If the protection
+duration or scope no longer fits for safe retry, the outcome remains undefined. A completed call is
+not re-executed when replaying saved history.
 
-## 6. Профили sandbox
+## 6. Sandbox profiles
 
-### 6.1. Поля
+### 6.1. Fields
 
-Каждый `EngineProfile.spec.sandboxes.<name>` определяет один фиксированный профиль:
+Each `EngineProfile.spec.sandboxes.<name>` defines one fixed profile:
 
-| Поле             | Обязательность / значение по умолчанию | Семантика                                             |
-| ---------------- | -------------------------------------- | ----------------------------------------------------- |
-| `image`          | Обязательно                            | Непустая ссылка на образ, доступный backend окружений |
-| `resources`      | Обязательно                            | Все четыре ограничения из таблицы ниже                |
-| `network`        | Обязательно                            | Одна из сетевых политик                               |
-| `allowedTools`   | Обязательно, допустим `[]`             | Разрешённые встроенные инструменты sandbox            |
-| `allowedSecrets` | По умолчанию `[]`                      | Канонические имена секретов, допустимых в `env`       |
+| Field            | Requiredness / Default Value | Semantics                                                         |
+| ---------------- | ---------------------------- | ----------------------------------------------------------------- |
+| `image`          | Required                     | Non-empty reference to an image available in backend environments |
+| `resources`      | Required                     | All four constraints from the table below                         |
+| `network`        | Required                     | One of the network policies                                       |
+| `allowedTools`   | Required, `[]` allowed       | Allowed sandbox built-in tools                                    |
+| `allowedSecrets` | Default `[]`                 | Canonical names of secrets allowed in `env`                       |
 
-| `resources` | Диапазон                | Смысл                                                               |
-| ----------- | ----------------------- | ------------------------------------------------------------------- |
-| `cpu`       | Число, `0 < cpu <= 128` | Верхний предел процессорного времени, в эквиваленте числа CPU       |
-| `memoryMiB` | Целое `1..2147483647`   | Максимальная память контейнера в MiB                                |
-| `diskMiB`   | Целое `1..2147483647`   | Общий предел изменяемого диска, включая workspace и временные файлы |
-| `pids`      | Целое `1..2147483647`   | Максимум задач ОС, учитывая дочерние процессы и потоки              |
+| `resources` | Range                    | Meaning                                                              |
+| ----------- | ------------------------ | -------------------------------------------------------------------- |
+| `cpu`       | Number, `0 < cpu <= 128` | Upper limit of CPU time, in equivalents of number of CPU             |
+| `memoryMiB` | Integer `1..2147483647`  | Maximum container memory in MiB                                      |
+| `diskMiB`   | Integer `1..2147483647`  | Total limit of mutable disk, including workspace and temporary files |
+| `pids`      | Integer `1..2147483647`  | Maximum OS tasks, accounting for child processes and threads         |
 
-MiB равен 1048576 байтам. Параметры являются пределами, а не гарантией выделения мощности.
-Изменяемый диск включает writable layer и выделенные рабочие тома; неизменяемые слои образа и уже
-опубликованное хранилище артефактов в этот лимит не входят. Backend должен предотвращать обход
-лимита через дополнительный том, tmpfs или swap. Backend, не умеющий обеспечить запрошенное
-ограничение, отклоняет профиль при проверке возможностей, а не игнорирует поле.
+MiB equals 1048576 bytes. Parameters are limits, not guarantees of resource allocation. Mutable disk
+includes writable layer and dedicated work volumes; immutable image layers and already published
+artifact storage do not enter this limit. Backend must prevent bypassing the limit via additional
+volume, tmpfs, or swap. A backend unable to ensure the requested constraint rejects the profile
+during capability check, rather than ignoring the field.
 
-Если `image` использует tag, движок разрешает его в неизменяемый digest до запуска и фиксирует
-digest в плане. Повтор не должен подтянуть новое содержимое того же tag. Пайплайн выбирает профиль
-через `spec.sandboxes.<alias>.profile`; полей изменения образа, ресурсов или сети в alias нет.
-Другие требования задаются другим доверенным профилем.
+If `image` uses a tag, the engine resolves it to an immutable digest before the run and records the
+digest in the plan. A retry must not fetch new content of the same tag. The pipeline selects a
+profile via `spec.sandboxes.<alias>.profile`; image change, resource, or network fields are absent
+in alias. Other requirements are set by another trusted profile.
 
-### 6.2. Сеть
+### 6.2. Network
 
-| `network`                         | Поведение                                                                              |
-| --------------------------------- | -------------------------------------------------------------------------------------- |
-| `{mode: none}`                    | Внешняя сеть недоступна; процессы одного sandbox могут использовать локальный loopback |
-| `{mode: allowlist, hosts: [...]}` | Разрешён исходящий доступ только к перечисленным хостам                                |
-| `{mode: any}`                     | Разрешена исходящая сеть в пределах ограничений backend и развёртывания                |
+| `network`                         | Behavior                                                                         |
+| --------------------------------- | -------------------------------------------------------------------------------- |
+| `{mode: none}`                    | External network is unavailable; processes of one sandbox may use local loopback |
+| `{mode: allowlist, hosts: [...]}` | Outbound access allowed only to listed hosts                                     |
+| `{mode: any}`                     | Outbound network allowed within backend and deployment constraints               |
 
-В `allowlist` список `hosts` обязателен и непуст. Элемент — точное ASCII DNS-имя или IP-адрес; URL,
-порт, путь, wildcard и CIDR запрещены. Для DNS используется сравнение без учёта регистра и без
-конечной точки; IP сравниваются после нормализации. Повторения после нормализации являются ошибкой.
-Unicode DNS-имя требуется заранее представить в IDNA ASCII.
+In `allowlist`, the list of `hosts` is required and non-empty. An element is an exact ASCII DNS name
+or IP address; URL, port, path, wildcard, and CIDR are forbidden. For DNS, comparison is
+case-insensitive and ignores trailing dot; IPs are compared after normalization. Duplicates after
+normalization are an error. A Unicode DNS name must be represented in IDNA ASCII beforehand.
 
-Запись хоста разрешает его порты TCP/UDP; отдельного ограничения портов в v1 нет. DNS обслуживает
-контролируемый резолвер; разрешение DNS-запроса не открывает произвольный исходящий канал. Backend
-обязан предотвращать обход через прямой IP, альтернативный резолвер, proxy или redirect к
-неразрешённому хосту. Разрешённое имя не означает разрешение произвольного значения, в которое оно
-впоследствии перенаправит запрос. Конкретный backend должен документировать реализуемую модель
-фильтрации и отклонять неподдерживаемый `allowlist`.
+Host record allows its TCP/UDP ports; separate port restriction in v1 is absent. DNS serves a
+controlled resolver; resolving a DNS query does not open an arbitrary outbound channel. Backend must
+prevent bypass via direct IP, alternative resolver, proxy, or redirect to an unallowed host. An
+allowed name does not mean allowing an arbitrary value to which it subsequently redirects the
+request. A specific backend must document the implemented filtering model and reject unsupported
+`allowlist`.
 
-Сеть sandbox не управляет доверенными обращениями runtime к моделям и MCP: они проверяются через
-подключения и grants. Сетевые политики также не открывают входящие порты с хоста. Настроек port
-publishing в v1 нет.
+Sandbox network does not manage trusted runtime calls to models and MCP: they are checked via
+connections and grants. Network policies also do not open inbound ports from host. Port publishing
+settings in v1 are absent.
 
-### 6.3. Инструменты и жизненный цикл
+### 6.3. Tools and lifecycle
 
-`allowedTools` может содержать `files.read`, `files.write`, `process.exec`. Эти имена одновременно
-используются в grants агента. `process.exec` разрешает выполнение произвольной команды в пределах
-sandbox; такая команда может читать и менять доступную ей файловую систему. Отсутствие
-`files.read`/`files.write` не превращает shell в инструмент без доступа к файлам.
+`allowedTools` may contain `files.read`, `files.write`, `process.exec`. These names are
+simultaneously used in agent grants. `process.exec` allows execution of an arbitrary command within
+sandbox; such a command may read and modify its accessible file system. Absence of
+`files.read`/`files.write` does not turn shell into a tool without access to files.
 
-`agent` всегда выбирает sandbox alias. `code` требует, чтобы его выбранный профиль разрешал
-`process.exec`; его объявленная команда является явным запросом этой возможности. Для кодового
-кубика `defaults.tools` не выдаёт дополнительных действий. Размещение объявленных входов и сбор
-выходов выполняет доверенный runtime как часть контракта передачи данных, а не как инструменты
-агента.
+`agent` always selects the sandbox alias. `code` requires that its selected profile allows
+`process.exec`; its declared command is an explicit request for this capability. For a code node
+`defaults.tools` does not issue additional actions. Placement of declared inputs and collection of
+outputs is performed by the trusted runtime as part of the data transfer contract, not as agent
+tools.
 
-Каждая попытка экземпляра `agent` или `code` получает отдельный workspace. Окружение сохраняется
-между действиями этого агента и не разделяется с другими кубиками. При новой попытке используется
-новый workspace с исходными объявленными материалами; неявное продолжение в частично изменённой
-директории запрещено. Контрольная точка управления не считается снимком диска.
+Each attempt of instance `agent` or `code` receives a separate workspace. The environment is
+preserved between actions of this agent and is not shared with other nodes. A new attempt uses a new
+workspace with the original declared materials; implicit continuation in a partially modified
+directory is forbidden. The management checkpoint is not considered a disk snapshot.
 
-Ни один профиль v1 не разрешает произвольные пользовательские host mounts, Docker socket,
-privileged-режим или общий workspace между кубиками. Пути размещения входов и результатов задаются в
-рамках workspace по основному контракту. Произвольные дополнительные поля Docker не являются
-расширениями профиля.
+No v1 profile allows arbitrary custom host mounts, Docker socket, privileged mode, or a shared
+workspace between nodes. Input and output placement paths are specified within the workspace under
+the primary contract. Arbitrary additional Docker fields are not profile extensions.
 
-## 7. Вычисление разрешений
+## 7. Permission Calculation
 
-### 7.1. Инструменты агента
+### 7.1. Agent Tools
 
-Общие явно выданные инструменты содержатся в `Pipeline.spec.defaults.tools`: `mcp` — карта MCP-alias
-в список имён инструментов, `sandbox` — список встроенных инструментов. Отсутствующие поля равны
-пустым множествам.
+Common explicitly issued tools are contained in `Pipeline.spec.defaults.tools`: `mcp` is a map of
+MCP-alias to a list of tool names, `sandbox` is a list of built-in tools. Missing fields equal empty
+sets.
 
-`agent.tools` имеет те же поля и `inherit`, по умолчанию `true`:
+`agent.tools` has the same fields plus `inherit`, which defaults to `true`:
 
-- При `inherit: true` общий grant Pipeline и grant этого агента объединяются по множествам.
-- При `inherit: false` используются только grants этого агента.
-- Отсутствующий `tools` означает наследование общих grants.
-- Пустой `tools.mcp` или `tools.sandbox` при `inherit: true` не удаляет общий grant.
+- At `inherit: true` the common grant Pipeline and this agent's grant are united by sets.
+- At `inherit: false` only this agent's grants are used.
+- Missing `tools` means inheritance of common grants.
+- Empty `tools.mcp` or `tools.sandbox` at `inherit: true` does not remove the common grant.
 
-Для каждого запрошенного MCP-инструмента движок разрешает alias до канонического подключения и
-проверяет `allowedTools` подключения и все действующие разрешения вызовов вложенных Pipeline. Для
-встроенного инструмента проверяется `allowedTools` выбранного sandbox.
+For each requested MCP tool, the engine resolves the alias to its canonical connection and checks
+`allowedTools` connections and all active permissions of nested Pipeline calls. For a built-in tool,
+`allowedTools` selected sandbox is checked.
 
-Если хотя бы один запрошенный инструмент недопустим, подготовка плана завершается ошибкой. Простой
-пересечённый набор нельзя молча передать модели: это изменило бы явно описанную задачу. При
-корректном описании модель получает только вычисленный набор; каждый реальный вызов повторно
-проверяется доверенным runtime.
+If at least one requested tool is invalid, plan preparation ends with an error. The engine cannot
+silently pass only the intersection to the model: this would change an explicitly described task. At
+correct description the model receives only the computed set; each actual call is rechecked by the
+trusted runtime.
 
-`tool`-кубик запрашивает свой единственный MCP-инструмент через `tool.server` и `tool.name`; это
-явный grant самого кубика. Он проходит те же ограничения подключения и вложенных вызовов, но не
-требует повторения в `defaults.tools`. `llm` не получает инструменты через defaults. Управляющие
-кубики и `human` не исполняют инструменты от имени агента.
+`tool` node requests its single MCP tool via `tool.server` and `tool.name`; this is an explicit
+grant of the node itself. It passes the same connection and nested call restrictions, but does not
+require repetition in `defaults.tools`. `llm` does not receive tools via defaults. Control nodes and
+`human` do not execute tools on behalf of the agent.
 
-### 7.2. Вложенные Pipeline
+### 7.2. Nested Pipelines
 
-Кубик `type: pipeline` содержит `pipeline.file` и обязательный `pipeline.permissions`. Последний
-обязан содержать все четыре поля, даже если значения пусты:
+Node `type: pipeline` contains `pipeline.file` and mandatory `pipeline.permissions`. The latter must
+contain all four fields, even if values are empty:
 
-| Поле        | Формат                                                         | Что разрешает дочернему Pipeline                   |
-| ----------- | -------------------------------------------------------------- | -------------------------------------------------- |
-| `models`    | Список канонических имён подключений                           | Обращения через эти подключения моделей            |
-| `mcp`       | Карта канонического подключения в непустой список инструментов | Только перечисленные инструменты MCP               |
-| `sandboxes` | Список канонических имён профилей                              | Выбор этих профилей для агентных и кодовых кубиков |
-| `secrets`   | Список канонических имён секретов                              | Явное получение этих секретов в sandbox env        |
+| Field       | Format                                                 | What allows child Pipeline                           |
+| ----------- | ------------------------------------------------------ | ---------------------------------------------------- |
+| `models`    | List of canonical connection names                     | Model calls through these connections                |
+| `mcp`       | Map of canonical connection to non-empty list of tools | Only listed MCP tools                                |
+| `sandboxes` | List of canonical profile names                        | Selection of these profiles for agent and code nodes |
+| `secrets`   | List of canonical secret names                         | Explicit retrieval of these secrets in sandbox env   |
 
-`models: []`, `mcp: {}`, `sandboxes: []`, `secrets: []` означают отсутствие соответствующего
-разрешения. Автоматического наследования всех прав вызывающего Pipeline нет. Использовать alias
-родителя или ребёнка в этих полях запрещено: значения разрешаются непосредственно в EngineProfile.
-Это устраняет зависимость прав от переименования alias.
+`models: []`, `mcp: {}`, `sandboxes: []`, `secrets: []` mean absence of the corresponding
+permission. Automatic inheritance of all caller Pipeline rights is not present. Using parent or
+child alias in these fields is forbidden: values are resolved directly in EngineProfile. This
+eliminates dependency of rights on alias renaming.
 
-Дочерний Pipeline использует собственные aliases, defaults и описание входов. Его ресурсный каталог
-должен целиком укладываться в разрешения вызова: объявленный alias модели, sandbox или секрета
-обязан быть разрешён, а MCP-alias — иметь запись подключения в `permissions.mcp`. Каждый фактически
-запрошенный инструмент дополнительно проверяется по списку этой записи. Неиспользуемые grants не
-создают разрешений сверх верхней границы.
+Child Pipeline uses its own aliases, defaults and input description. Its resource catalog must
+entirely fit within call permissions: declared model alias, sandbox or secret must be permitted, and
+MCP-alias must have a connection record in `permissions.mcp`. Each actually requested tool is
+additionally checked against the list of this record. Unused grants do not create permissions beyond
+the upper bound.
 
-Права на подключение включают доверенную авторизацию и служебный sandbox его MCP-сервера. Они не
-включают экспорт секретов этого подключения в код или выдачу sandbox MCP-сервера агенту. Для такого
-отдельного использования требуются соответствующие `secrets` и `sandboxes`.
+Connection rights include trusted authorization and service sandbox of its MCP server. They do not
+include export of secrets of this connection to code or issuance of MCP server sandbox to agent. For
+such separate use, corresponding `secrets` and `sandboxes` are required.
 
-При вложенности действующая верхняя граница равна пересечению разрешений всех вызовов от корневого
-запуска до текущего Pipeline и ограничений EngineProfile. Для MCP пересекаются множества
-инструментов по каноническому подключению. Новый `pipeline.permissions` может только сузить
-действующую границу; запрос расширения является ошибкой подготовки, даже если ветка не выполнится.
-Ссылка ребёнка на общий EngineProfile не позволяет обойти родительское ограничение.
+At nesting, the active upper bound equals intersection of permissions of all calls from root run to
+current Pipeline and EngineProfile restrictions. For MCP, sets of tools intersect by canonical
+connection. New `pipeline.permissions` can only narrow the active bound; request for expansion is a
+preparation error, even if branch does not execute. Child reference to common EngineProfile does not
+allow bypassing parent restriction.
 
-Корневой Pipeline получает доступ к каталогу выбранного профиля в пределах явно описанных операций.
-Вложенные `foreach` и `loop` используют каталог и defaults своего Pipeline; они не создают новую
-область делегирования прав. Новая граница возникает только при `type: pipeline`.
+Root Pipeline gets access to catalog of selected profile within explicitly described operations.
+Nested `foreach` and `loop` use catalog and defaults of their Pipeline; they do not create new
+delegation area. New bound arises only at `type: pipeline`.
 
-## 8. Лимиты и общие счётчики
+## 8. Limits and Common Counters
 
-`EngineProfile.spec.limits` обязан явно задать все поля. Автоматических числовых значений по
-умолчанию нет.
+`EngineProfile.spec.limits` must explicitly set all fields. No automatic numeric default values
+exist.
 
-| Поле                 | Формат                     | Значение                                                            |
-| -------------------- | -------------------------- | ------------------------------------------------------------------- |
-| `timeout`            | `[1-9][0-9]*(ms\|s\|m\|h)` | Максимальная продолжительность запуска, включая ожидания            |
-| `maxConcurrentNodes` | Целое `1..2147483647`      | Максимум одновременно выполняемых узлов с реальной работой          |
-| `maxNodeInstances`   | Целое `1..2147483647`      | Максимум логических экземпляров кубиков за запуск                   |
-| `maxModelCalls`      | Целое `1..2147483647`      | Максимум отправляемых запросов к моделям                            |
-| `maxToolCalls`       | Целое `1..2147483647`      | Максимум отправляемых вызовов MCP и встроенных инструментов sandbox |
+| Field                | Format                     | Value                                                                |
+| -------------------- | -------------------------- | -------------------------------------------------------------------- |
+| `timeout`            | `[1-9][0-9]*(ms\|s\|m\|h)` | Maximum run duration, including waits                                |
+| `maxConcurrentNodes` | Integer `1..2147483647`    | Maximum number of nodes executing real work simultaneously           |
+| `maxNodeInstances`   | Integer `1..2147483647`    | Maximum number of logical node instances per run                     |
+| `maxModelCalls`      | Integer `1..2147483647`    | Maximum number of queries sent to models                             |
+| `maxToolCalls`       | Integer `1..2147483647`    | Maximum number of MCP calls and built-in tool invocations in sandbox |
 
-`Pipeline.spec.limits` может содержать любое подмножество этих полей. Отсутствующее поле наследует
-ближайшую действующую верхнюю границу. Явное значение обязано быть меньше либо равно ей; превышение
-является ошибкой, а не скрыто обрезается. `0` и специальное «без ограничений» не поддерживаются.
+`Pipeline.spec.limits` may contain any subset of these fields. A missing field inherits the nearest
+active upper bound. An explicit value must be less than or equal to it; exceeding it is an error,
+not silently truncated. `0` and special "unlimited" are not supported.
 
-Для дочернего Pipeline его лимиты наследуют и могут сужать лимиты вызывающего Pipeline; лимиты
-EngineProfile остаются действующими на весь корневой запуск. Локальный timeout дочернего Pipeline
-отсчитывается с начала его исполнения; он никогда не продлевает оставшийся срок родителя. Отсчёт
-корневого timeout начинается с принятия запуска движком. Ожидание очереди, retry backoff, человека и
-неопределённого исхода входят в timeout и не приостанавливают часы.
+For a child Pipeline, its limits inherit and may tighten those of the calling Pipeline;
+EngineProfile limits remain in effect for the entire root run. A child Pipeline's local timeout
+starts from the beginning of its execution; it never extends the parent's remaining time. The root
+timeout count begins upon engine acceptance of the run. Queue wait, retry backoff, human
+intervention, and indeterminate outcomes are included in the timeout and do not pause the clock.
 
-`execution.timeout` ограничивает кубик по основному контракту. Любой локальный таймаут действует в
-пределах оставшегося времени всех охватывающих операций. Ни новый кубик, ни новая попытка, ни новый
-дочерний Pipeline не обнуляют верхний timeout.
+`execution.timeout` limits a node by its primary contract. Any local timeout acts within the
+remaining time of all encompassing operations. Neither a new node nor a new attempt nor a new child
+Pipeline resets the upper timeout.
 
-Счётчики принадлежат корневому запуску и каждому вложенному экземпляру Pipeline с его действующими
-лимитами. Каждая операция резервирует бюджет одновременно во всех охватывающих областях.
-Резервирование сериализуемо относительно конкурирующих операций, чтобы параллельные ветки не
-потратили одно и то же последнее разрешение. Восстановление движка, повтор попытки, новая итерация и
-запуск ребёнка внутри прежнего запуска не сбрасывают уже израсходованный бюджет.
+Counters belong to the root run and each nested Pipeline instance with its active limits. Each
+operation reserves budget simultaneously across all encompassing scopes. Reservation is serializable
+relative to competing operations so parallel branches do not spend the same last permission. Engine
+recovery, retry, new iteration, and launching a child within the prior run do not reset already
+spent budget.
 
-Правила учёта:
+Accounting rules:
 
-- `maxNodeInstances` учитывает экземпляры всех типов кубиков, включая управляющие. Экземпляр
-  создаётся и учитывается до проверки его `when`; пропущенный кубик тоже имеет экземпляр. Повтор
-  попытки одного экземпляра не создаёт новый экземпляр. Итерация тела или новый вызов ребёнка
-  создают свои экземпляры. Узлы тела ветки, которое вообще не было развёрнуто, не учитываются.
-- `maxConcurrentNodes` учитывает активную работу листового кубика. Ожидание зависимостей, очереди,
-  человека, повторной попытки или ответа дочернего графа не занимает слот. Управляющие `foreach`,
-  `loop` и `pipeline` не удерживают слот, ожидая свои дочерние узлы. Запрос модели или инструмента
-  внутри агента использует слот этого агента.
-- `maxModelCalls` учитывает каждый фактически планируемый исходящий запрос адаптера, включая запросы
-  последующих разрешённых попыток кубика и запросы агента. Повтор чтения уже сохранённого ответа не
-  расходует бюджет.
-- `maxToolCalls` учитывает каждый исходящий вызов MCP или встроенного инструмента, включая повторы.
-  Первичный запуск объявленной команды `code` также считается одним вызовом `process.exec`. Старт
-  служебного MCP-сервера, установка протокольной сессии, discovery и перенос артефактов не считаются
-  инструментальными вызовами.
-- Команды и программы внутри `process.exec` не порождают отдельные `maxToolCalls` для каждого
-  системного вызова или HTTP-запроса; их ограничивают sandbox, ресурсы и timeout.
-- Резервирование выполняется до отправки. После возможной отправки оно не возвращается в бюджет даже
-  при ошибке или неизвестном исходе. Если доказано, что операция не могла начаться, движок может
-  атомарно отменить резерв. Потерянный worker не является таким доказательством.
+- `maxNodeInstances` accounts for instances of all node types, including control nodes. An instance
+  is created and accounted for before its `when` check; a skipped node also has an instance. A retry
+  of one instance does not create a new instance. Body iteration or a new child call creates its own
+  instances. Nodes of a branch that was never instantiated are not accounted for.
+- `maxConcurrentNodes` accounts for active work of a leaf node. Waiting on dependencies, queues,
+  human intervention, retry, or response from a child graph does not occupy a slot. Control nodes
+  `foreach`, `loop`, and `pipeline` do not hold a slot while waiting for their child nodes. A model
+  query or tool call inside an agent uses that agent's slot.
+- `maxModelCalls` accounts for each actual outgoing request scheduled by the adapter, including
+  requests of subsequent permitted node attempts and agent requests. Re-reading an already saved
+  response does not spend budget.
+- `maxToolCalls` accounts for each outgoing MCP call or built-in tool invocation, including retries.
+  The primary run of a declared command `code` also counts as one `process.exec` call. Starting an
+  auxiliary MCP server, establishing a protocol session, discovery, and artifact transfer are not
+  counted as tool invocations.
+- Commands and programs inside `process.exec` do not spawn separate `maxToolCalls` for each system
+  call or HTTP request; they are limited by sandbox, resources, and timeout.
+- Reservation occurs before sending. After possible sending it is not returned to budget even on
+  error or indeterminate outcome. If it is proven that an operation could not start, the engine may
+  atomically cancel the reservation. A lost worker is not such proof.
 
-SDK провайдеров и MCP не должны выполнять скрытые повторы в обход этих счётчиков. Встроенные повторы
-SDK отключаются: ошибка запроса завершает попытку кубика. Новая отправка допускается только как
-разрешённая следующая попытка по контракту исполнения; отдельного скрытого счётчика транспортных
-повторов нет.
+SDK providers and MCP must not perform hidden retries bypassing these counters. Built-in SDK retries
+are disabled: a request error ends a node attempt. A new send is allowed only as a permitted next
+attempt per execution contract; there is no separate hidden transport retry counter.
 
-При исчерпании счётчика новая операция не отправляется и создаётся ошибка лимита.
-`maxConcurrentNodes` ограничивает параллельность ожиданием свободного слота; занятые слоты сами по
-себе не являются ошибкой. По истечении timeout планирование останавливается, а активной работе
-передаётся отмена. Завершённые внешние эффекты не откатываются.
+Upon exhausting the counter, a new operation is not sent and a limit error is created.
+`maxConcurrentNodes` limits parallelism by waiting for a free slot; occupied slots in themselves are
+not an error. Upon timeout expiration, planning stops, and active work receives cancellation.
+Completed external effects are not rolled back.
 
-Эти лимиты не являются денежным бюджетом и не обещают точного учёта биллинга провайдера. Прерванный
-запрос может быть оплачен, а токены могут стать известны только после ответа. V1 не содержит полей
-денежных лимитов и глобальной квоты между независимыми корневыми запусками; оператор может
-дополнительно ограничивать инфраструктуру.
+These limits are not monetary budget and do not promise precise provider billing accounting. An
+interrupted request may be charged, and tokens may become known only after response. V1 contains no
+fields for monetary limits and global quota between independent root runs; an operator may
+additionally limit infrastructure.
 
-## 9. Фиксация и изменение конфигурации
+## 9. Freezing and changing configuration
 
-При принятии запуска движок фиксирует используемую версию EngineProfile по содержимому, итоговые
-aliases, параметры моделей, grants, лимиты, digest образов, версии адаптеров и обнаруженные схемы
-инструментов. Секретные значения, runtime session ID и OAuth-токены не включаются в пользовательский
-снимок.
+Upon run acceptance, the engine freezes the used EngineProfile version by content, final aliases,
+model parameters, grants, limits, image digests, adapter versions, and discovered tool schemas.
+Secret values, runtime session ID, and OAuth tokens are not included in the user snapshot.
 
-Редактирование профиля меняет конфигурацию следующих запусков. Продолжающийся запуск использует
-прежний зафиксированный план; подстановка более широкой текущей конфигурации запрещена. Оператор
-может отозвать разрешение или остановить подключение на уровне движка. Такой отзыв блокирует
-дальнейшие операции и отражается в состоянии запуска; сохранённый план не предоставляет право обойти
-действующий запрет оператора.
+Editing a profile changes configuration for subsequent runs. An ongoing run uses the previously
+fixed plan; substitution with a broader current configuration is forbidden. An operator may revoke
+permission or stop connection at the engine level. Such revocation blocks further operations and is
+reflected in run state; the saved plan does not provide right to bypass an active operator ban.
 
-Повторная выдача результата из сохранённой истории не обращается за секретом и не вызывает внешний
-сервис. Повтор реальной операции проходит действующие проверки и использует секрет по сохранённой
-ссылке. Изменение секрета, состояние удалённого MCP, обновление провайдера и внешние данные могут
-изменить результат реальной операции даже при одинаковом пакете и плане.
+Reissuing a result from saved history does not request a secret and does not call an external
+service. Repeating a real operation passes the current checks and uses the secret via the saved
+link. Changes to the secret, state of a removed MCP, provider updates, and external data can change
+the result of a real operation even with the same package and plan.

@@ -1,64 +1,64 @@
-# Проверочные документы Knotra v1
+# Knotra v1 contract fixtures
 
-Этот набор фиксирует ожидаемое принятие и отклонение документов по
-[контракту v1](../../../docs/notation/v1.md). Машиночитаемые ожидания находятся в
-[manifest.json](manifest.json), структурная схема — в
+This suite records expected document acceptance and rejection under the
+[v1 contract](../../../docs/notation/v1.md). Machine-readable expectations are in
+[manifest.json](manifest.json); the structural schema is
 [knotra-v1.schema.json](../../../schemas/knotra-v1.schema.json).
 
-Fixtures предназначены для проверки реализации формата. Они покрывают все девять типов кубиков,
-профиль движка, вложенные графы, файлы пакета, схемы данных, ссылки, права и ошибочные документы.
-Go-тест `TestContractFixtures` сверяет parse, structural и semantic expectations всех 39 документов.
+Fixtures check the format implementation. They cover all nine node types, engine profiles, nested
+graphs, package files, data schemas, references, permissions and invalid documents. The Go test
+`TestContractFixtures` checks parse, structural and semantic expectations for all 39 documents.
 
-## Устройство набора
+## Suite structure
 
-| Каталог     | Назначение                                                      |
-| ----------- | --------------------------------------------------------------- |
-| `positive/` | Документы, которые должны пройти статическую проверку контракта |
-| `negative/` | Документы с намеренной ошибкой на указанном в манифесте слое    |
+| Directory   | Purpose                                                               |
+| ----------- | --------------------------------------------------------------------- |
+| `positive/` | Documents that must pass static contract validation                   |
+| `negative/` | Documents with an intentional error at the manifest's specified phase |
 
-Документы в `negative/` имеют два разных ожидания: часть отклоняется JSON Schema, часть проходит
-структурную проверку и должна отклоняться семантическим валидатором. Например, цикл зависимостей и
-ссылка из body на родительский граф требуют знания связей и областей видимости.
+Documents in `negative/` have two kinds of expectations: some fail JSON Schema validation; others
+pass structural validation and must fail semantic validation. For example, dependency cycles and
+references from a body to its parent graph require knowledge of relationships and scopes.
 
-Положительные документы описывают:
+Positive documents describe:
 
-- `llm` с промптом и схемой данных из файлов пакета, `$defs`, локальным `$ref` и `schemaRef`;
-- `agent` с моделью, MCP, правами инструментов и явной выдачей секрета в sandbox;
-- `code` с единственным выходным файлом и допустимым пустым аргументом после имени программы;
-- передачу входного артефакта через явный `mount`;
-- `tool` со структурированным ответом MCP;
-- `switch` с условными ветками и `coalesce` для объединения их результатов;
-- `human` с типизированным ответом;
-- `foreach` с отдельными входами body, `iteration.item`, `iteration.index` и массивом результатов;
-- `loop` с состоянием, `body.outputs`, пределом итераций и выходами `iterations`/`termination`;
-- `pipeline` с дочерним документом и правами по идентификаторам ресурсов EngineProfile;
-- `EngineProfile` с моделями, удалённым и stdio MCP, sandbox, лимитами и источниками секретов.
+- `llm` with prompt and data schema from package files, `$defs`, local `$ref` and `schemaRef`;
+- `agent` with a model, MCP, tool permissions and explicit secret delivery to a sandbox;
+- `code` with a single output file and a permitted empty argument after the program name;
+- input artifact transfer through an explicit `mount`;
+- `tool` with a structured MCP response;
+- `switch` with conditional branches and `coalesce` to merge their results;
+- `human` with a typed response;
+- `foreach` with separate body inputs, `iteration.item`, `iteration.index` and a result array;
+- `loop` with state, `body.outputs`, an iteration limit and `iterations`/`termination` outputs;
+- `pipeline` with a child document and permissions using EngineProfile resource identifiers;
+- `EngineProfile` with models, remote and stdio MCP, sandbox, limits and secret sources.
 
-## Манифест
+## Manifest
 
-Все пути внутри манифеста разрешаются относительно этого каталога. Поле `packageRoot` определяет
-корень файлового пакета для конкретного случая. Файлы, перечисленные в `spec.files`, входят в пакет;
-дополнительные материалы fixtures не включаются автоматически.
+All paths in the manifest are relative to this directory. `packageRoot` determines the file package
+root for a particular case. Files listed in `spec.files` belong to the package; additional fixture
+materials are not included automatically.
 
-| Поле                  | Смысл                                                           |
-| --------------------- | --------------------------------------------------------------- |
-| `id`                  | Стабильный идентификатор проверки                               |
-| `document`            | YAML-документ для проверки                                      |
-| `packageRoot`         | Корень пакета, когда проверяются его материалы                  |
-| `engineProfile`       | Профиль для проверки логических подключений и прав              |
-| `expected.parse`      | Ожидание разбора YAML                                           |
-| `expected.structural` | Ожидание валидации документа по JSON Schema                     |
-| `expected.semantic`   | Ожидание проверки ссылок, графа, контекстов, схем данных и прав |
-| `covers`              | Правила, которые проверяет документ                             |
-| `reason`              | Причина намеренного отклонения                                  |
+| Field                 | Meaning                                                                      |
+| --------------------- | ---------------------------------------------------------------------------- |
+| `id`                  | Stable check identifier                                                      |
+| `document`            | YAML document to validate                                                    |
+| `packageRoot`         | Package root when checking its materials                                     |
+| `engineProfile`       | Profile for checking logical connections and permissions                     |
+| `expected.parse`      | YAML parsing expectation                                                     |
+| `expected.structural` | Document JSON Schema validation expectation                                  |
+| `expected.semantic`   | Reference, graph, context, data schema and permission validation expectation |
+| `covers`              | Rules checked by the document                                                |
+| `reason`              | Reason for intentional rejection                                             |
 
-`accept` означает ожидаемое принятие, `reject` — ожидаемое отклонение, `not_applicable` — слой не
-запускается из-за ошибки предыдущего слоя. Это **ожидания**, а не сохранённые результаты запуска
-проверки.
+`accept` means expected acceptance, `reject` expected rejection, and `not_applicable` means the
+phase does not run because an earlier phase failed. These are **expectations**, not saved results
+from a validation run.
 
-## Как проверять
+## Running checks
 
-Из корня репозитория, с Python 3.10 или новее:
+From the repository root, using Python 3.10 or newer:
 
 ```sh
 python3 -m venv /tmp/knotra-contract-venv
@@ -66,38 +66,36 @@ python3 -m venv /tmp/knotra-contract-venv
 /tmp/knotra-contract-venv/bin/python scripts/check_contract.py
 ```
 
-[Скрипт проверки](../../../scripts/check_contract.py) читает манифест, проверяет metaschema, разбор
-YAML и структурные ожидания, а также наличие объявленных файлов положительных пакетов и структуру
-внешних схем данных. Он возвращает ненулевой код при расхождении и явно печатает
-`Semantic: NOT RUN`. Это вспомогательная проверка fixtures, а не реализация парсера Knotra: она не
-проверяет все нормативные ограничения YAML и пакетирования.
+The [validation script](../../../scripts/check_contract.py) reads the manifest, checks the
+metaschema, YAML parsing and structural expectations, and checks declared files in positive packages
+and external data schema structure. It returns a nonzero exit code on disagreement and explicitly
+prints `Semantic: NOT RUN`. This is an auxiliary fixture check, not Knotra's parser implementation:
+it does not enforce every normative YAML and packaging restriction.
 
-Основная проверка реализована в `internal/contract` и запускается из корня:
+The primary check is implemented in `internal/contract` and runs from the repository root:
 
 ```sh
 go test -mod=readonly ./internal/contract -run TestContractFixtures -count=1
 ```
 
-Она включает следующие слои:
+It includes these phases:
 
-1. Разобрать YAML с правилами парсера Knotra v1.
-2. Проверить структурную схему самой схемы как JSON Schema Draft 2020-12.
-3. Сопоставить результат структурной проверки каждого документа с `expected.structural`.
-4. Сопоставить его результат с `expected.semantic` для структурно допустимых документов.
-5. Для пакетных случаев проверить объявленные файлы и дочерние Pipeline в их области видимости.
-   Компилировать DataSchema отдельно и проверять объявленные значения по умолчанию.
+1. Parse YAML under Knotra v1 parser rules.
+2. Validate the structural schema itself as JSON Schema Draft 2020-12.
+3. Compare each document's structural result with `expected.structural`.
+4. Compare the result with `expected.semantic` for structurally valid documents.
+5. For package cases, check declared files and child Pipelines in their scope. Compile DataSchema
+   separately and validate declared defaults.
 
-При подготовке набора проверены разбор YAML и структурные ожидания через `ruamel.yaml` и
-`jsonschema`. Семантические ожидания проверяются Go-компилятором. Эти проверки не исполняют CEL,
-модели, MCP, команды или контейнеры и не подтверждают рабочий запуск пайплайна.
+YAML parsing and structural expectations were checked with `ruamel.yaml` and `jsonschema` when
+preparing the suite. Semantic expectations are checked by the Go compiler. These checks do not
+execute CEL, models, MCP, commands or containers and do not prove a working pipeline run.
 
-Положительные кодовые fixtures предусматривают обязательный JSON-результат через
-`KNOTRA_OUTPUT_JSON`: при только файловых выходах программа записывает `{}`. Проверочный скрипт
-читает команды как данные и не запускает их.
+Positive code fixtures provide the required JSON result through `KNOTRA_OUTPUT_JSON`: programs with
+only file outputs write `{}`. The validation script reads commands as data and never runs them.
 
-Профиль содержит служебный идентификатор модели `fixture-model`, адрес в зарезервированном домене
-`.invalid` и имена переменных окружения без значений. Проверка доступности внешних сервисов и
-секретов не входит в этот набор. Она выполняется отдельными
-[интеграционными проверками](../../../docs/verification.md) с реальными подключениями. Намеренно
-некорректные fixtures не форматируются автоматически: пробелы, типы и синтаксис могут быть частью
-проверяемой ошибки.
+The profile contains the placeholder model ID `fixture-model`, an address in the reserved `.invalid`
+domain and environment variable names without values. External service and secret availability
+checks are outside this suite. Separate [integration checks](../../../docs/verification.md) use real
+connections. Intentionally invalid fixtures are not automatically formatted: whitespace, types and
+syntax may be part of the error being checked.

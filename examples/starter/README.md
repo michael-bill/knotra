@@ -1,16 +1,19 @@
 # Local starter pipelines
 
-Four packages demonstrate increasingly substantial work with
-[the local profile](../local/profile.yaml). They use Ollama `qwen3.5:9b` through `model_main`, with
-a 4096-token response budget. Python steps use `python_box`; the game uses `node_box`. No MCP
-servers, secrets, external search, or package installations are required by these pipelines. Prepare
-PostgreSQL, Temporal, Docker/helper and Ollama with the [running guide](../../docs/running.md),
-including both `python:3.13-alpine` and `node:22-alpine` images.
+Five scenarios demonstrate increasingly substantial work with
+[the local profile](../local/profile.yaml). The default profile uses Ollama `qwen3.5:9b` through
+`model_main`, with a 4096-token response budget. The same logical connection can use OpenAI or
+Anthropic in a cloud profile; the pipeline package stays unchanged. Python steps use `python_box`;
+the game uses `node_box`. No MCP servers, secrets, external search, or package installations are
+required by these pipelines. Prepare PostgreSQL, Temporal, Docker/helper and Ollama with the
+[running guide](../../docs/running.md), including both `python:3.13-alpine` and `node:22-alpine`
+images.
 
 | Package                                            | What happens                                                                                                                                                               | Deliverables                                                                       |
 | -------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------- |
 | [hello](hello/pipeline.yaml)                       | A short model response is saved by a code step. This is the first connectivity check.                                                                                      | A personal greeting and `greeting.txt`.                                            |
 | [research-dossier](research-dossier/pipeline.yaml) | Three independent agents extract quoted evidence; code verifies facts, calculates scores and selects an eligible offer; a model explains the supplied decision.            | `dossier.md`, `comparison.json`, and `dossier.zip` including the original sources. |
+| [reviewed research](research-dossier/review.yaml)  | Reuses the research package, pauses for human review of the verified files, then publishes after approval. Restart the engine while it waits.                              | Byte-identical approved dossier, review record with source hashes, and ZIP.        |
 | [tic-tac-toe](tic-tac-toe/pipeline.yaml)           | A model plans and generates game logic; the engine runs fixed tests and carries failures into a bounded correction loop; another sandbox verifies and packages the result. | Playable `index.html`, `game.js`, and `test-report.json`.                          |
 | [publication](publication/pipeline.yaml)           | A writer drafts an announcement; a separate editor checks it against the brief; a person approves and provides feedback; the writer revises it.                            | `publication.md` and `review-history.json` recording the drafts and reviews.       |
 
@@ -45,6 +48,19 @@ Replace files under `sources/` with your own offers while retaining their struct
 control and support labels; the deterministic checker relies on those labels. The Markdown dossier
 includes the calculated table, scoring method, source filenames, verified quotations and evidence
 gaps. The ZIP includes the dossier, JSON comparison and all three complete source files.
+
+## Approve and recover the dossier
+
+Use `research-dossier/review.yaml` as the entrypoint. Its child `pipeline.yaml` shares the same
+package root and source files. When review opens, inspect the dossier and comparison in Inbox. Stop
+and restart the engine using the same database, Temporal and data directory: the request ID and
+artifacts remain available. Submit `approved: true`, a nonempty `reviewer` and `comments` (which may
+be empty). Cancel the run if the evidence is insufficient.
+
+Publication copies the reviewed dossier without model revision and verifies it against the source
+ZIP. `review.json` records the reviewer, comments and SHA-256 of both reviewed files. The final ZIP
+contains the original evidence, comparison, dossier and review record. The
+[first-run guide](../../docs/first-run.md) gives CLI commands and a short demonstration script.
 
 ## Play the generated game
 
@@ -88,7 +104,7 @@ Use `bin/knotra requests respond REQUEST_ID --outputs response.json`, then
 `bin/knotra runs watch RUN_ID`. Download any result with
 `bin/knotra artifacts download ARTIFACT_ID --output FILE_NAME`.
 
-`go test ./examples/starter` checks all four packages against the actual bundled profile without
+`go test ./examples/starter` checks all five scenarios against the actual bundled profile without
 model calls. `PYTHONDONTWRITEBYTECODE=1 python3 examples/starter/research_test.py` checks scoring,
 eligibility, and rejection of invented evidence. Frontend contract tests verify packaging, localized
 metadata and data bindings. Opt-in browser acceptance against a real engine exercises generated

@@ -1,31 +1,30 @@
-# Нотация Knotra
+# Knotra Notation
 
-Статус: реализованный контракт v1, сверено 4 октября 2026 года. Компилятор, исполнитель и адаптеры
-находятся в `internal/contract`, `internal/engine` и `internal/adapters`. Запуск описан в
-[руководстве](running.md).
+Status: implemented contract v1, verified on October 5, 2026. The compiler, executor, and adapters
+are located in `internal/contract`, `internal/engine`, and `internal/adapters`. Run is described in
+[guide](running.md).
 
-Контракт задаёт точные поля YAML, типы данных, ссылки, состояния и наблюдаемое поведение.
-Контрольные документы и тесты проверяют эти правила.
+The contract specifies exact YAML fields, data types, references, states, and observable behavior.
+Contract fixtures and tests verify these rules.
 
-| Документ                                               | Что определяет                                                          |
-| ------------------------------------------------------ | ----------------------------------------------------------------------- |
-| [Контракт v1](notation/v1.md)                          | Pipeline, порты, Binding, scopes и девять типов кубиков                 |
-| [Семантика исполнения](notation/execution.md)          | Готовность, skip/null/error, циклы, ABI, retry, отмена и восстановление |
-| [EngineProfile](notation/engine-profile.md)            | Модели, MCP, секреты, sandbox, capabilities и permissions               |
-| [Проверка и пакет](notation/validation.md)             | YAML/CEL/DataSchema, файлы, лимиты и диагностика                        |
-| [JSON Schema](../schemas/knotra-v1.schema.json)        | Структурная проверка Pipeline и EngineProfile                           |
-| [Контрольные YAML](../contracts/v1/fixtures/README.md) | 39 положительных и отрицательных случаев                                |
-| [API клиентов](api/desktop-v1.md)                      | Приём пакетов, команды, события, запросы человека и артефакты           |
+| Document                                                | What it defines                                                       |
+| ------------------------------------------------------- | --------------------------------------------------------------------- |
+| [Contract v1](notation/v1.md)                           | Pipeline, ports, Binding, scopes, and nine types of node              |
+| [Execution Semantics](notation/execution.md)            | Ready, skip/null/error, loops, ABI, retry, cancellation, and recovery |
+| [EngineProfile](notation/engine-profile.md)             | Models, MCP, secrets, sandbox, capabilities, and permissions          |
+| [Validation and Package](notation/validation.md)        | YAML/CEL/DataSchema, files, limits, and diagnostics                   |
+| [JSON Schema](../schemas/knotra-v1.schema.json)         | Structural validation of Pipeline and EngineProfile                   |
+| [Contract fixtures](../contracts/v1/fixtures/README.md) | 39 positive and negative cases                                        |
+| [Client APIs](api/desktop-v1.md)                        | Package reception, commands, events, human requests, and artifacts    |
 
-Поддерживаются `llm`, `agent`, `code`, `tool`, `switch`, `human`, `foreach`, `loop` и `pipeline`.
-Переносимое описание процесса отделено от доверенной конфигурации движка, JSON-значения — от
-файловых артефактов.
+Supported: `llm`, `agent`, `code`, `tool`, `switch`, `human`, `foreach`, `loop`, and `pipeline`.
+Portable process description is separated from engine trusted configuration; JSON values are
+separated from file artifacts.
 
-JSON Schema проверяет структуру. Семантический компилятор дополнительно проверяет ссылки, DAG, CEL и
-permissions; admission проверяет реальные ресурсы. Тесты исполнения проверяют состояния и
-восстановление. Python-проверка fixtures покрывает только разбор и структуру; Go-набор также
-проверяет семантику.
+JSON Schema validates structure. The semantic compiler additionally validates references, DAG, CEL,
+and permissions; admission validates actual resources. Execution tests validate states and recovery.
+Python fixture checks cover only parsing and structure; the Go suite also validates semantics.
 
-Фактический адаптер моделей — Ollama. Имена других провайдеров в примерах спецификации не означают
-готовые адаптеры. Реальные сценарии и пределы проверок описаны в [отчёте](verification.md),
-дальнейшие направления — в [дорожной карте](roadmap.md).
+Implemented model adapters are Ollama, OpenAI Responses and Anthropic Messages. Unknown providers
+are rejected at admission. Real scenarios and check limits are described in
+[report](verification.md), further directions in [roadmap](roadmap.md).

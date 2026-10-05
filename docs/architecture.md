@@ -1,273 +1,275 @@
-# Архитектура Knotra
-
-Статус: архитектурные границы сверены с реализацией 4 октября 2026 года. Реализация движка и CLI
-описана в [руководстве запуска](running.md), [контракте HTTP API](api/desktop-v1.md) и
-[ревью Temporal](temporal.md). Ниже сохранены архитектурные принципы, включая направления
-последующего развития.
-
-## Компоненты
-
-| Компонент                   | Ответственность                                                                       |
-| --------------------------- | ------------------------------------------------------------------------------------- |
-| Desktop                     | Редактирование YAML/графа, локальные черновики, запуски, review и артефакты через API |
-| CLI                         | Проверка пакета, отправка запуска, наблюдение, управление и получение результатов     |
-| API движка                  | Приём пакетов и команд, доступ к определениям, запускам, событиям и артефактам        |
-| Проверка и подготовка плана | Разбор YAML, проверка схем и зависимостей, разрешение настроек, фиксация плана        |
-| Оркестрация Knotra          | Семантика графа, ветвлений, лимитов, входов и выходов                                 |
-| Temporal                    | Постоянная история workflow, планирование операций, ожидания и восстановление         |
-| Исполнители Knotra          | Вызовы моделей и инструментов, работа с окружениями и результатами                    |
-| Агентный runtime            | Цикл взаимодействия модели с инструментами, контекст и завершение кубика              |
-| Адаптеры подключений        | Различия API провайдеров, MCP и конфигурация доступа                                  |
-| Управление окружениями      | Создание, использование, остановка и очистка sandbox                                  |
-| Хранилища                   | Пакеты, метаданные, события, контрольные точки и артефакты                            |
-
-Это логические модули одного проекта. API и worker поставляются одним Go-процессом на одном хосте;
-PostgreSQL закрепляет единственное владение engine ID. CLI и desktop — отдельные клиенты.
-Масштабирование worker на несколько хостов требует общего хранилища файлов и payload и остаётся
-направлением развития.
+# Knotra Architecture
+
+Status: architectural boundaries verified against the implementation on October 4, 2026. The engine
+and CLI implementation is described in the [run guide](running.md),
+[HTTP API contract](api/desktop-v1.md) and [Temporal review](temporal.md). Below are preserved
+architectural principles, including directions for subsequent development.
+
+## Components
+
+| Component                | Responsibility                                                                         |
+| ------------------------ | -------------------------------------------------------------------------------------- |
+| Desktop                  | Editing YAML/graph, local drafts, runs, review and artifacts via API                   |
+| CLI                      | Package validation, run submission, monitoring, management and result retrieval        |
+| Engine API               | Receiving packages and commands, access to definitions, runs, events and artifacts     |
+| Plan Validation and Prep | Parsing YAML, validating schemas and dependencies, resolving settings, fixing the plan |
+| Knotra Orchestration     | Graph semantics, branching, limits, inputs and outputs                                 |
+| Temporal                 | Persistent workflow history, operation scheduling, waits and recovery                  |
+| Knotra Executors         | Invoking models and tools, working with environments and results                       |
+| Agent runtime            | Model-tool interaction cycle, context and completion of the node                       |
+| Connection Adapters      | Provider API differences, MCP and access configuration                                 |
+| Environment Management   | Creation, usage, stopping and cleaning sandbox                                         |
+| Stores                   | Packages, metadata, events, checkpoints and artifacts                                  |
+
+These are logical modules of a single project. The API and worker are delivered as a single Go
+process on a single host; PostgreSQL enforces sole ownership of the engine ID. CLI and desktop are
+separate clients. Scaling the worker to multiple hosts requires shared file and payload storage and
+remains a direction for development.
 
-Desktop сохраняет черновики, квитанции и SSE-cursors в SQLite; browser preview использует
-localStorage. Эти данные не заменяют историю Temporal или базу движка.
+Desktop preserves drafts, receipts and SSE-cursors in SQLite; browser preview uses localStorage.
+These data do not replace Temporal history or the engine database.
 
-## Путь от YAML к исполнению
+## Path from YAML to Execution
 
-1. CLI или desktop читает пакет и выполняет доступные локально проверки.
-2. API принимает пакет и параметры запуска. Все необходимые связанные файлы передаются явно.
-3. Движок повторно проверяет пакет, доступы, подключения и возможности исполнителей.
-4. Формируется неизменяемый внутренний план: версия пакета, входы, разрешённые настройки, ссылки на
-   подключения и ограничения.
-5. Запускается workflow Temporal, исполняющий этот план по правилам Knotra.
-6. Исполнители выполняют операции и сохраняют результаты и события.
-7. CLI или desktop читает состояние и поток событий через API. Отключение клиента не отменяет
-   запуск.
-
-Секретные значения не включаются в пользовательский пакет или историю workflow. План хранит ссылки
-на секреты. Их разрешение происходит в доверенном компоненте перед использованием.
-
-## Разделение Knotra и Temporal
+1. CLI or desktop reads the package and performs available local validations.
+2. API receives the package and run parameters. All necessary related files are passed explicitly.
+3. The engine re-validates the package, permissions, connections and executor capabilities.
+4. An immutable internal plan is formed: package version, inputs, allowed settings, links to
+   connections and limits.
+5. A Temporal workflow is started, executing this plan according to Knotra rules.
+6. Executors perform operations and save results and events.
+7. CLI or desktop reads state and event stream via API. Client disconnection does not cancel the
+   run.
+
+Secret values are not included in the user package or workflow history. The plan stores links to
+secrets. Their resolution occurs in a trusted component before use.
+
+## Separation of Knotra and Temporal
 
-Knotra определяет, что означает каждый кубик, какие данные ему нужны и что считается завершением.
-Temporal предоставляет механизм надёжного исполнения этой логики.
+Knotra defines what each node means, what data it needs and what constitutes completion. Temporal
+provides the mechanism for reliable execution of this logic.
 
-Workflow выполняет детерминированную логику управления. Вызовы моделей, MCP, работа с файлами и
-контейнерами выполняются в Activities. Повторное проигрывание сохранённой истории не должно само по
-себе вызывать внешние действия.
+Workflow executes deterministic control logic. Model calls, MCP, file and container work are
+performed in Activities. Replaying saved history should not by itself trigger external actions.
 
-В YAML отсутствуют обязательные для пользователя сущности Temporal. План должен содержать достаточно
-данных для исполнения зафиксированной версии без чтения изменяемого черновика.
+YAML lacks Temporal entities mandatory for the user. The plan must contain sufficient data to
+execute the fixed version without reading mutable drafts.
 
-Детализация агентного workflow и Activities должна учитывать стоимость истории, точки восстановления
-и внешние эффекты. Один длительный агентный кубик нельзя считать автоматически восстанавливаемым
-только потому, что он запущен как Activity.
+Agent workflow and Activities detailing must account for history cost, recovery points and side
+effects. One long-running agent node cannot be considered automatically recoverable just because it
+is started as an Activity.
 
-Изменения кода исполнителя и формата плана должны учитывать уже существующие запуски. Для обновления
-долгоживущих процессов нужна политика совместимости worker и replay сохранённых историй; текущая
-поставка не обещает автоматической миграции workflow между несовместимыми версиями.
+Code changes in executors and plan format must account for existing runs. Updating long-lived
+processes requires a worker and replay compatibility policy for saved histories; the current
+delivery does not promise automatic workflow migration between incompatible versions.
 
-## Граф исполнения
+## Execution Graph
 
-Основу составляет граф зависимостей без произвольных обратных связей. Повторение выражается
-отдельной конструкцией цикла с явными условиями и ограничениями.
+The foundation is a dependency graph without arbitrary feedback loops. Repetition is expressed by a
+separate cycle construct with explicit conditions and limits.
 
-Независимые кубики могут выполняться параллельно. Параллельность ограничивается ресурсами движка,
-политикой запуска и лимитами провайдеров.
+Independent nodes can be executed in parallel. Parallelism is limited by engine resources, run
+policy and provider limits.
 
-Для объединения веток нужно явно определить, какие результаты ожидаются и как учитываются
-пропущенные или завершившиеся с ошибкой ветки. Первая версия поддерживает ограниченный,
-документированный набор правил; неявного выбора поведения нет.
+To merge branches, it must be explicitly defined which results are expected and how skipped or
+error-completed branches are accounted for. The first version supports a limited, documented set of
+rules; there is no implicit behavior selection.
 
-В первой версии данные передаются после завершения кубика. Адаптер Ollama получает полный ответ
-модели без streaming; SSE передаёт события состояния исполнения. Наблюдение за текстовыми
-фрагментами модели требует отдельной поддержки и не означает передачу частичных выходов следующему
-кубику.
+In the first version, data is passed after node completion. Model adapters stream visible fragments
+through observation events and journal the complete response before publishing outputs. Downstream
+nodes receive validated, complete values; visible streaming does not pass partial outputs along
+graph edges.
 
-## Агентный runtime
+## Agent runtime
 
-Агентный runtime является модулем Knotra. Он:
+The agent runtime is a Knotra module. It:
 
-- Собирает инструкции, входные данные и доступные инструменты.
-- Обращается к выбранному адаптеру модели.
-- Проверяет разрешения на каждый запрос инструмента.
-- Выполняет разрешённый вызов и возвращает результат модели.
-- Управляет контекстом и лимитами.
-- Передаёт проверенные результаты графу; ожидание человека выполняет отдельный `human`-кубик.
-- Проверяет финальные выходы и фиксирует завершение.
+- Gathers instructions, input data and available tools.
+- Contacts the selected model adapter.
+- Checks permissions for each tool request.
+- Executes the allowed call and returns the model result.
+- Manages context and limits.
+- Passes validated results to the graph; human wait executes a separate `human`-node.
+- Checks final outputs and fixes completion.
 
-Ответы внешних операций сохраняются во внутреннем журнале с привязкой к запуску, экземпляру и
-попытке для восстановления. Клиентский API предоставляет состояния, события, диагностику, входы и
-выходы запуска, запросы человека и артефакты; переписка агента и полный журнал инструментов через
-него пока не доступны. Внутренние рассуждения модели, не предоставляемые провайдером, не являются
-требованием к истории.
+Responses to external operations are stored in the internal log with binding to the run, instance,
+and attempt for recovery. The client API provides states, events, diagnostics, inputs and outputs of
+runs, human requests, and artifacts; bounded prompt, model and tool observations are available
+through per-instance history. Truncation and missing observations are explicit; provider-private
+reasoning stays internal. Internal model reasoning, not provided by the provider, is not a
+requirement for history.
 
-Успех кубика определяется проверкой контракта результата. Проверка структуры JSON или существования
-файла не заменяет проверку содержательного качества. Последняя может выполняться кодом, другим
-агентом или человеком.
+Success of the node is determined by checking the result contract. Checking JSON structure or file
+existence does not replace checking substantive quality. The latter can be performed by code,
+another agent, or a human.
 
-Автоматическое сокращение контекста пока не реализовано; агент ограничен явными лимитами. Передача
-всей истории одного агента другому не является поведением по умолчанию.
+Automatic context truncation is not yet implemented; the agent is limited by explicit limits.
+Transfer of one agent's entire history to another is not default behavior.
 
-## Данные и артефакты
+## Data and Artifacts
 
-Структурированные данные проверяются по JSON Schema. Между кубиками передаются сериализуемые
-значения и ссылки на артефакты.
+Structured data is validated against JSON Schema. Between nodes, serializable values and references
+to artifacts are transferred.
 
-Артефакт содержит идентификатор, тип, размер, контрольную сумму и сведения о происхождении.
-Локальный путь sandbox не является переносимым идентификатором файла.
+An artifact contains an identifier, type, size, checksum, and origin information. The local sandbox
+path is not a portable file identifier.
 
-Входной артефакт размещается в окружении получателя по явной привязке. Результаты завершённых
-кубиков неизменяемы; исправление создаёт новую версию результата.
+The input artifact is placed in the recipient's environment via explicit binding. Results of
+completed nodes are immutable; correction creates a new version of the result.
 
-Сохранение выходов и отметка о завершении должны быть согласованы: кубик нельзя объявлять успешным,
-если его опубликованные выходы недоступны. Для операций между несколькими хранилищами нужны
-повторяемая публикация и восстановление после частичного сбоя.
+Saving outputs and completion marking must be approved: a node cannot be declared successful if its
+published outputs are unavailable. For operations between multiple storage systems, repeatable
+publication and recovery from partial failure are required.
 
-Первая версия использует файловое хранилище при размещении исполнителей на одной машине. Переход к
-исполнителям на разных машинах требует общего хранилища, например через адаптер S3.
+The first version uses file storage when executors are deployed on one machine. Transition to
+executors on different machines requires shared storage, for example via an S3 adapter.
 
-## Хранение состояния
+## State Storage
 
-| Данные                                                       | Место хранения                                                          |
-| ------------------------------------------------------------ | ----------------------------------------------------------------------- |
-| История и авторитетное состояние workflow                    | Temporal                                                                |
-| Определения, версии и метаданные Knotra                      | PostgreSQL Knotra                                                       |
-| Представления состояния для поиска и вывода                  | PostgreSQL Knotra, согласуемый с Temporal                               |
-| Подробные события, учёт использования и ссылки на результаты | PostgreSQL Knotra                                                       |
-| Файлы, крупные результаты и сохранённые материалы            | Хранилище артефактов                                                    |
-| Значения секретов                                            | Окружение доверенного компонента; позднее отдельные провайдеры секретов |
+| Data                                                | Storage Location                                                      |
+| --------------------------------------------------- | --------------------------------------------------------------------- |
+| History and authoritative workflow state            | Temporal                                                              |
+| Knotra definitions, versions, and metadata          | PostgreSQL Knotra                                                     |
+| State views for search and output                   | PostgreSQL Knotra, synchronized with Temporal                         |
+| Detailed events, usage accounting, and result links | PostgreSQL Knotra                                                     |
+| Files, large results, and saved materials           | Artifact Storage                                                      |
+| Secret values                                       | Environment of the trusted component; later separate secret providers |
 
-Temporal использует собственную базу, отделённую от базы приложения. На первом этапе базы могут
-находиться на одном сервере PostgreSQL.
+Temporal uses its own database, separated from the application database. At the first stage,
+databases may reside on one PostgreSQL server.
 
-Представление состояния в Knotra не создаёт второго независимого оркестратора. Возможное отставание
-от Temporal должно учитываться API и механизмом сверки.
+The state view in Knotra does not create a second independent orchestrator. Possible lag from
+Temporal must be accounted for by the API and reconciliation mechanism.
 
-История управления, подробные логи и потоковые фрагменты ответа имеют разные требования к хранению.
-Крупные файлы и каждый текстовый фрагмент не помещаются в историю Temporal без необходимости.
+Management history, detailed logs, and streaming response fragments have different storage
+requirements. Large files and every text fragment do not fit into Temporal history without
+necessity.
 
-## Ошибки и восстановление
+## Errors and Recovery
 
-Различаются три операции:
+Three operations are distinguished:
 
-| Операция                        | Смысл                                                                                    |
-| ------------------------------- | ---------------------------------------------------------------------------------------- |
-| Продолжение                     | Возобновить тот же процесс с сохранённого состояния                                      |
-| Повтор попытки                  | Повторно выполнить неудачную операцию по заданным правилам                               |
-| Новый запуск с выбранного места | Создать отдельное исполнение с явным переиспользованием сохранённых входов и результатов |
+| Operation                   | Meaning                                                                     |
+| --------------------------- | --------------------------------------------------------------------------- |
+| Continue                    | Resume the same process from the saved state                                |
+| Retry                       | Re-execute a failed operation according to specified rules                  |
+| New run from selected point | Create a separate execution with explicit reuse of saved inputs and results |
 
-Рабочая модель состояний включает ожидание зависимостей, очередь, исполнение, ожидание человека,
-успешное завершение, ошибку, пропуск и отмену. Точные названия и допустимые переходы фиксируются в
-спецификации исполнения.
+The working model of states includes waiting for dependencies, queue, execution, human wait,
+successful completion, error, skip, and cancellation. Exact names and allowed transitions are fixed
+in the execution specification.
 
-Автоматический повтор зависит от типа ошибки и характера действия. Временная ошибка чтения,
-некорректный результат модели и неопределённый исход внешней записи требуют разных правил.
+Automatic retry depends on error type and action nature. Temporary read errors, incorrect model
+result, and uncertain outcome of an external record require different rules.
 
-Для изменяющих внешнее состояние операций используются ключи идемпотентности, если сервис их
-поддерживает, и проверка результата по устойчивому идентификатору. Если невозможно определить, было
-ли действие выполнено, это явно отражается в состоянии. Общая гарантия «внешнее действие выполнится
-ровно один раз» не предоставляется.
+For operations that change external state, idempotency keys are used if the service supports them,
+and result validation via a stable identifier. If it is impossible to determine whether an action
+was performed, this is explicitly reflected in the state. The general guarantee "external action
+will be executed exactly once" is not provided.
 
-Первый уровень восстановления сохраняет завершённые кубики и состояние процесса. Незавершённая
-операция может потребовать повтора или проверки её исхода.
+The first level of recovery saves completed nodes and process state. An unfinished operation may
+require retry or verification of its outcome.
 
-Продолжение агента посреди кубика требует согласованного сохранения сообщений, результатов
-инструментов и файлов. Контрольная точка workflow не является снимком файловой системы sandbox.
-Уровень восстановления внутри кубика определяется отдельно и проверяется на сбоях.
+Continuing an agent mid-node requires coordinated saving of messages, tool results, and files. A
+workflow checkpoint is not a snapshot of the sandbox file system. The recovery level within a node
+is determined separately and checked for failures.
 
-Запрос отмены прекращает планирование новой работы и передаётся активным исполнителям. Уже
-выполненные внешние действия не откатываются автоматически. Компенсирующие действия, если они нужны,
-описываются отдельно.
+A cancellation request stops scheduling new work and is passed to active executors. Already
+performed external actions are not rolled back automatically. Compensating actions, if needed, are
+described separately.
 
-## Изолированные окружения
+## Isolated Environments
 
-Команды агента и кодовые кубики исполняются в sandbox. Доверенный runtime управляет моделью и
-инструментами извне; ключ модели не требуется помещать в файловое окружение агента.
+Agent commands and code nodes execute in a sandbox. The trusted runtime manages the model and tools
+from outside; the model key does not need to be placed in the agent's file environment.
 
-Один активный экземпляр кубика сохраняет рабочую среду между своими действиями. Разные кубики
-получают отдельные рабочие среды и обмениваются объявленными данными и артефактами.
+One active node instance preserves the working environment between its actions. Different nodes
+receive separate working environments and exchange declared data and artifacts.
 
-Начальная реализация использует Docker Engine API. Среда имеет заданный образ, рабочую директорию,
-ограничения ресурсов и сетевую политику. Доступ к файлам хоста и управляющему Docker API не
-передаётся агенту по умолчанию.
+The initial implementation uses the Docker Engine API. The environment has a specified image,
+working directory, resource limits, and network policy. Access to host files and the managing Docker
+API is not passed to the agent by default.
 
-Образ и его версия фиксируются при подготовке запуска. Установка дополнительных зависимостей агентом
-требует разрешения и влияет на воспроизводимость окружения.
+The image and its version are fixed when preparing for run. Installing additional dependencies via
+the agent requires permission and affects environment reproducibility.
 
-При повторной попытке создаётся новая среда или восстанавливается явно сохранённое состояние по
-правилам кубика. Неявное использование файлов неудачной попытки исключается.
+On a retry attempt, a new environment is created or an explicitly saved state is restored according
+to node rules. Implicit use of files from failed attempts is excluded.
 
-Объявленные результаты сохраняются до удаления среды. Для диагностики может сохраняться снимок
-файлов неудачной попытки с ограниченным сроком хранения. Долгое ожидание человека не должно
-требовать бесконечного удержания работающего контейнера; способ освобождения и восстановления среды
-нужно определить до такой поддержки.
+Declared results are retained until the environment is deleted. For diagnostics, a snapshot of files
+from a failed attempt may be retained for a limited retention period. Prolonged human waiting should
+not require indefinite holding of a running container; the method for releasing and restoring the
+environment must be defined before such support is implemented.
 
-Docker выбран для первой версии под своим управлением. Для независимых недоверенных пользователей
-требуется отдельный профиль усиленной изоляции; кандидаты — gVisor, microVM или внешний
-sandbox-провайдер.
+Docker is chosen for the first version under its own management. For independent untrusted users, a
+separate profile with enhanced isolation is required; candidates are gVisor, microVM, or an external
+sandbox provider.
 
-## MCP и разрешения
+## MCP and Permissions
 
-Разделяются:
+The following are separated:
 
-1. Описание MCP-подключения.
-2. Общие разрешения инструментов для пайплайна.
-3. Дополнительные разрешения конкретного кубика.
+1. Description of the MCP connection.
+2. General tool permissions for the pipeline.
+3. Additional permissions for a specific node.
 
-Наличие подключения в каталоге само по себе не выдаёт доступ ко всем его инструментам. Итоговый
-доступ ограничивается политикой движка и правами учётных данных внешнего сервиса.
+The mere presence of a connection in a catalog does not grant access to all its tools. Final access
+is limited by engine policy and external service credential rights.
 
-Разрешения проверяются при каждом вызове в доверенном компоненте. Сведения MCP-инструмента о
-собственном поведении не заменяют политику доступа Knotra.
+Permissions are checked on every call within a trusted component. MCP tool information about its own
+behavior does not replace Knotra access policy.
 
-Поддерживаются удалённые серверы через Streamable HTTP и запускаемые процессы через stdio. Для
-процесса задаются зависимости, окружение и область жизни. Общая конфигурация подключения не
-подразумевает общую изменяемую сессию для всех кубиков.
+Remote servers are supported via Streamable HTTP and spawned processes via stdio. For a process,
+dependencies, environment, and lifecycle scope are defined. General connection configuration does
+not imply a shared mutable session for all nodes.
 
-Схемы обнаруженных инструментов учитываются при подготовке запуска. Изменения возможностей
-удалённого сервера требуют явного обнаружения и обработки; фиксирование схемы не фиксирует поведение
-внешнего сервиса.
+Schemas of discovered tools are considered when preparing for run. Changes in remote server
+capabilities require explicit discovery and handling; fixing the schema does not fix external
+service behavior.
 
-## Секреты и доступ к движку
+## Secrets and Engine Access
 
-Пайплайн содержит логические ссылки на секреты. Значения получает доверенный компонент из окружения
-движка или исполнителя. Секрет передаётся только тому адаптеру или процессу, которому он нужен.
+The pipeline contains logical references to secrets. Values are obtained by a trusted component from
+the engine environment or executor. A secret is passed only to the adapter or process that needs it.
 
-Передача секрета внутрь sandbox — отдельное разрешение. Всё окружение движка не наследуется. Секреты
-не подставляются в промпты автоматически и не выводятся в диагностике как обычные значения.
+Passing a secret into sandbox is a separate permission. Not all engine environment variables are
+inherited. Secrets are not automatically substituted in prompts and are not output in diagnostics as
+plain values.
 
-Удалённый движок использует свои подключения и секреты. Передача пакета не загружает автоматически
-переменные окружения клиентского компьютера.
+A remote engine uses its own connections and secrets. Passing a package does not automatically load
+client computer environment variables.
 
-Локальный API по умолчанию слушает loopback. Удалённое размещение требует аутентификации и
-защищённого транспорта; реализованы TLS и bearer token для одного доверенного principal. RBAC для
-независимых пользователей пока нет.
+The local API by default listens on loopback. Remote deployment requires authentication and secure
+transport; TLS and bearer token are implemented for one trusted principal. RBAC for independent
+users is not yet available.
 
-## API и CLI
+## API and CLI
 
-CLI использует HTTP/JSON API. Контракт API описывается через OpenAPI. События передаются через SSE с
-идентификаторами для продолжения чтения после переподключения.
+CLI uses the HTTP/JSON API. The API contract is described via OpenAPI. Events are transmitted via
+SSE with identifiers for resuming reading after reconnection.
 
-Сохранённые события позволяют восстановить картину исполнения; активное SSE-соединение не является
-хранилищем или условием жизни запуска. Обработка повторно доставленного события не должна создавать
-дубликаты в представлении клиента.
+Stored events allow restoring the execution picture; an active SSE connection is not a storage or
+lifespan condition for a run. Processing of redelivered events must not create duplicates in the
+client view.
 
-CLI предоставляет читаемый вывод и машинный формат JSON. Проверка пакета доступна локально;
-авторитетная проверка прав, подключений и доступных возможностей выполняется движком.
+CLI provides human-readable output and machine-readable JSON format. Package validation is available
+locally; authoritative validation of permissions, connections, and available capabilities is
+performed by the engine.
 
-Ответы человека адресуются конкретному сохранённому запросу. Повторная отправка команды не должна
-случайно применить ответ к другому запросу. Идентификаторы и правила повторной отправки заданы в
+Human responses are addressed to a specific saved request. Resending a command must not accidentally
+apply a response to another request. Identifiers and rules for resending are specified in
 [API](api/desktop-v1.md).
 
-## Наблюдаемость
+## Observability
 
-События и логи связываются идентификаторами запуска, кубика, экземпляра, попытки и операции.
-OpenTelemetry используется для технических трассировок и метрик.
+Events and logs are linked by identifiers of run, node, instance, attempt, and operation.
+OpenTelemetry is used for technical tracing and metrics.
 
-Runtime ограничивает исходящие model/tool calls и число шагов агента. Необработанные ответы модели
-сохраняются в журнале операций; отдельная проекция token usage, длительности вызовов и стоимости для
-клиентов пока не реализована. Денежные оценки и каталог тарифов также отсутствуют. Профиль задаёт
-ограничения времени, параллельности, экземпляров, model/tool calls и размеров окружения. Реальные
-экспортируемые OTLP-метрики описаны в [руководстве запуска](running.md).
+Runtime limits outgoing model/tool calls and the number of agent steps. Unhandled model responses
+are stored in the operations journal. Client observations include token counts, call durations and
+first-token timing when supplied. Monetary estimates and a pricing catalog are not implemented. A
+profile sets limits on time, parallelism, instances, model/tool calls, and environment sizes. Real
+exported OTLP metrics are described in the [run guide](running.md).
 
-Сроки хранения, объём логов и доступ к чувствительным входам и результатам задаются политикой
-движка. Промпты и результаты инструментов могут содержать пользовательские данные даже при
-отсутствии секретных токенов.
+Retention periods, log volume, and access to sensitive inputs and outputs are defined by engine
+policy. Prompts and tool results may contain user data even in the absence of secret tokens.

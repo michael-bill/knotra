@@ -21,10 +21,10 @@ development, since both use the same Vite port.
 
 ## Interface language
 
-Choose **Settings → Language** (**Настройки → Язык**) to switch between English and Russian. The
-initial language follows the browser or webview language: Russian for `ru`/`ru-*`, English
-otherwise. The preference is saved with the local workspace and included in workspace backups. Older
-workspaces and backups without a language keep their data and use that initial default.
+Choose **Settings → Language** to switch between English and Russian. The initial language follows
+the browser or webview language: Russian for `ru`/`ru-*`, English otherwise. The preference is saved
+with the local workspace and included in workspace backups. Older workspaces and backups without a
+language keep their data and use that initial default.
 
 Translation changes interface labels, help, accessibility text, frontend validation messages and
 date/size formatting. Pipeline YAML, names, prompts, model output, engine diagnostics and artifact
@@ -71,7 +71,7 @@ The instance list, timeline and immutable package remain available. Inbox answer
 requests; Artifacts uploads, previews and exports registered bytes. A run keeps executing after the
 app closes.
 
-The four [local starters](../examples/starter/README.md) range from a small hello-world check to
+The five [starter scenarios](../examples/starter/README.md) range from a small hello-world check to
 independent agents comparing source materials, a generated playable game with independent tests, and
 a publication with editorial review and human approval. The research scorer selects the eligible
 winner in code; the model explains that decision. The game engine runs fixed tests and carries their
@@ -83,10 +83,14 @@ unchanged obsolete examples; edited drafts and execution history are preserved.
 
 The library's **Building blocks** tab keeps the small notation examples, including the original
 local greeting. Their declared model, MCP, sandbox and secret resources need a matching
-EngineProfile. The implemented model adapter is Ollama; other provider names are rejected during
-admission. **Guided demo** uses sample data; it does not make model calls. The live boundary is
-defined by [the API contract](../docs/api/desktop-v1.md) and
-[OpenAPI](../docs/api/desktop-v1.openapi.json).
+EngineProfile. The engine supports Ollama, OpenAI Responses and Anthropic Messages. Credentials and
+provider parameters belong to the engine profile; the client never stores model API keys. **Guided
+demo** uses sample data; it does not make model calls. The live boundary is defined by
+[the API contract](../docs/api/desktop-v1.md) and [OpenAPI](../docs/api/desktop-v1.openapi.json).
+
+The **Research, verify and approve** starter pauses with downloadable evidence, keeps its human
+request across engine restarts and publishes the reviewed bytes with an approval record. Start a
+local engine with `knotra quickstart`; Settings explains how to connect.
 
 ## Checks and build
 
@@ -105,7 +109,7 @@ bun run desktop:build
 
 Default browser tests cover authoring, demos, interface language switching and a contract fixture.
 Opt-in acceptance tests use a real engine for streamed Ollama output/history replay, a Qwen agent
-using file tools, human review and artifact round-trips, including the four bundled starter
+using file tools, human review and artifact round-trips, including the five bundled starter
 packages. The engine must have the bundled `local` profile and allow the preview origin:
 
 ```sh

@@ -9,6 +9,12 @@ The client shares the [versioned HTTP/SSE contract](../../docs/api/desktop-v1.md
 [verification](../../docs/verification.md) lists real acceptance checks. The CLI remains usable
 without installing the desktop toolchain.
 
+`doctor` checks local prerequisites without changing infrastructure. `quickstart` prepares
+persistent Compose services, extracts editable examples, runs the greeting and serves until Ctrl-C.
+Both print human-readable progress and reject `--json`. Use `--dir` to select saved state,
+`--provider` and `--model` for cloud models, and `--no-run` to omit greeting submission. The cloud
+path reads `OPENAI_API_KEY` or `ANTHROPIC_API_KEY`; see [running](../../docs/running.md).
+
 Global options:
 
 - `--endpoint` / `KNOTRA_ENDPOINT`, default `http://127.0.0.1:8787`.
