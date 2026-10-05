@@ -1,0 +1,56 @@
+{
+  "rush": {
+    "id": "rush",
+    "title": "Launch this week",
+    "question": "A support team needs a working help center within three working days.",
+    "monthly_budget": 200,
+    "launch_days": 3,
+    "weights": { "cost": 20, "speed": 50, "control": 10, "support": 20 },
+    "next_check": "Test the hosted editor and mobile search with the support team."
+  },
+  "lean": {
+    "id": "lean",
+    "title": "Lean startup",
+    "question": "A small team can spend at most $80 each month and has two weeks to launch.",
+    "monthly_budget": 80,
+    "launch_days": 10,
+    "weights": { "cost": 45, "speed": 25, "control": 20, "support": 10 },
+    "next_check": "Measure CMS upgrade and backup work before treating maintenance as affordable."
+  },
+  "build": {
+    "id": "build",
+    "title": "Engineering ownership",
+    "question": "An available engineer has five weeks; the team prefers low running cost and ownership.",
+    "monthly_budget": 80,
+    "launch_days": 25,
+    "weights": { "cost": 45, "speed": 10, "control": 35, "support": 10 },
+    "next_check": "Prototype preview publishing and include engineering labor in the budget."
+  },
+  "care": {
+    "id": "care",
+    "title": "Managed support",
+    "question": "A support-led team prioritizes vendor assistance and has limited engineering time.",
+    "monthly_budget": 250,
+    "launch_days": 10,
+    "weights": { "cost": 10, "speed": 15, "control": 10, "support": 65 },
+    "next_check": "Ask for a written uptime commitment and test the stated support response window."
+  },
+  "brand": {
+    "id": "brand",
+    "title": "Design control",
+    "question": "A design-led team needs full templates and source access within twelve working days.",
+    "monthly_budget": 200,
+    "launch_days": 12,
+    "weights": { "cost": 15, "speed": 15, "control": 60, "support": 10 },
+    "next_check": "Check the search plugin's accessibility and test content export with images."
+  },
+  "tight": {
+    "id": "tight",
+    "title": "Impossible constraints",
+    "question": "A team asks for a five-day launch with a $40 monthly ceiling; the engine must not invent a winner.",
+    "monthly_budget": 40,
+    "launch_days": 5,
+    "weights": { "cost": 40, "speed": 40, "control": 10, "support": 10 },
+    "next_check": "Agree which constraint can change, then rerun the comparison with that approved limit."
+  }
+}

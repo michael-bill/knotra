@@ -9,11 +9,6 @@ evidence from supplied materials; Python checks quotations and calculates scores
 inspects the files before the engine publishes a ZIP with the approval record.
 [Try the workflow](docs/first-run.md) · [Verification and limits](docs/verification.md).
 
-[Watch the recovery demo](docs/media/review-recovery.mp4) — real local Ollama, Docker, Temporal and
-PostgreSQL; review survives SIGKILL before publication.
-
-![Live research and approval graph](docs/media/review-graph.png)
-
 ## Features
 
 Knotra v1 includes a YAML compiler, a Temporal-based engine, HTTP API, CLI, and desktop. The
@@ -59,13 +54,44 @@ bin/knotra quickstart --dir "$PWD/.knotra/quickstart"
 ```
 
 Five [starter workflows](examples/starter/README.md) are available in the app. Start with **Hello,
-model**, then open **Research, verify and approve**.
-[First run and recovery demonstration](docs/first-run.md) take you through one small process;
-[pilot plan](docs/pilot.md) helps verify usefulness on five developers.
+model**, then open **Research, verify and approve**. [First run and recovery](docs/first-run.md)
+take you through one small process; [pilot plan](docs/pilot.md) helps verify usefulness on five
+developers.
 
 [Settings and cloud profiles](docs/running.md) include connecting existing services, secrets, and
 recovery. [CLI help](internal/cli/README.md) describes commands and exit codes. Compose quickstart
 is intended for development and evaluation on a single machine.
+
+## Workflow in pictures
+
+These screenshots follow the runnable
+[portfolio showcase](examples/showcase/portfolio-review/README.md): 24 nodes, three evidence agents
+and six parallel scenario branches.
+
+**Follow the workflow.** Agents read the sources while the remaining branches wait for verified
+evidence. Scenario reports converge into decision briefs, a dossier and human approval.
+
+![Research workflow graph](docs/media/research-graph.png)
+
+**Inspect the agent cycle.** The first model iteration requests `files.read`. The second uses the
+returned text and calls `knotra_finish` with structured evidence.
+
+![Two model iterations within one agent](docs/media/agent-cycle.png)
+
+**Check the comparison.** Code verifies source facts and quotations, applies constraints and
+calculates scores for the fictional sample offers.
+
+![Verified comparison of sample offers](docs/media/verified-comparison.png)
+
+**Review before publication.** Inbox keeps the dossier and comparison beside the request for an
+explicit approval, reviewer name and comments.
+
+![Human review request and its evidence](docs/media/human-review.png)
+
+**Retrieve the approved files.** Artifacts retain the reviewed dossier, its checksum and execution
+origin. Export the dossier or ZIP with the approval record and supporting files.
+
+![Approved dossier with its checksum, origin and export action](docs/media/reviewed-dossier.png)
 
 ## Development
 

@@ -55,7 +55,11 @@ jobs:
           black==25.1.0
       - run:
           /tmp/knotra-contract-venv/bin/black --check scripts examples/integration examples/starter
+          examples/showcase
       - run: /tmp/knotra-contract-venv/bin/python scripts/check_contract.py
       - run:
           PYTHONDONTWRITEBYTECODE=1 /tmp/knotra-contract-venv/bin/python
           examples/starter/research_test.py
+      - run:
+          PYTHONDONTWRITEBYTECODE=1 /tmp/knotra-contract-venv/bin/python -m unittest discover -s
+          examples/showcase/portfolio-review/tests -v

@@ -38,6 +38,14 @@ In desktop, connect the printed address in Settings and select **Research, verif
 preview, add the quickstart flag `--cors-origin http://127.0.0.1:1420`. Open the run graph: nested
 iterations show individual agents, the inspector shows tools and verification results.
 
+To inspect the agent cycle, choose **research / evidence · Iteration 1** in **Graph and iteration**,
+then select **extract**. In **Activity**, open the first **Model call** and its **Prompt &
+context**. **Result & metrics** shows the requested source-reading tool call. Open **files.read** to
+inspect its arguments and returned source text. The next model call includes that tool result in its
+context and submits extracted evidence through `knotra_finish`. The following validation events show
+whether the evidence matched the declared output schema. **Inputs & outputs** contains the accepted
+result.
+
 ## Restart and approve
 
 Wait for the review node to reach `waiting_human` and for its request to appear in Inbox. The
@@ -66,17 +74,9 @@ Approval publishes already viewed bytes. The ZIP includes source materials, the 
 dossier and `review.json` with the reviewer, comments and hashes of the reviewed files. To refuse
 publication, cancel the run. `approved: false` does not match the schema.
 
-## Demonstration in 2–3 Minutes
-
-[Watch the recorded run](media/review-recovery.mp4). It uses actual local services and an automated
-acceptance reviewer. The capture starts after model inference; the graph, request, restart and files
-are real.
-
-1. Open the real run graph with research completed and publication waiting for review.
-2. Inspect the source-reading agents and their saved tool calls.
-3. Read the dossier in Inbox and check its calculated recommendation.
-4. Stop and restart the engine. Open the same request and verified comparison again.
-5. Approve, export the ZIP, and inspect the reviewer and file hashes in `review.json`.
-
-[Implementation Checks](verification.md) separate real services from cloud fixtures.
-[Pilot with Five Developers](pilot.md) checks whether this process solves a useful task.
+[Workflow screenshots](../README.md#workflow-in-pictures) follow the separate
+[24-node portfolio showcase](../examples/showcase/portfolio-review/README.md), which compares six
+scenarios in parallel. Its source agents appear directly in the root graph; the starter workflow
+above places them inside nested iterations. Both expose model calls, tools and verified results in
+the same inspector. [Implementation Checks](verification.md) separate real services from cloud
+fixtures. [Pilot with Five Developers](pilot.md) checks whether this process solves a useful task.

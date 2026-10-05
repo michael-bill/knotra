@@ -24,10 +24,8 @@ Run `8339dfde-b8e5-4059-b25e-cf67cc4bafd0` completed with no diagnostics. Publis
 `approved-dossier.md` remained byte-identical to the reviewed draft, SHA-256
 `955dee8f62a9ff9a4ba7d6c723f5bf45fb434f999576463c10921f305fb65aae`. The ZIP's dossier and comparison
 matched the source hashes in `review.json` and the original review context. A second real run,
-`cd93b2a8-8494-46a3-a576-1e7454b30538`, records the corrected Inbox and recovery flow at 2880×1620.
-Its saved request and both review file hashes were compared before and after SIGKILL. The video uses
-lossless source screenshots and one H.264 encode with visible English captions.
-[Recorded demonstration](media/review-recovery.mp4).
+`cd93b2a8-8494-46a3-a576-1e7454b30538`, exercised the corrected Inbox and recovery flow. Its saved
+request and both review file hashes were compared before and after SIGKILL.
 
 The first archive smoke check found that Colima could not mount a helper from an unshared temporary
 extraction directory. Quickstart now copies the verified helper into its persistent directory under
@@ -39,8 +37,26 @@ All four macOS/Linux CLI archives include both Linux helpers and `SHA256SUMS`.
 Frontend checks passed 126 unit tests and the production build. The browser suite passed 70 default
 scenarios before the Inbox correction; the affected review/translation checks then passed all eleven
 cases. These include long-ID layout checks at 1024 and 1440 px, missing run metadata, and rejection
-of corrupted file bytes without losing the human response draft. The actual recorded browser run
-reported no page errors. Existing paid/cloud and other opt-in browser scenarios remain separate.
+of corrupted file bytes without losing the human response draft. The actual browser run reported no
+page errors. Existing paid/cloud and other opt-in browser scenarios remain separate.
+
+The five [workflow screenshots](../README.md#workflow-in-pictures) come from the runnable
+[portfolio showcase](../examples/showcase/portfolio-review/README.md), using actual Ollama, Docker
+and the browser in light theme. Run `6136576a-6b55-4b98-8bed-8f161812bf8a` completed all 24 nodes
+with no diagnostics or browser errors. The graph was captured with three agents running; the agent
+inspector shows two model iterations with `files.read` and `knotra_finish`. All six calculated
+selections matched expectations, including no eligible offer under impossible constraints. The ZIP
+contains six scenario reports, three briefs, three sources, comparison, dossier and approval record.
+The published dossier remained byte-identical to the reviewed file, SHA-256
+`b607514ae60756b22b0046e6a1266340ddd0ee6d3b7e5662229d7b426173f024`; both reviewed file hashes match
+`review.json`. Six deterministic showcase tests and nine affected review/artifact browser checks
+passed. Long review and artifact previews now wrap and scroll within a bounded area.
+
+The first CLI release job exposed a scheduling assumption in `TestUnknownOutcomeBlocksQueuedLeaf`:
+independent ready nodes need not acquire the execution slot in alphabetical order. The test now
+records whichever external operation starts first and resolves that operation. It verifies that the
+other operation starts only after resolution, without changing production scheduling. Two hundred
+focused race runs and the full `make check` passed after the correction.
 
 The five-developer pilot is prepared in [pilot](pilot.md); no user interviews or usefulness metrics
 are claimed by these automated checks.

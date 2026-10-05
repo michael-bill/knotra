@@ -1795,6 +1795,19 @@ kbd {
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
+.review-artifact {
+  min-width: 0;
+  max-width: 100%;
+}
+.review-artifact .json-view,
+.artifact-text {
+  min-width: 0;
+  max-width: 100%;
+  max-height: 340px;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
 .brief-preview {
   border: 1px solid var(--border);
   border-radius: 8px;
@@ -1946,6 +1959,7 @@ kbd {
 }
 .artifact-inspector {
   width: 320px;
+  min-width: 0;
   flex-shrink: 0;
   border: 1px solid var(--border);
   border-radius: 12px;
