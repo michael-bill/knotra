@@ -169,8 +169,18 @@ Paid smoke tests require explicit `KNOTRA_TEST_CLOUD=1`, a provider key and
 `KNOTRA_TEST_OPENAI_MODEL` or `KNOTRA_TEST_ANTHROPIC_MODEL`. See the
 [adapter guide](internal/adapters/README.md); credentials alone never enable paid tests.
 
-`scripts/package-release.sh VERSION` builds four macOS/Linux CLI archives, each containing both
-Linux helpers, license and startup instructions. `SHA256SUMS` covers all archives. A new `v*` tag
-runs checks, builds these bundles and publishes a GitHub release. Publish new commits/tags; never
-move an existing release tag to different source. Smoke-test `doctor` from an extracted archive
-outside the source checkout before tagging.
+`scripts/package-release.sh VERSION` builds four macOS/Linux `.tar.gz` archives and two Windows
+`.zip` archives (amd64 and arm64), each containing both Linux helpers, license and startup
+instructions. Packaging needs Go, Bash, tar, zip and shasum and can run on macOS or Linux without
+Docker. `CGO_ENABLED=0` allows cross-compiling the Windows CLI on a Mac; it does not let macOS
+execute the resulting `.exe`.
+
+The Windows CI workflow runs native Go tests, including HTTP over a local named pipe, and CLI smoke
+checks on an amd64 Windows runner. ARM64 Windows is cross-compiled during packaging. The Linux-only
+sandbox helper is excluded from native Windows tests and built for Linux for every bundle. The Tauri
+desktop is built separately and is not included in CLI bundles.
+
+`SHA256SUMS` covers all six archives. A new `v*` tag runs Go checks on Linux and Windows, builds
+these bundles and publishes a GitHub release. Publish new commits/tags; never move an existing
+release tag to different source. Smoke-test `doctor` from an extracted archive outside the source
+checkout before tagging.

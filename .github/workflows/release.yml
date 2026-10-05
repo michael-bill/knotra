@@ -8,7 +8,13 @@ permissions:
   contents: write
 
 jobs:
+  windows:
+    uses: ./.github/workflows/windows.yml
+    permissions:
+      contents: read
+
   bundle:
+    needs: windows
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -27,5 +33,5 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "$GITHUB_REF_NAME" bin/releases/*.tar.gz bin/releases/SHA256SUMS \
+          gh release create "$GITHUB_REF_NAME" bin/releases/*.tar.gz bin/releases/*.zip bin/releases/SHA256SUMS \
             --title "Knotra $GITHUB_REF_NAME" --notes ''

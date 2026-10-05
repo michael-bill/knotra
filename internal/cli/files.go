@@ -13,6 +13,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/michael-bill/knotra/internal/contract"
+	"github.com/michael-bill/knotra/internal/fsutil"
 )
 
 func (s *commandState) readFile(name string, max int64) ([]byte, error) {
@@ -184,10 +185,5 @@ func atomicFile(name string, data []byte, replace bool) error {
 	if err != nil {
 		return err
 	}
-	directory, err := os.Open(dir)
-	if err != nil {
-		return err
-	}
-	defer directory.Close()
-	return directory.Sync()
+	return fsutil.SyncDir(dir)
 }

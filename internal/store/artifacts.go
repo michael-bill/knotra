@@ -15,6 +15,7 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"github.com/michael-bill/knotra/internal/contract"
+	"github.com/michael-bill/knotra/internal/fsutil"
 )
 
 const MaxArtifactBytes = 64 << 20
@@ -55,12 +56,7 @@ func (a Artifacts) Write(name, mediaType string, data []byte, origin map[string]
 	if e = os.Rename(tmp, filepath.Join(a.Root, hash)); e != nil {
 		return contract.Artifact{}, e
 	}
-	dir, e := os.Open(a.Root)
-	if e != nil {
-		return contract.Artifact{}, e
-	}
-	e = dir.Sync()
-	dir.Close()
+	e = fsutil.SyncDir(a.Root)
 	if e != nil {
 		return contract.Artifact{}, e
 	}

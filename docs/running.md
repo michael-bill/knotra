@@ -8,10 +8,11 @@ the engine itself remains on the host to use local Ollama and Docker/Colima.
 
 You need a working Docker Engine, Docker Compose, and Ollama. Download the archive for your OS and
 architecture from [Releases](https://github.com/michael-bill/knotra/releases/latest), unpack it, and
-keep both Linux helpers next to `knotra`. Then run `./knotra doctor` and `./knotra quickstart`.
-Doctor checks dependencies and helper architecture without starting infrastructure. Quickstart
-starts PostgreSQL and Temporal with persistent volumes, loads required images and model, starts the
-engine, and downloads the first `greeting.txt`. It stays in the terminal until Ctrl-C.
+keep both Linux helpers next to `knotra` (`knotra.exe` on Windows). Then run `./knotra doctor` and
+`./knotra quickstart`. Doctor checks dependencies and helper architecture without starting
+infrastructure. Quickstart starts PostgreSQL and Temporal with persistent volumes, loads required
+images and model, starts the engine, and downloads the first `greeting.txt`. It stays in the
+terminal until Ctrl-C.
 
 The default directory is `knotra/quickstart` inside the user's system settings directory. The
 command prints the exact path. An explicit directory is more convenient for recovery:
@@ -19,6 +20,20 @@ command prints the exact path. An explicit directory is more convenient for reco
 ```sh
 ./knotra quickstart --dir "$PWD/knotra-data"
 ```
+
+On Windows, extract the amd64 or arm64 ZIP and use PowerShell:
+
+```powershell
+.\knotra.exe doctor
+.\knotra.exe quickstart --dir "$PWD\knotra-data"
+```
+
+Docker Desktop must use Linux containers with the WSL 2 backend. Keep data on a local NTFS drive
+accessible to Docker Desktop. The CLI connects through the current Docker context's local named
+pipe, normally `npipe:////./pipe/dockerDesktopLinuxEngine` or `npipe:////./pipe/docker_engine`.
+Ollama must be reachable from Windows at `http://127.0.0.1:11434`. For the remaining commands in
+this guide, replace `./knotra` or `bin/knotra` with `.\knotra.exe` or `.\bin\knotra.exe`. Set cloud
+keys in PowerShell with `$env:OPENAI_API_KEY = 'YOUR_KEY'` or `$env:ANTHROPIC_API_KEY = 'YOUR_KEY'`.
 
 Repeat the command with the same `--dir`, `--provider`, `--model`, and ports. Settings, DB password,
 first operation ID, profile, and examples are written once; your edits are not overwritten. Services
@@ -104,7 +119,8 @@ bin/knotra serve \
 PostgreSQL user and password are defined by your installation. Model tokens and MCP are set via
 engine process environment variables referenced by `EngineProfile`; the client does not receive
 them. A local profile example does not require an Ollama token. The chosen Docker context is used
-automatically, or you can set `DOCKER_HOST` / `--docker-host` with a URL of a local Unix socket.
+automatically, or you can set `DOCKER_HOST` / `--docker-host` with a URL of a local Unix socket or,
+on Windows, a local named pipe. Remote TCP Docker endpoints are not supported.
 
 ## Variant B: Infrastructure in Compose
 
@@ -207,6 +223,10 @@ verified files — in Artifacts. Closing the application does not cancel the run
 demo uses local data samples.
 
 ## Data, recovery, and deployment boundaries
+
+File contents are flushed before publication on every OS. On Windows, an explicit directory flush is
+unavailable; persistence of directory entries across sudden power loss depends on NTFS. Use backups
+and preserve the database, Temporal storage and engine directory together.
 
 PostgreSQL stores definitions, accepted runs, projections, requests to humans, outbox, and logs of
 external operations. Temporal stores execution history. Catalog `--data-dir` stores artifact files

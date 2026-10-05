@@ -62,19 +62,51 @@ func (r *Runner) docker() (*dockerClient, error) {
 		}
 	}
 	if host == "" {
-		host = "unix:///var/run/docker.sock"
+		host = defaultDockerHost
 	}
 	u, err := url.Parse(host)
 	if err != nil {
 		return nil, err
 	}
-	if u.Scheme != "unix" {
-		return nil, fmt.Errorf("Docker host must be a local unix socket")
+	dial, err := dockerDialer(u)
+	if err != nil {
+		return nil, err
 	}
-	transport := &http.Transport{IdleConnTimeout: 30 * time.Second, MaxIdleConns: 2, MaxIdleConnsPerHost: 2, DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
-		return (&net.Dialer{}).DialContext(ctx, "unix", u.Path)
-	}}
+	transport := &http.Transport{IdleConnTimeout: 30 * time.Second, MaxIdleConns: 2, MaxIdleConnsPerHost: 2, DialContext: dial}
 	return &dockerClient{client: &http.Client{Transport: transport}, base: "http://docker"}, nil
+}
+
+type dockerDialFunc func(context.Context, string, string) (net.Conn, error)
+
+func dockerDialer(u *url.URL) (dockerDialFunc, error) {
+	if u.Host != "" || u.User != nil || u.RawQuery != "" || u.Fragment != "" {
+		return nil, fmt.Errorf("Docker host must be a local unix socket or named pipe")
+	}
+	switch u.Scheme {
+	case "unix":
+		if !strings.HasPrefix(u.Path, "/") || u.Path == "/" {
+			return nil, fmt.Errorf("Docker unix socket path must be absolute")
+		}
+		return func(ctx context.Context, _, _ string) (net.Conn, error) {
+			return (&net.Dialer{}).DialContext(ctx, "unix", u.Path)
+		}, nil
+	case "npipe":
+		pipe, err := dockerPipePath(u.Path)
+		if err != nil {
+			return nil, err
+		}
+		return namedPipeDialer(pipe)
+	default:
+		return nil, fmt.Errorf("Docker host must be a local unix socket or named pipe")
+	}
+}
+
+func dockerPipePath(path string) (string, error) {
+	name, ok := strings.CutPrefix(path, "//./pipe/")
+	if !ok || name == "" || name == "." || name == ".." || strings.ContainsAny(name, "/\\\x00") {
+		return "", fmt.Errorf("Docker named pipe must use npipe:////./pipe/NAME")
+	}
+	return `\\.\pipe\` + name, nil
 }
 
 func (d *dockerClient) request(ctx context.Context, method, path string, input any) (*http.Response, error) {

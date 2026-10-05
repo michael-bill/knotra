@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"time"
 )
@@ -136,7 +137,13 @@ func renewLease(dir string) (time.Time, error) {
 		file.Close()
 		return time.Time{}, err
 	}
-	if err = file.Chmod(0444); err != nil {
+	mode := os.FileMode(0444)
+	if runtime.GOOS == "windows" {
+		// A read-only NTFS destination cannot be replaced by the next renewal.
+		// The control directory is mounted read-only inside the sandbox.
+		mode = 0644
+	}
+	if err = file.Chmod(mode); err != nil {
 		file.Close()
 		return time.Time{}, err
 	}

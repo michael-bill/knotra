@@ -18,6 +18,24 @@ import (
 	"github.com/google/uuid"
 )
 
+func TestLeaseCanBeRenewedRepeatedly(t *testing.T) {
+	dir := t.TempDir()
+	for range 3 {
+		expires, err := renewLease(dir)
+		if err != nil {
+			t.Fatal(err)
+		}
+		data, err := os.ReadFile(filepath.Join(dir, "lease"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		actual, err := time.Parse(time.RFC3339Nano, string(data))
+		if err != nil || !actual.Equal(expires) {
+			t.Fatalf("invalid renewed lease: %s, %v", data, err)
+		}
+	}
+}
+
 func TestLeaseWriterRetriesTransientErrorsOnlyWithinIssuedLease(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()

@@ -4,6 +4,7 @@ go 1.27.1
 
 require (
 	cel.dev/cel-go v0.32.0
+	github.com/Microsoft/go-winio v0.6.2
 	github.com/cyberphone/json-canonicalization v0.0.0-20241213102144-19d51d7fe467
 	github.com/dlclark/regexp2 v1.12.0
 	github.com/google/uuid v1.6.0

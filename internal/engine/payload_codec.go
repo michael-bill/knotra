@@ -13,6 +13,8 @@ import (
 	commonpb "go.temporal.io/api/common/v1"
 	"go.temporal.io/sdk/converter"
 	"google.golang.org/protobuf/proto"
+
+	"github.com/michael-bill/knotra/internal/fsutil"
 )
 
 const (
@@ -190,12 +192,7 @@ func (s *FileBlobStore) Put(data []byte) (string, error) {
 	if err := os.Remove(temporary); err != nil {
 		return "", err
 	}
-	directory, err := os.Open(s.directory)
-	if err != nil {
-		return "", err
-	}
-	defer directory.Close()
-	if err := directory.Sync(); err != nil {
+	if err := fsutil.SyncDir(s.directory); err != nil {
 		return "", err
 	}
 	return key, nil

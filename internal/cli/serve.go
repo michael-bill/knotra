@@ -54,7 +54,7 @@ func (s *commandState) serveCommand() *cobra.Command {
 		&o.DockerHost,
 		"docker-host",
 		s.env("DOCKER_HOST", ""),
-		"Docker unix socket URL; otherwise current Docker context",
+		"Docker local unix socket or named pipe URL; otherwise current Docker context",
 	)
 	f.StringVar(
 		&o.HelperPath,

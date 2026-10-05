@@ -1,3 +1,5 @@
+//go:build !windows
+
 // sandboxhelper is a minimal trusted Linux process supervisor and file adapter.
 // Build it for the Docker daemon's architecture, not for the client's OS.
 package main

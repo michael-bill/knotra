@@ -22,6 +22,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/michael-bill/knotra/internal/fsutil"
 	"github.com/michael-bill/knotra/internal/protocol"
 )
 
@@ -173,12 +174,7 @@ func (c *Client) save(v Command) error {
 	if e = os.Rename(name, filepath.Join(dir, v.ID+".json")); e != nil {
 		return e
 	}
-	d, e := os.Open(dir)
-	if e != nil {
-		return e
-	}
-	defer d.Close()
-	return d.Sync()
+	return fsutil.SyncDir(dir)
 }
 
 func validID(s string) bool {

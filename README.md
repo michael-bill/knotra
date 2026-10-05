@@ -19,11 +19,19 @@ service release workflow below.
 ## Quick Start
 
 Install Docker, Docker Compose and Ollama; Colima works on macOS. Unpack the
-[CLI for macOS or Linux](https://github.com/michael-bill/knotra/releases/latest), then run:
+[CLI for macOS, Linux or Windows](https://github.com/michael-bill/knotra/releases/latest), then run:
 
 ```sh
 ./knotra doctor
 ./knotra quickstart --dir "$PWD/knotra-data"
+```
+
+On Windows, use Docker Desktop with Linux containers and the WSL 2 backend. Extract the Windows ZIP
+for your architecture (amd64 or arm64), then run in PowerShell:
+
+```powershell
+.\knotra.exe doctor
+.\knotra.exe quickstart --dir "$PWD\knotra-data"
 ```
 
 Quickstart starts persistent PostgreSQL and Temporal, prepares the local model and examples, and
@@ -36,6 +44,8 @@ Then run the game in a second terminal:
 ```sh
 ./knotra run knotra-data/examples/tic-tac-toe/pipeline.yaml --profile local --wait
 ```
+
+In PowerShell use `.\knotra.exe` in place of `./knotra` for these commands.
 
 Use `artifacts list --run RUN_ID` and `artifacts download ARTIFACT_ID --output index.html` to
 retrieve the game. Use your chosen directory if you changed `--dir`. [First run](docs/first-run.md)

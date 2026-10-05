@@ -117,11 +117,15 @@ func (s *Setup) Doctor(ctx context.Context) error {
 	if err := s.Validate(); err != nil {
 		return err
 	}
-	data, err := s.run(ctx, "docker", []string{"info", "--format", "{{.Architecture}}"}, nil)
+	data, err := s.run(ctx, "docker", []string{"info", "--format", "{{.OSType}} {{.Architecture}}"}, nil)
 	if err != nil {
 		return fmt.Errorf("start Docker first (on macOS: colima start): %w", err)
 	}
-	s.arch = strings.TrimSpace(string(data))
+	info := strings.Fields(string(data))
+	if len(info) != 2 || info[0] != "linux" {
+		return fmt.Errorf("Docker must run Linux containers; on Windows switch Docker Desktop to Linux containers")
+	}
+	s.arch = info[1]
 	switch s.arch {
 	case "aarch64":
 		s.arch = "arm64"

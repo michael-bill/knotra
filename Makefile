@@ -2,12 +2,13 @@ GO ?= go
 BIN_DIR ?= bin
 HELPER_ARCH ?= $(shell docker info --format '{{.Architecture}}' 2>/dev/null | sed 's/aarch64/arm64/;s/x86_64/amd64/')
 VERSION ?= dev
+EXE_SUFFIX = $(if $(filter windows,$(shell $(GO) env GOOS)),.exe,)
 
 
 .PHONY: build helper firewall test check integration clean
 
 build:
-	$(GO) build -mod=readonly -trimpath -ldflags "-X main.version=$(VERSION)" -o $(BIN_DIR)/knotra ./cmd/knotra
+	$(GO) build -mod=readonly -trimpath -ldflags "-X main.version=$(VERSION)" -o $(BIN_DIR)/knotra$(EXE_SUFFIX) ./cmd/knotra
 
 helper:
 	@test -n "$(HELPER_ARCH)" || (echo 'Docker must be running, or set HELPER_ARCH=amd64/arm64'; exit 1)

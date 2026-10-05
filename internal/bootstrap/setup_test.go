@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -87,8 +88,8 @@ func TestDoctorChecksCredentialsAndHelperArchitectureBeforeStartup(t *testing.T)
 	calls := 0
 	s.Command = func(_ context.Context, command string, args, env []string) ([]byte, error) {
 		calls++
-		if strings.Join(args, " ") == "info --format {{.Architecture}}" {
-			return []byte("aarch64\n"), nil
+		if strings.Join(args, " ") == "info --format {{.OSType}} {{.Architecture}}" {
+			return []byte("linux aarch64\n"), nil
 		}
 		if strings.Join(args, " ") == "compose version" {
 			return []byte("Docker Compose"), nil
@@ -112,6 +113,19 @@ func TestDoctorChecksCredentialsAndHelperArchitectureBeforeStartup(t *testing.T)
 	}
 	if err := s.Doctor(context.Background()); err == nil {
 		t.Fatal("wrong helper architecture accepted")
+	}
+}
+
+func TestDoctorRejectsWindowsContainersBeforeStartup(t *testing.T) {
+	s := testSetup(t)
+	s.Command = func(_ context.Context, executable string, args, env []string) ([]byte, error) {
+		if executable != "docker" || strings.Join(args, " ") != "info --format {{.OSType}} {{.Architecture}}" {
+			t.Fatalf("unexpected infrastructure command: %s %v", executable, args)
+		}
+		return []byte("windows x86_64\n"), nil
+	}
+	if err := s.Doctor(context.Background()); err == nil || !strings.Contains(err.Error(), "Linux containers") {
+		t.Fatalf("Windows container daemon accepted: %v", err)
 	}
 }
 
@@ -213,7 +227,7 @@ func TestVerifiedHelperIsCopiedIntoPersistentSharedDirectory(t *testing.T) {
 		t.Fatal("saved helper differs from verified source")
 	}
 	info, err := os.Stat(s.Config.HelperPath)
-	if err != nil || info.Mode().Perm()&0111 != 0111 {
+	if err != nil || (runtime.GOOS != "windows" && info.Mode().Perm()&0111 != 0111) {
 		t.Fatal("saved helper is not executable")
 	}
 	if err = os.WriteFile(s.Config.HelperPath, []byte("changed"), 0700); err != nil {
