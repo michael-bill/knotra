@@ -35,7 +35,7 @@ jobs:
 
   integration:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 40
     env:
       COMPOSE_PROJECT_NAME: knotra-ci
       KNOTRA_TEST_DATABASE_URL: postgres://knotra:knotra-development@127.0.0.1:25432/knotra?sslmode=disable
@@ -59,7 +59,7 @@ jobs:
         run: |
           export KNOTRA_TEST_HELPER="$PWD/.knotra/bin/sandbox-helper"
           export KNOTRA_TEST_WORKDIR="$PWD/.knotra/test-work"
-          go test -race -count=1 -timeout=20m ./internal/store ./internal/api ./internal/executor ./internal/queue ./internal/scheduler ./internal/adapters/... ./internal/integration
+          go test -p 1 -race -count=1 -timeout=20m ./internal/store ./internal/api ./internal/executor ./internal/queue ./internal/scheduler ./internal/adapters/... ./internal/integration
       - name: Infrastructure logs
         if: failure()
         run: docker compose --profile temporal logs --no-color --tail=100
