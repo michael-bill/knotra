@@ -34,10 +34,10 @@ for your architecture (amd64 or arm64), then run in PowerShell:
 .\knotra.exe quickstart --dir "$PWD\knotra-data"
 ```
 
-Quickstart starts persistent PostgreSQL and Temporal, prepares the local model and examples, and
-produces `greeting.txt`. No Go installation is needed. First startup includes image/model downloads.
-Leave the terminal running and connect desktop to the printed engine address. Repeating quickstart
-with the same directory reuses saved data.
+Quickstart starts persistent PostgreSQL, prepares the local model and examples, and produces
+`greeting.txt`. No Go installation is needed. First startup includes image/model downloads. Leave
+the terminal running and connect desktop to the printed engine address. Repeating quickstart with
+the same directory reuses saved data.
 
 Then run the game in a second terminal:
 
@@ -156,8 +156,8 @@ flowchart TD
     Package --> Desktop["Knotra Desktop"]
     Desktop <-->|HTTP API and SSE| API
     CLI <-->|HTTP API and SSE| API["Knotra API"]
-    API --> Temporal["Temporal: workflow execution"]
-    Temporal <--> Workers["Knotra workers"]
+    API --> River["River: workflow execution"]
+    River <--> Workers["Knotra workers"]
     Workers --> Models["Model APIs"]
     Workers --> MCP["MCP servers"]
     Workers --> Sandbox["Isolated sandboxes"]
@@ -167,10 +167,10 @@ flowchart TD
     Workers --> Artifacts
 ```
 
-The diagram shows main connections. Temporal additionally uses its own persistent storage, separate
-from the Knotra database.
+River runs inside the engine process and stores its queue in the same PostgreSQL database. Temporal
+is retained as an optional legacy backend for comparison tests.
 
-The engine and CLI use Go; execution uses Temporal, PostgreSQL and Docker. Desktop uses Tauri/Rust,
+The engine and CLI use Go; execution uses River, PostgreSQL and Docker. Desktop uses Tauri/Rust,
 React/TypeScript, CodeMirror and React Flow. YAML and JSON Schema define the contract; CEL handles
 expressions. See [architecture](docs/architecture.md) for storage, ownership and recovery.
 
@@ -188,8 +188,11 @@ expressions. See [architecture](docs/architecture.md) for storage, ownership and
 ## Contributing
 
 ```sh
+make help
+make format
 make test
 make check
+make build
 ```
 
 Default tests need no model weights or paid API keys. Real-service checks are opt-in; see

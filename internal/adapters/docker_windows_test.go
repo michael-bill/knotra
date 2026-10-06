@@ -2,6 +2,7 @@ package adapters
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"testing"
 	"time"
@@ -23,10 +24,14 @@ func TestDockerHTTPOverNamedPipe(t *testing.T) {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"OSType":"linux","Architecture":"x86_64"}`))
 	})}
-	go server.Serve(listener)
+	go func() {
+		if err := server.Serve(listener); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			t.Errorf("Docker fixture server: %v", err)
+		}
+	}()
 	t.Cleanup(func() { _ = server.Close() })
 	runner := &Runner{DockerHost: "npipe:////./pipe/" + name}
-	docker, err := runner.docker()
+	docker, err := runner.docker(t.Context())
 	if err != nil {
 		t.Fatal(err)
 	}

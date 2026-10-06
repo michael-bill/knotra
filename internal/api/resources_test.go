@@ -24,7 +24,7 @@ func TestResourceCatalogRecognizesCloudProvidersAndRequiresCredentials(t *testin
 	}}
 	t.Setenv("KNOTRA_CATALOG_MISSING", "")
 	response := httptest.NewRecorder()
-	(&Server{Profiles: map[string]contract.Profile{"cloud": profile}}).resources(response, httptest.NewRequest("GET", "/v1/resources", nil))
+	(&Server{Profiles: map[string]contract.Profile{"cloud": profile}}).resources(response, httptest.NewRequestWithContext(t.Context(), "GET", "/v1/resources", nil))
 	var body struct {
 		Items []struct{ ID, Kind, Status string }
 	}

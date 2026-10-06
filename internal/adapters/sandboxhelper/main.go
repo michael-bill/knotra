@@ -301,11 +301,12 @@ func safePath(root, name string, createParents bool) (string, error) {
 
 func readFile(req request, collect bool) (any, error) {
 	root := "/workspace"
-	if req.Root == "package" {
+	switch {
+	case req.Root == "package":
 		root = "/package"
-	} else if req.Root == "output" && collect {
+	case req.Root == "output" && collect:
 		root = "/knotra"
-	} else if req.Root != "" && req.Root != "workspace" {
+	case req.Root != "" && req.Root != "workspace":
 		return nil, errors.New("invalid root")
 	}
 	name, err := safePath(root, req.Path, false)
@@ -316,7 +317,7 @@ func readFile(req request, collect bool) (any, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	info, err := f.Stat()
 	if err != nil {
 		return nil, err
@@ -324,18 +325,18 @@ func readFile(req request, collect bool) (any, error) {
 	if !info.Mode().IsRegular() || hasMultipleLinks(info) {
 		return nil, errors.New("expected a regular file with one link")
 	}
-	max := int64(limit)
+	limitBytes := int64(limit)
 	if collect {
-		max = 64 << 20
+		limitBytes = 64 << 20
 	}
-	if info.Size() > max {
+	if info.Size() > limitBytes {
 		return nil, errors.New("file exceeds size limit")
 	}
-	data, err := io.ReadAll(io.LimitReader(f, max+1))
+	data, err := io.ReadAll(io.LimitReader(f, limitBytes+1))
 	if err != nil {
 		return nil, err
 	}
-	if int64(len(data)) > max {
+	if int64(len(data)) > limitBytes {
 		return nil, errors.New("file exceeds size limit")
 	}
 	encoding := req.Encoding
@@ -392,15 +393,16 @@ func writeFile(req request) (any, error) {
 		mode = "create"
 	}
 	info, statErr := os.Lstat(name)
-	if mode == "create" {
+	switch mode {
+	case "create":
 		if !os.IsNotExist(statErr) {
 			return nil, errors.New("create target exists")
 		}
-	} else if mode == "replace" {
+	case "replace":
 		if statErr != nil || !info.Mode().IsRegular() || hasMultipleLinks(info) {
 			return nil, errors.New("replace requires a regular file")
 		}
-	} else {
+	default:
 		return nil, errors.New("invalid write mode")
 	}
 	f, err := os.CreateTemp(filepath.Dir(name), ".knotra-write-")
@@ -408,9 +410,9 @@ func writeFile(req request) (any, error) {
 		return nil, err
 	}
 	temp := f.Name()
-	defer os.Remove(temp)
+	defer func() { _ = os.Remove(temp) }()
 	if _, err = f.Write(data); err != nil {
-		f.Close()
+		_ = f.Close()
 		return nil, err
 	}
 	if err = f.Close(); err != nil {
@@ -447,8 +449,8 @@ func quiesce() error {
 			if e != nil {
 				continue
 			}
-			close := strings.LastIndexByte(string(stat), ')')
-			if close >= 0 && strings.HasPrefix(string(stat[close+1:]), " Z") {
+			release := strings.LastIndexByte(string(stat), ')')
+			if release >= 0 && strings.HasPrefix(string(stat[release+1:]), " Z") {
 				continue
 			}
 			alive = true

@@ -37,7 +37,8 @@ func (s *Server) upload(w http.ResponseWriter, r *http.Request) {
 		if q.Name == "" || len(q.Name) > 1024 ||
 			mediaErr != nil || len(params) > 0 || !strings.Contains(mt, "/") || strings.Contains(mt, "*") ||
 			q.Content == nil || len(content) > store.MaxArtifactBytes {
-			return 422, protocol.Error{
+			// A validation error is a durable command response, not a transaction failure.
+			return 422, protocol.Error{ //nolint:nilerr // Commit the validation response so the same command can be replayed.
 				Code:        "INPUT_INVALID",
 				Message:     "name, mediaType and content <=64 MiB required",
 				Diagnostics: []contract.Diagnostic{},

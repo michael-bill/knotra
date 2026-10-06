@@ -20,13 +20,21 @@ import (
 	"github.com/michael-bill/knotra/internal/cli"
 	"github.com/michael-bill/knotra/internal/client"
 	"github.com/michael-bill/knotra/internal/contract"
+	"github.com/michael-bill/knotra/internal/execution"
 	"github.com/michael-bill/knotra/internal/protocol"
 )
 
 func TestRealProcessRecovery(t *testing.T) {
 	if os.Getenv("KNOTRA_TEST_REAL") != "1" && os.Getenv("KNOTRA_TEST_RECOVERY") != "1" {
-		t.Skip("set KNOTRA_TEST_RECOVERY=1 for Docker/Temporal/PostgreSQL process recovery")
+		t.Skip("set KNOTRA_TEST_RECOVERY=1 for Docker/PostgreSQL process recovery on both backends")
 	}
+	for _, backend := range []string{execution.BackendTemporal, execution.BackendRiver} {
+		t.Run(backend, func(t *testing.T) { testRealProcessRecovery(t, backend) })
+	}
+}
+
+func testRealProcessRecovery(t *testing.T, backend string) {
+	t.Helper()
 	root, err := filepath.Abs("../..")
 	if err != nil {
 		t.Fatal(err)
@@ -52,6 +60,7 @@ func TestRealProcessRecovery(t *testing.T) {
 	profilePath := filepath.Join(work, "profile.json")
 	writeJSON(t, profilePath, profile)
 	options := app.Options{
+		Backend:         backend,
 		Listen:          unusedAddress(t),
 		DatabaseURL:     databaseSchema(t, ctx),
 		TemporalAddress: env("KNOTRA_TEST_TEMPORAL", "127.0.0.1:7233"),
@@ -64,12 +73,17 @@ func TestRealProcessRecovery(t *testing.T) {
 		Profiles:        []string{profilePath},
 		Version:         "recovery-test",
 	}
+	if backend == execution.BackendRiver {
+		options.TemporalAddress = "127.0.0.1:1"
+		options.HostID = "recovery-host"
+		options.SharedDataDir = filepath.Join(work, "shared")
+	}
 	optionsPath := filepath.Join(work, "server.json")
 	writeJSON(t, optionsPath, options)
 	api := &client.Client{BaseURL: "http://" + options.Listen, StateDir: filepath.Join(work, "client")}
 	var owned []string
 	t.Cleanup(func() {
-		if t.Failed() {
+		if t.Failed() && backend == execution.BackendTemporal {
 			cleanupWorkflows(t, options, owned)
 		}
 	})
@@ -108,10 +122,31 @@ func TestRealProcessRecovery(t *testing.T) {
 	)
 	cursor := prefix[len(prefix)-1].ID
 	// Kill the process without graceful shutdown. Neither its Go heap nor worker
-	// cache survives; recovery must use durable Temporal and PostgreSQL state.
+	// cache survives; recovery must use the admitted backend's durable state.
 	first.kill(t)
 	t.Logf("killed engine at human request %s after artifact %s was published", request.ID, artifact.ID)
+	if backend == execution.BackendRiver {
+		// A replacement uses new local staging and host identity. Only the shared
+		// outcome/artifact directory and PostgreSQL survive; completed code stays
+		// completed. This is sequential replacement, not concurrent host acceptance.
+		options.DataDir = filepath.Join(work, "replacement")
+		options.HostID = "replacement-host"
+		writeJSON(t, optionsPath, options)
+		if _, err := os.Stat(filepath.Join(options.SharedDataDir, "artifacts", artifact.SHA256)); err != nil {
+			t.Fatal("artifact was not written to shared storage", err)
+		}
+		entries, err := os.ReadDir(filepath.Join(options.SharedDataDir, "outcomes"))
+		if err != nil || len(entries) == 0 {
+			t.Fatalf("outcome evidence was not written to shared storage: files=%d error=%v", len(entries), err)
+		}
+	}
 	startEngineProcess(t, ctx, optionsPath, filepath.Join(work, "after.log"), api)
+	if backend == execution.BackendRiver {
+		var info struct{ HostID string }
+		if err := api.Get(ctx, "/info", &info); err != nil || info.HostID != options.HostID {
+			t.Fatalf("replacement host diagnostics=%+v error=%v", info, err)
+		}
+	}
 	if engineIdentity(t, ctx, api) != identity {
 		t.Fatal("engine identity changed across restart")
 	}
@@ -263,20 +298,22 @@ func startEngineProcess(t *testing.T, ctx context.Context, options, logPath stri
 	command.Env = append(os.Environ(), "KNOTRA_INTEGRATION_ENGINE_OPTIONS="+options)
 	command.Stdout, command.Stderr = log, log
 	if err := command.Start(); err != nil {
-		log.Close()
+		_ = log.Close()
 		t.Fatal(err)
 	}
 	process := &engineProcess{command: command, finished: make(chan struct{})}
 	done := make(chan error, 1)
 	go func() {
 		err := command.Wait()
-		log.Close()
+		_ = log.Close()
 		done <- err
 		close(done)
 		close(process.finished)
 	}()
 	t.Cleanup(func() { process.kill(t) })
-	waitReady(t, ctx, api, done)
+	if api != nil {
+		waitReady(t, ctx, api, done)
+	}
 	return process
 }
 

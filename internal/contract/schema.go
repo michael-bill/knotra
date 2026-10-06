@@ -136,7 +136,11 @@ var dataSchemas sync.Map // immutable compiled schemas, shared across runtime ca
 func compileDataSchema(raw json.RawMessage) (*jsonschema.Schema, error) {
 	key := string(raw)
 	if value, ok := dataSchemas.Load(key); ok {
-		return value.(*jsonschema.Schema), nil
+		schema, ok := value.(*jsonschema.Schema)
+		if !ok {
+			return nil, fmt.Errorf("invalid cached JSON schema")
+		}
+		return schema, nil
 	}
 	if len(raw) == 0 {
 		return nil, fmt.Errorf("unresolved or absent JSON schema")
@@ -373,9 +377,10 @@ func ValidatePorts(ports map[string]Port, values Values, applyDefaults bool) (Va
 			}
 			v.JSON = normalized.JSON
 		}
-		if len(v.JSON) > 0 {
+		switch {
+		case len(v.JSON) > 0:
 			serialized[name] = v.JSON
-		} else if v.Collection {
+		case v.Collection:
 			items := []any{}
 
 			for _, a := range v.Artifacts {
@@ -383,8 +388,9 @@ func ValidatePorts(ports map[string]Port, values Values, applyDefaults bool) (Va
 			}
 
 			serialized[name] = items
-		} else {
+		default:
 			serialized[name] = artifactDescriptor(v.Artifacts[0])
+
 		}
 		out[name] = v
 	}
@@ -436,12 +442,13 @@ func ContextEnvelope(values Values) map[string]any {
 
 	for _, k := range sortedKeys(values) {
 		v := values[k]
-		if len(v.JSON) > 0 {
+		switch {
+		case len(v.JSON) > 0:
 			x, err := DecodeJSON(v.JSON)
 			if err == nil {
 				jsonValues[k] = x
 			}
-		} else if v.Collection {
+		case v.Collection:
 			descriptors := make([]any, 0, len(v.Artifacts))
 
 			for _, a := range v.Artifacts {
@@ -449,8 +456,9 @@ func ContextEnvelope(values Values) map[string]any {
 			}
 
 			artifacts[k] = descriptors
-		} else if len(v.Artifacts) == 1 {
+		case len(v.Artifacts) == 1:
 			artifacts[k] = artifactDescriptor(v.Artifacts[0])
+
 		}
 	}
 

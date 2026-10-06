@@ -58,27 +58,27 @@ func writeCloudOutput(w http.ResponseWriter, provider, name, args string, stream
 	response := cloudOutput(provider, name, args)
 	if !streaming {
 		w.Header().Set("Content-Type", "application/json")
-		fmt.Fprint(w, response)
+		_, _ = fmt.Fprint(w, response)
 		return
 	}
 	w.Header().Set("Content-Type", "text/event-stream")
 	if provider == "openai" {
-		fmt.Fprint(w, ": keep-alive\r\n\r\n")
-		fmt.Fprintf(w, "event: response.output_item.added\r\ndata: {\"type\":\"response.output_item.added\",\"output_index\":0,\"item\":{\"type\":\"function_call\",\"id\":\"fc_1\",\"call_id\":\"call_1\",\"name\":%q,\"arguments\":\"\"}}\r\n\r\n", name)
+		_, _ = fmt.Fprint(w, ": keep-alive\r\n\r\n")
+		_, _ = fmt.Fprintf(w, "event: response.output_item.added\r\ndata: {\"type\":\"response.output_item.added\",\"output_index\":0,\"item\":{\"type\":\"function_call\",\"id\":\"fc_1\",\"call_id\":\"call_1\",\"name\":%q,\"arguments\":\"\"}}\r\n\r\n", name)
 		for _, fragment := range []string{args[:len(args)/2], args[len(args)/2:]} {
 			encoded, _ := json.Marshal(fragment)
-			fmt.Fprintf(w, "data: {\"type\":\"response.function_call_arguments.delta\",\"output_index\":0,\"delta\":%s}\n\n", encoded)
+			_, _ = fmt.Fprintf(w, "data: {\"type\":\"response.function_call_arguments.delta\",\"output_index\":0,\"delta\":%s}\n\n", encoded)
 		}
-		fmt.Fprintf(w, "event: response.completed\ndata: {\"type\":\"response.completed\",\"response\":%s}\n\n", response)
+		_, _ = fmt.Fprintf(w, "event: response.completed\ndata: {\"type\":\"response.completed\",\"response\":%s}\n\n", response)
 		return
 	}
-	fmt.Fprint(w, "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"type\":\"message\",\"role\":\"assistant\",\"content\":[],\"usage\":{\"input_tokens\":17,\"output_tokens\":1}}}\n\n")
-	fmt.Fprintf(w, "event: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"tool_use\",\"id\":\"call_1\",\"name\":%q,\"input\":{}}}\n\n", name)
+	_, _ = fmt.Fprint(w, "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"type\":\"message\",\"role\":\"assistant\",\"content\":[],\"usage\":{\"input_tokens\":17,\"output_tokens\":1}}}\n\n")
+	_, _ = fmt.Fprintf(w, "event: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"tool_use\",\"id\":\"call_1\",\"name\":%q,\"input\":{}}}\n\n", name)
 	for _, fragment := range []string{args[:len(args)/2], args[len(args)/2:]} {
 		encoded, _ := json.Marshal(fragment)
-		fmt.Fprintf(w, "data: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"input_json_delta\",\"partial_json\":%s}}\n\n", encoded)
+		_, _ = fmt.Fprintf(w, "data: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"input_json_delta\",\"partial_json\":%s}}\n\n", encoded)
 	}
-	fmt.Fprint(w, "data: {\"type\":\"content_block_stop\",\"index\":0}\n\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"tool_use\"},\"usage\":{\"output_tokens\":9}}\n\ndata: {\"type\":\"message_stop\"}\n\n")
+	_, _ = fmt.Fprint(w, "data: {\"type\":\"content_block_stop\",\"index\":0}\n\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"tool_use\"},\"usage\":{\"output_tokens\":9}}\n\ndata: {\"type\":\"message_stop\"}\n\n")
 }
 
 func TestCloudStructuredOutputAndReplay(t *testing.T) {
@@ -145,7 +145,7 @@ func TestCloudAdmissionResolvesRemoteIDAndRejectsDrift(t *testing.T) {
 					if drift.Load() {
 						id = "changed-model"
 					}
-					fmt.Fprintf(w, `{"id":%q}`, id)
+					_, _ = fmt.Fprintf(w, `{"id":%q}`, id)
 					return
 				}
 				generations.Add(1)
@@ -176,7 +176,7 @@ func TestCloudHTTPFailuresDoNotRetryOrLeakBodies(t *testing.T) {
 		for _, status := range []int{400, 401, 403, 404, 408, 429, 500, 503} {
 			t.Run(fmt.Sprintf("%s/%d", provider, status), func(t *testing.T) {
 				var calls atomic.Int32
-				server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+				server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 					calls.Add(1)
 					http.Error(w, "fixture-key private prompt", status)
 				}))
@@ -204,7 +204,7 @@ func TestCloudInvalidOutputsRemainDurable(t *testing.T) {
 		for _, output := range []string{`{}`, `{"answer":"42"}`, `{"answer":42,"extra":1}`} {
 			t.Run(provider+output, func(t *testing.T) {
 				var calls atomic.Int32
-				server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+				server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 					calls.Add(1)
 					writeCloudOutput(w, provider, "knotra_output", output, true)
 				}))
@@ -229,10 +229,10 @@ func TestCloudStreamRejectsMissingCompletionAndMalformedData(t *testing.T) {
 		for _, data := range []string{"data: nope\n\n", "data: {}\n\n", "", "data: {\"type\":\"error\",\"error\":{\"message\":\"fixture-key\"}}\n\n"} {
 			t.Run(provider+data, func(t *testing.T) {
 				var calls atomic.Int32
-				server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+				server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 					calls.Add(1)
 					w.Header().Set("Content-Type", "text/event-stream")
-					fmt.Fprint(w, data)
+					_, _ = fmt.Fprint(w, data)
 				}))
 				defer server.Close()
 				runner := &Runner{Hooks: newHooks()}
@@ -258,8 +258,11 @@ func TestCloudStreamCancellation(t *testing.T) {
 			entered := make(chan struct{})
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 				w.Header().Set("Content-Type", "text/event-stream")
-				fmt.Fprint(w, ": waiting\n\n")
-				w.(http.Flusher).Flush()
+				_, _ = fmt.Fprint(w, ": waiting\n\n")
+				if err := http.NewResponseController(w).Flush(); err != nil {
+					t.Error(err)
+					return
+				}
 				close(entered)
 				<-req.Context().Done()
 			}))
@@ -323,7 +326,7 @@ func TestCloudConfigurationRejectsInvalidParameters(t *testing.T) {
 			resource := pipeline(req).Spec.Models["model"]
 			resource.Requires = []string{"imageInput"}
 			pipeline(req).Spec.Models["model"] = resource
-			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) { fmt.Fprint(w, `{"id":"fixture-model"}`) }))
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { _, _ = fmt.Fprint(w, `{"id":"fixture-model"}`) }))
 			defer server.Close()
 			c := req.Plan.Profile.Spec.Models["local"]
 			c.BaseURL = server.URL
@@ -336,13 +339,13 @@ func TestCloudConfigurationRejectsInvalidParameters(t *testing.T) {
 }
 
 func TestOpenAIStreamSeparatesTextAndStructuredArguments(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "text/event-stream")
-		fmt.Fprint(w, `data: {"type":"response.output_text.delta","delta":"Ready."}`+"\n\n")
-		fmt.Fprint(w, `data: {"type":"response.output_item.added","output_index":1,"item":{"type":"function_call","name":"knotra_output"}}`+"\n\n")
-		fmt.Fprint(w, `data: {"type":"response.function_call_arguments.delta","output_index":1,"delta":"{\"answer\":42}"}`+"\n\n")
+		_, _ = fmt.Fprint(w, `data: {"type":"response.output_text.delta","delta":"Ready."}`+"\n\n")
+		_, _ = fmt.Fprint(w, `data: {"type":"response.output_item.added","output_index":1,"item":{"type":"function_call","name":"knotra_output"}}`+"\n\n")
+		_, _ = fmt.Fprint(w, `data: {"type":"response.function_call_arguments.delta","output_index":1,"delta":"{\"answer\":42}"}`+"\n\n")
 		final := strings.Replace(cloudOutput("openai", "knotra_output", `{"answer":42}`), `"output":[`, `"output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"Ready."}]},`, 1)
-		fmt.Fprintf(w, "data: {\"type\":\"response.completed\",\"response\":%s}\n\n", final)
+		_, _ = fmt.Fprintf(w, "data: {\"type\":\"response.completed\",\"response\":%s}\n\n", final)
 	}))
 	defer server.Close()
 	values, err := (&Runner{Hooks: newHooks()}).Execute(context.Background(), cloudRequest("openai", server.URL))

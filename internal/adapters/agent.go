@@ -182,7 +182,7 @@ func (r *Runner) agent(ctx context.Context, req Request) (contract.Values, error
 	if err != nil {
 		return nil, &Failure{Code: "SANDBOX_FAILED", Message: err.Error(), Retryable: true}
 	}
-	defer s.close()
+	defer func() { _ = s.close() }()
 	req.Inputs = s.inputs
 	tools, definitions, err := agentTools(req)
 	if err != nil {
@@ -348,12 +348,15 @@ func (r *Runner) agent(ctx context.Context, req Request) (contract.Values, error
 					op.Effect = "unknown"
 					effects = true
 				}
-				result, err = r.operation(ctx, op, func() (json.RawMessage, error) {
+				result, err = r.operation(ctx, op, func(admit func() error) (json.RawMessage, error) {
 					var args map[string]any
 					if e := json.Unmarshal(call.Function.Arguments, &args); e != nil {
 						return nil, e
 					}
 					operation := map[string]string{"files.read": "read", "files.write": "write", "process.exec": "exec"}[tool.builtin]
+					if err := admit(); err != nil {
+						return nil, err
+					}
 					result, err := s.helper(ctx, operation, args)
 					if err != nil && tool.builtin != "process.exec" {
 						return json.Marshal(map[string]any{"isError": true, "error": err.Error()})
@@ -363,8 +366,8 @@ func (r *Runner) agent(ctx context.Context, req Request) (contract.Values, error
 			} else {
 				session := sessions[tool.alias]
 				if session == nil {
-					var close func()
-					session, close, err = r.session(ctx, req, tool.alias)
+					var release func()
+					session, release, err = r.session(ctx, req, tool.alias)
 					if err != nil {
 						req.observation.emit(ctx, "tool.completed", id, map[string]any{
 							"step": step + 1, "name": name, "isError": true, "error": err.Error(),
@@ -373,7 +376,7 @@ func (r *Runner) agent(ctx context.Context, req Request) (contract.Values, error
 						return nil, preventRetry(err, effects)
 					}
 					sessions[tool.alias] = session
-					closers = append(closers, close)
+					closers = append(closers, release)
 				}
 				if tool.policy.Effect != "read" {
 					effects = true
@@ -412,9 +415,9 @@ func preventRetry(err error, effects bool) error {
 	}
 	var f *Failure
 	if errors.As(err, &f) {
-		copy := *f
-		copy.Retryable = false
-		return &copy
+		cloned := *f
+		cloned.Retryable = false
+		return &cloned
 	}
 	return failure("AGENT_FAILED", err)
 }

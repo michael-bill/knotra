@@ -48,7 +48,7 @@ func anthropicRequest(c contract.ModelConnection, messages []message, tools []fu
 			}
 		case msg.Role == "tool":
 			if msg.ToolCallID == "" {
-				return nil, fmt.Errorf("Anthropic tool result lacks call ID")
+				return nil, fmt.Errorf("anthropic tool result lacks call ID")
 			}
 			role = "user"
 			var result struct {

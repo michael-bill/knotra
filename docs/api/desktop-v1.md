@@ -21,10 +21,15 @@ principal per deployment. Desktop tokens are session-only and discarded on disco
 reads its token from the environment. Neither client includes tokens in command receipts.
 
 `GET /info` returns `{protocol: "knotra.desktop/1", engineId, principalId, version, capabilities}`.
-An incompatible protocol or missing engine identity prevents connecting. `engineId` is a durable
-deployment identity: replacing the database/deployment must create a new ID. The cache is namespaced
-by normalized base URL, engine identity AND authenticated `principalId`; run IDs from different
-engines or accounts cannot share cached state or commands.
+Operator diagnostics also include `backend` (new-run admission), `workerBackends` (running execution
+backends), `schedulerVersion`, `stateFormatVersion` and `executionTimeout`. `hostId` identifies the
+execution host across ordinary process restarts. Changing admission never changes an existing run's
+backend. During the experimental transition both workers can run in the same service under the
+exclusive engine lease; clients keep using the same commands. An incompatible protocol or missing
+engine identity prevents connecting. `engineId` is a durable deployment identity: replacing the
+database/deployment must create a new ID. The cache is namespaced by normalized base URL, engine
+identity AND authenticated `principalId`; run IDs from different engines or accounts cannot share
+cached state or commands.
 
 JSON uses camelCase. IDs are opaque, nonempty, at most 256 characters and cannot contain control
 characters. Every identifier is encoded as one URL segment; nested instance addresses are not
@@ -113,7 +118,8 @@ renders only these actions and never changes execution status optimistically:
 - `POST /runs/{runId}/instances/{instanceId}/resolve`, body `{outcome,evidence,outputs?}`: record
   evidence for `succeeded`, `not_started` or `failed`. The engine checks required verified outputs
   and whether another action is safe. No blind resubmission of an uncertain external operation
-  occurs.
+  occurs. The same command key replays its receipt. On an active run, a new key for an already
+  closed resolution returns `409`; an absent resolution returns `404`.
 
 The current engine does not advertise `resume`: that route returns `409 UNSAFE_ACTION`. Recovery of
 an interrupted workflow is automatic; uncertain external effects require the explicit `resolve`

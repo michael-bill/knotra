@@ -19,7 +19,9 @@ import (
 
 	"github.com/michael-bill/knotra/internal/contract"
 	"github.com/michael-bill/knotra/internal/engine"
+	"github.com/michael-bill/knotra/internal/execution"
 	"github.com/michael-bill/knotra/internal/protocol"
+	"github.com/michael-bill/knotra/internal/store/db"
 )
 
 // Integration tests create isolated schemas and never reset a developer's DB.
@@ -38,7 +40,7 @@ func testStore(t *testing.T) *Store {
 	}
 	schema := "knotra_test_" + strings.ReplaceAll(uuid.NewString(), "-", "")
 	if _, err := admin.Exec(ctx, "CREATE SCHEMA "+pgx.Identifier{schema}.Sanitize()); err != nil {
-		admin.Close(ctx)
+		_ = admin.Close(ctx)
 		t.Fatal(err)
 	}
 	scoped := dsn
@@ -53,7 +55,7 @@ func testStore(t *testing.T) *Store {
 	db, err := Open(ctx, scoped)
 	if err != nil {
 		_, _ = admin.Exec(context.Background(), "DROP SCHEMA "+pgx.Identifier{schema}.Sanitize()+" CASCADE")
-		admin.Close(context.Background())
+		_ = admin.Close(context.Background())
 		t.Fatal(err)
 	}
 	t.Cleanup(func() {
@@ -77,7 +79,7 @@ func setupRun(t *testing.T, s *Store) (string, contract.Plan) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer tx.Rollback(ctx)
+	defer func() { _ = tx.Rollback(ctx) }()
 	id := uuid.NewString()
 	def := protocol.Definition{
 		ID:            uuid.NewString(),
@@ -299,7 +301,7 @@ func TestHumanRejectsInvalidExpiredAndWrongKind(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			defer tx.Rollback(ctx)
+			defer func() { _ = tx.Rollback(ctx) }()
 			err = Respond(ctx, tx, request.ID, "response", contract.Values{"value": {JSON: json.RawMessage(test.value)}})
 			if err == nil {
 				t.Fatal("invalid response accepted")
@@ -546,7 +548,7 @@ func TestExclusiveServiceLeaseAndSingleConnectionDelivery(t *testing.T) {
 		t.Fatal(err)
 	}
 	if other, err := s.AcquireLease(ctx); err == nil {
-		other.Close(ctx)
+		_ = other.Close(ctx)
 		t.Fatal("two processes own one engine")
 	}
 	if err = lease.Close(ctx); err != nil {
@@ -556,7 +558,7 @@ func TestExclusiveServiceLeaseAndSingleConnectionDelivery(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer lease.Close(ctx)
+	defer func() { _ = lease.Close(ctx) }()
 	id, _ := setupRun(t, s)
 	config := s.Pool.Config()
 	config.MaxConns = 1
@@ -569,7 +571,7 @@ func TestExclusiveServiceLeaseAndSingleConnectionDelivery(t *testing.T) {
 	deadline, stop := context.WithTimeout(ctx, 2*time.Second)
 	defer stop()
 	// Delivery exposes its own transaction for state reads; no nested pool checkout.
-	if err = s.Deliver(deadline, func(ctx context.Context, q Querier, runID, kind string, payload []byte) error {
+	if err = s.Deliver(deadline, func(ctx context.Context, q Querier, runID, kind string, _ []byte) error {
 		if runID != id || kind != "start" {
 			t.Fatal(runID, kind)
 		}
@@ -590,7 +592,7 @@ func TestDefinitionsRemainReachableBeyondFirstTwoHundred(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer tx.Rollback(ctx)
+	defer func() { _ = tx.Rollback(ctx) }()
 
 	for i := 0; i < 205; i++ {
 		d := protocol.Definition{
@@ -631,5 +633,108 @@ func TestDefinitionsRemainReachableBeyondFirstTwoHundred(t *testing.T) {
 
 	if count != 205 {
 		t.Fatalf("only %d definitions reachable", count)
+	}
+}
+
+// sqlc :many must not materialize all 101 large documents before the Go page
+// budget applies. SQL retains the next record as a cursor marker.
+func TestSQLCPageBytesRetainCursorMarker(t *testing.T) {
+	s := testStore(t)
+	ctx := context.Background()
+	runID, _ := setupRun(t, s)
+	if err := pgx.BeginFunc(ctx, s.Pool, func(tx pgx.Tx) error {
+		for i := 0; i < 10; i++ {
+			id := fmt.Sprintf("sqlc_%02d", i)
+			if _, err := PutDefinition(ctx, tx, protocol.Definition{ID: id, PackageDigest: id, Name: strings.Repeat("large", 256)}); err != nil {
+				return err
+			}
+			if err := s.SaveRequestTx(ctx, tx, execution.Request{ID: id, RunID: runID, Kind: "human", Status: "open", Prompt: strings.Repeat("large", 256), Deadline: time.Now().Add(time.Minute)}); err != nil {
+				return err
+			}
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	queries := db.New(s.Pool)
+	cursor := ""
+	for i := 9; i >= 0; i-- {
+		documents, err := queries.ListDefinitions(ctx, db.ListDefinitionsParams{Cursor: cursor, MaxBytes: 512})
+		if err != nil || len(documents) != 2 {
+			t.Fatalf("page %d: count=%d error=%v", i, len(documents), err)
+		}
+		var definition protocol.Definition
+		if err := json.Unmarshal(documents[0], &definition); err != nil {
+			t.Fatal(err)
+		}
+		if definition.ID != fmt.Sprintf("sqlc_%02d", i) {
+			t.Fatalf("cursor lost definition: %s", definition.ID)
+		}
+		cursor = definition.ID
+	}
+	requests, err := queries.ListHumanRequests(ctx, db.ListHumanRequestsParams{MaxBytes: 512})
+	if err != nil || len(requests) != 2 {
+		t.Fatalf("request page: count=%d error=%v", len(requests), err)
+	}
+}
+
+func TestInitialSchemaOpensConcurrentlyAndPreservesData(t *testing.T) {
+	parent := testStore(t)
+	ctx := context.Background()
+	schema := "knotra_initial_" + strings.ReplaceAll(uuid.NewString(), "-", "")
+	if _, err := parent.Pool.Exec(ctx, "CREATE SCHEMA "+pgx.Identifier{schema}.Sanitize()); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if _, err := parent.Pool.Exec(ctx, "DROP SCHEMA "+pgx.Identifier{schema}.Sanitize()+" CASCADE"); err != nil {
+			t.Error(err)
+		}
+	})
+	dsn, err := url.Parse(os.Getenv("KNOTRA_TEST_DATABASE_URL"))
+	if err != nil || (dsn.Scheme != "postgres" && dsn.Scheme != "postgresql") {
+		t.Skip("concurrent initialization check requires a PostgreSQL URL")
+	}
+	params := dsn.Query()
+	params.Set("search_path", schema)
+	dsn.RawQuery = params.Encode()
+	type opened struct {
+		store *Store
+		err   error
+	}
+	results := make(chan opened, 6)
+	var workers sync.WaitGroup
+	for range 6 {
+		workers.Go(func() { s, err := Open(ctx, dsn.String()); results <- opened{s, err} })
+	}
+	workers.Wait()
+	close(results)
+	var first *Store
+	for result := range results {
+		if result.err != nil {
+			t.Fatal(result.err)
+		}
+		t.Cleanup(result.store.Close)
+		if first == nil {
+			first = result.store
+		}
+		if result.store.EngineID != first.EngineID {
+			t.Fatal("concurrent opens created different engine identities")
+		}
+	}
+	if _, err := first.Pool.Exec(ctx, "INSERT INTO knotra_settings(key,value) VALUES('initialization-test','preserved')"); err != nil {
+		t.Fatal(err)
+	}
+	reopened, err := Open(ctx, dsn.String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reopened.Close()
+	var marker string
+	var noMigrations bool
+	if err := reopened.Pool.QueryRow(ctx, "SELECT value,to_regclass('knotra_migrations') IS NULL FROM knotra_settings WHERE key='initialization-test'").Scan(&marker, &noMigrations); err != nil {
+		t.Fatal(err)
+	}
+	if reopened.EngineID != first.EngineID || marker != "preserved" || !noMigrations {
+		t.Fatalf("reopen engine=%s marker=%s noMigrations=%v", reopened.EngineID, marker, noMigrations)
 	}
 }

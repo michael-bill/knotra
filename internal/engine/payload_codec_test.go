@@ -31,7 +31,6 @@ func TestPayloadCodecLargeAggregateHasNoHidden256MiBCap(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	payload = nil
 	goruntime.GC()
 	decoded, err := codec.Decode(encoded)
 	if err != nil {

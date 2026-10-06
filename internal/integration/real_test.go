@@ -87,6 +87,7 @@ func TestRealConcurrentPipelines(t *testing.T) {
 	serverCtx, stopServer := context.WithCancel(ctx)
 	serverDone := make(chan error, 1)
 	options := app.Options{
+		Backend:         "temporal",
 		Listen:          address,
 		DatabaseURL:     dsn,
 		TemporalAddress: env("KNOTRA_TEST_TEMPORAL", "127.0.0.1:7233"),
@@ -566,7 +567,7 @@ func cleanupWorkflows(t *testing.T, options app.Options, owned []string) {
 
 func unusedAddress(t *testing.T) string {
 	t.Helper()
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	listener, err := (&net.ListenConfig{}).Listen(t.Context(), "tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -587,9 +588,10 @@ func databaseSchema(t *testing.T, ctx context.Context) string {
 	if err != nil {
 		t.Fatal(err)
 	}
-	name := "knotra_acceptance_" + strings.ReplaceAll(uuid.NewString(), "-", "")
+	// River reserves identifier space for its indexes; schema names must fit 46 bytes.
+	name := "knotra_it_" + strings.ReplaceAll(uuid.NewString(), "-", "")
 	if _, err := connection.Exec(ctx, "CREATE SCHEMA "+pgx.Identifier{name}.Sanitize()); err != nil {
-		connection.Close(ctx)
+		_ = connection.Close(ctx)
 		t.Fatal(err)
 	}
 	t.Cleanup(func() {
@@ -703,7 +705,7 @@ func TestMCPServiceProcess(t *testing.T) {
 		if err != nil {
 			return err
 		}
-		defer file.Close()
+		defer func() { _ = file.Close() }()
 		if err := json.NewEncoder(file).Encode(record); err != nil {
 			return err
 		}
@@ -712,7 +714,7 @@ func TestMCPServiceProcess(t *testing.T) {
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "stats",
 		Description: "Compute count, sum and mean for numbers belonging to one run marker.",
-	}, func(ctx context.Context, req *mcp.CallToolRequest, input statsInput) (*mcp.CallToolResult, statsOutput, error) {
+	}, func(_ context.Context, req *mcp.CallToolRequest, input statsInput) (*mcp.CallToolResult, statsOutput, error) {
 		result := statsOutput{Count: len(input.Numbers)}
 
 		for _, number := range input.Numbers {
@@ -727,7 +729,7 @@ func TestMCPServiceProcess(t *testing.T) {
 		err := appendAudit(auditRecord{"stats", input.Marker, req.Session.ID(), time.Now().UTC()})
 		return nil, result, err
 	})
-	mcp.AddTool(server, &mcp.Tool{Name: "archive", Description: "Durably save a report summary once per idempotency key."}, func(ctx context.Context, req *mcp.CallToolRequest, input archiveInput) (*mcp.CallToolResult, archiveOutput, error) {
+	mcp.AddTool(server, &mcp.Tool{Name: "archive", Description: "Durably save a report summary once per idempotency key."}, func(_ context.Context, req *mcp.CallToolRequest, input archiveInput) (*mcp.CallToolResult, archiveOutput, error) {
 		mu.Lock()
 		defer mu.Unlock()
 		hash := sha256.Sum256([]byte(input.Key))
@@ -781,11 +783,11 @@ func TestMCPServiceProcess(t *testing.T) {
 		func(*http.Request) *mcp.Server { return server },
 		&mcp.StreamableHTTPOptions{JSONResponse: true},
 	)
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	listener, err := (&net.ListenConfig{}).Listen(t.Context(), "tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
 	}
-	fmt.Fprintln(os.Stdout, "KNOTRA_MCP_URL=http://"+listener.Addr().String())
+	_, _ = fmt.Fprintln(os.Stdout, "KNOTRA_MCP_URL=http://"+listener.Addr().String())
 	if err := http.Serve(listener, handler); err != nil {
 		t.Fatal(err)
 	}
@@ -847,7 +849,7 @@ func checkMCPJournal(t *testing.T, directory string, markers []string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 	decoder := json.NewDecoder(file)
 	stats := map[string]int{}
 	writes := map[string]int{}

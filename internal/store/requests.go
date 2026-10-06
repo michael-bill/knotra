@@ -10,8 +10,9 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"github.com/michael-bill/knotra/internal/contract"
-	"github.com/michael-bill/knotra/internal/engine"
+	"github.com/michael-bill/knotra/internal/execution"
 	"github.com/michael-bill/knotra/internal/protocol"
+	"github.com/michael-bill/knotra/internal/store/db"
 )
 
 // ValidationError describes rejected user data, as opposed to a storage failure.
@@ -23,16 +24,22 @@ func (e *ValidationError) Error() string { return e.Message }
 // run first, then request. It also serializes new requests against cancellation.
 func lockRun(ctx context.Context, tx pgx.Tx, id string) (protocol.Run, bool, error) {
 	var run protocol.Run
-	var b []byte
-	var cancelling bool
-	err := tx.QueryRow(ctx, "SELECT document,cancel_requested FROM knotra_runs WHERE id=$1 FOR UPDATE", id).Scan(&b, &cancelling)
+
+	storedRunCommand, err := db.New(tx).LockRunCommand(ctx, id)
+
 	if err == nil {
-		err = json.Unmarshal(b, &run)
+		err = json.Unmarshal(storedRunCommand.Document, &run)
 	}
-	return run, cancelling, classify(err)
+	return run, storedRunCommand.CancelRequested, classify(err)
 }
 
-func Cancel(ctx context.Context, tx pgx.Tx, id string) error {
+func Cancel(ctx context.Context, tx pgx.Tx, id string, wake ...EnqueueWake) error {
+	inner, err := tx.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = inner.Rollback(ctx) }()
+	tx = inner
 	run, cancelling, err := lockRun(ctx, tx, id)
 	if err != nil {
 		return err
@@ -43,21 +50,37 @@ func Cancel(ctx context.Context, tx pgx.Tx, id string) error {
 	if cancelling {
 		return nil
 	}
-	if _, err = tx.Exec(ctx, "UPDATE knotra_runs SET cancel_requested=true WHERE id=$1", id); err != nil {
+	if _, err = db.New(tx).SetRunCancelled(ctx, id); err != nil {
 		return err
 	}
-	if _, err = tx.Exec(ctx, "UPDATE knotra_requests SET status='cancelled' WHERE run_id=$1 AND status IN ('open','pending')", id); err != nil {
+	if _, err = db.New(tx).CancelOpenRequests(ctx, id); err != nil {
 		return err
 	}
-	return Enqueue(ctx, tx, id, "cancel", engine.CancelSignal{Reason: "requested by operator"})
+	if err := enqueueControl(ctx, tx, id, "cancel", execution.CancelSignal{Reason: "requested by operator"}, wake); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
 }
 
 // Respond reserves the first valid answer and its durable delivery together.
-func Respond(ctx context.Context, tx pgx.Tx, id, responseID string, values contract.Values) error {
+func Respond(ctx context.Context, tx pgx.Tx, id, responseID string, values contract.Values, wake ...EnqueueWake) error {
+	if strings.TrimSpace(responseID) == "" {
+		return &ValidationError{"response requires an identity"}
+	}
+	inner, err := tx.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = inner.Rollback(ctx) }()
+	tx = inner
 	var runID string
-	if err := tx.QueryRow(ctx, "SELECT run_id FROM knotra_requests WHERE id=$1", id).Scan(&runID); err != nil {
+	storedRequestRunID, err := db.New(tx).ReadRequestRunID(ctx, id)
+	if err != nil {
 		return classify(err)
 	}
+
+	runID = storedRequestRunID
+
 	run, cancelling, err := lockRun(ctx, tx, runID)
 	if err != nil {
 		return err
@@ -65,44 +88,53 @@ func Respond(ctx context.Context, tx pgx.Tx, id, responseID string, values contr
 	if cancelling || protocol.Terminal(run.Status) {
 		return ErrConflict
 	}
-	var b []byte
-	var status string
-	if err = tx.QueryRow(ctx, "SELECT document,status FROM knotra_requests WHERE id=$1 FOR UPDATE", id).Scan(&b, &status); err != nil {
+
+	storedRequest, queryErr3 := db.New(tx).LockRequest(ctx, id)
+	err = queryErr3
+	if err != nil {
 		return classify(err)
 	}
-	var request engine.Request
-	if err = json.Unmarshal(b, &request); err != nil {
+
+	var request execution.Request
+	if err = json.Unmarshal(storedRequest.Document, &request); err != nil {
 		return err
 	}
-	accepted := time.Now().UTC()
-	if status != "open" || request.Kind != "human" || !request.Deadline.After(accepted) {
+	accepted, err := controlTime(ctx, tx, runID)
+	if err != nil {
+		return err
+	}
+	if storedRequest.Status != "open" || request.Kind != "human" || !request.Deadline.After(accepted) {
 		return ErrConflict
 	}
-	values, err = contract.ValidatePorts(request.Outputs, values, false)
+	values, err = validateResponse(ctx, tx, request.Outputs, values)
 	if err != nil {
-		return &ValidationError{err.Error()}
+		return err
 	}
 	response, err := raw(values)
 	if err != nil {
 		return err
 	}
-	if _, err = tx.Exec(
-		ctx,
-		"UPDATE knotra_requests SET status='answered',response_id=$2,response=$3,accepted_at=$4 WHERE id=$1",
-		id,
-		responseID,
-		response,
-		accepted,
-	); err != nil {
+	accepted, err = controlTime(ctx, tx, runID)
+	if err != nil || !request.Deadline.After(accepted) {
+		if err != nil {
+			return err
+		}
+		return ErrConflict
+	}
+	if _, err = db.New(tx).AcceptHumanAnswer(ctx, db.AcceptHumanAnswerParams{ID: id, ResponseID: new(responseID), Response: response, AcceptedAt: new(accepted)}); err != nil {
 		return err
 	}
-	return Enqueue(
+	if err := enqueueControl(
 		ctx,
 		tx,
 		runID,
 		"human",
-		engine.HumanSignal{RequestID: id, ResponseID: responseID, Values: values, AcceptedAt: accepted},
-	)
+		execution.HumanSignal{RequestID: id, ResponseID: responseID, Values: values, AcceptedAt: accepted},
+		wake,
+	); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
 }
 
 // Resolve accepts only the currently open, matching resolution. It never sends
@@ -112,7 +144,17 @@ func Resolve(
 	tx pgx.Tx,
 	runID, instanceID, responseID, decision, evidence string,
 	outputs contract.Values,
+	wake ...EnqueueWake,
 ) error {
+	if strings.TrimSpace(responseID) == "" {
+		return &ValidationError{"resolution requires an identity"}
+	}
+	inner, err := tx.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = inner.Rollback(ctx) }()
+	tx = inner
 	run, cancelling, err := lockRun(ctx, tx, runID)
 	if err != nil {
 		return err
@@ -120,21 +162,22 @@ func Resolve(
 	if cancelling || protocol.Terminal(run.Status) {
 		return ErrConflict
 	}
-	var b []byte
-	err = tx.QueryRow(
-		ctx,
-		`SELECT document FROM knotra_requests WHERE run_id=$1 AND kind='resolution' AND status='open' AND document->>'instanceId'=$2 ORDER BY created_at DESC LIMIT 1 FOR UPDATE`,
-		runID,
-		instanceID,
-	).Scan(&b)
+	stored, err := db.New(tx).LockResolutionRequest(ctx, db.LockResolutionRequestParams{RunID: runID, InstanceID: instanceID})
 	if err != nil {
 		return classify(err)
 	}
-	var req engine.Request
-	if err = json.Unmarshal(b, &req); err != nil {
+	if stored.Status != "open" {
+		return ErrConflict
+	}
+	var req execution.Request
+	if err = json.Unmarshal(stored.Document, &req); err != nil {
 		return err
 	}
-	if req.Failure == nil || !req.Deadline.After(time.Now()) {
+	accepted, err := controlTime(ctx, tx, runID)
+	if err != nil {
+		return err
+	}
+	if req.Failure == nil || !req.Deadline.After(accepted) {
 		return ErrConflict
 	}
 	if strings.TrimSpace(evidence) == "" {
@@ -143,18 +186,9 @@ func Resolve(
 
 	switch decision {
 	case "completed":
-		for key, value := range outputs {
-			if req.Outputs[key].Artifact != nil && value.JSON != nil {
-				resolved, e := ArtifactValue(ctx, tx, value.JSON)
-				if e != nil {
-					return e
-				}
-				outputs[key] = resolved
-			}
-		}
-		outputs, err = contract.ValidatePorts(req.Outputs, outputs, false)
+		outputs, err = validateResponse(ctx, tx, req.Outputs, outputs)
 		if err != nil {
-			return &ValidationError{err.Error()}
+			return err
 		}
 	case "not_executed", "failed":
 		if len(outputs) != 0 {
@@ -164,8 +198,14 @@ func Resolve(
 		return &ValidationError{fmt.Sprintf("invalid resolution decision %q", decision)}
 	}
 
-	accepted := time.Now().UTC()
-	signal := engine.ResolutionSignal{
+	accepted, err = controlTime(ctx, tx, runID)
+	if err != nil || !req.Deadline.After(accepted) {
+		if err != nil {
+			return err
+		}
+		return ErrConflict
+	}
+	signal := execution.ResolutionSignal{
 		AcceptedAt:  accepted,
 		InstanceID:  instanceID,
 		OperationID: req.Failure.OperationID,
@@ -178,64 +218,99 @@ func Resolve(
 	if err != nil {
 		return err
 	}
-	if _, err = tx.Exec(
-		ctx,
-		"UPDATE knotra_requests SET status='resolved',response_id=$2,response=$3,accepted_at=$4 WHERE id=$1",
-		req.ID,
-		responseID,
-		response,
-		accepted,
-	); err != nil {
+	if _, err = db.New(tx).AcceptResolution(ctx, db.AcceptResolutionParams{ID: req.ID, ResponseID: new(responseID), Response: response, AcceptedAt: new(accepted)}); err != nil {
 		return err
 	}
-	return Enqueue(ctx, tx, runID, "resolve", signal)
+	if err := enqueueControl(ctx, tx, runID, "resolve", signal, wake); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
+}
+
+func validateResponse(ctx context.Context, tx pgx.Tx, ports map[string]contract.Port, values contract.Values) (contract.Values, error) {
+	for key, value := range values {
+		if ports[key].Artifact != nil && value.JSON != nil {
+			resolved, err := ArtifactValue(ctx, tx, value.JSON)
+			if err != nil {
+				return nil, err
+			}
+			values[key] = resolved
+		}
+	}
+	values, err := contract.ValidatePorts(ports, values, false)
+	if err != nil {
+		return nil, &ValidationError{err.Error()}
+	}
+	return values, nil
+}
+
+func controlTime(ctx context.Context, tx pgx.Tx, runID string) (time.Time, error) {
+	backend, err := ReadRunBackend(ctx, tx, runID)
+	if err != nil {
+		return time.Time{}, err
+	}
+	if backend == execution.BackendTemporal {
+		return time.Now().UTC(), nil
+	}
+	run, err := LockExecutionRun(ctx, tx, runID)
+	if err != nil {
+		return time.Time{}, err
+	}
+	if err := checkExecutionVersion(run); err != nil {
+		return time.Time{}, err
+	}
+	if !run.Deadline.After(run.Now) {
+		return time.Time{}, ErrConflict
+	}
+	return run.Now, nil
+}
+
+func enqueueControl(ctx context.Context, tx pgx.Tx, runID, kind string, signal any, wake []EnqueueWake) error {
+	backend, err := ReadRunBackend(ctx, tx, runID)
+	if err != nil {
+		return err
+	}
+	if backend == execution.BackendTemporal {
+		return Enqueue(ctx, tx, runID, kind, signal)
+	}
+	if len(wake) != 1 || wake[0] == nil {
+		return fmt.Errorf("river command requires transactional scheduler delivery")
+	}
+	_, err = WakeExecution(ctx, tx, runID, wake[0])
+	return err
 }
 
 // Resolution arbitrates an accepted operator decision against a deadline or
 // cancellation using the same lock order and transaction as the HTTP command.
-func (s *Store) Resolution(ctx context.Context, q engine.AnswerRequest) (*engine.ResolutionSignal, error) {
+func (s *Store) Resolution(ctx context.Context, q execution.AnswerRequest) (*execution.ResolutionSignal, error) {
 	tx, err := s.Pool.Begin(ctx)
 	if err != nil {
 		return nil, err
 	}
-	defer tx.Rollback(ctx)
+	defer func() { _ = tx.Rollback(ctx) }()
 	if _, _, err = lockRun(ctx, tx, q.RunID); err != nil {
 		return nil, err
 	}
-	var status string
-	var b []byte
-	var accepted *time.Time
-	err = tx.QueryRow(
-		ctx,
-		"SELECT status,response,accepted_at FROM knotra_requests WHERE id=$1 AND run_id=$2 AND kind='resolution' FOR UPDATE",
-		q.RequestID,
-		q.RunID,
-	).Scan(
-		&status,
-		&b,
-		&accepted,
-	)
+
+	storedResolutionAnswer, queryErr5 := db.New(tx).LockResolutionAnswer(ctx, db.LockResolutionAnswerParams{ID: q.RequestID, RunID: q.RunID})
+	err = queryErr5
+
 	if err != nil {
 		return nil, classify(err)
 	}
-	if status == "resolved" && accepted != nil {
-		var signal engine.ResolutionSignal
-		if err = json.Unmarshal(b, &signal); err != nil {
+	if storedResolutionAnswer.Status == "resolved" && storedResolutionAnswer.AcceptedAt != nil {
+		var signal execution.ResolutionSignal
+		if err = json.Unmarshal(storedResolutionAnswer.Response, &signal); err != nil {
 			return nil, err
 		}
-		signal.AcceptedAt = *accepted
+		signal.AcceptedAt = *storedResolutionAnswer.AcceptedAt
 		return &signal, tx.Commit(ctx)
 	}
 	if q.CloseIfAbsent != "" {
 		if q.CloseIfAbsent != "cancelled" && q.CloseIfAbsent != "expired" {
 			return nil, ErrConflict
 		}
-		if _, err = tx.Exec(
-			ctx,
-			"UPDATE knotra_requests SET status=$2 WHERE id=$1 AND status IN ('open','pending')",
-			q.RequestID,
-			q.CloseIfAbsent,
-		); err != nil {
+		if _, err = db.New(tx).CloseRequest(ctx, db.CloseRequestParams{ID: q.RequestID, Status: q.CloseIfAbsent}); err != nil {
 			return nil, err
 		}
 	}

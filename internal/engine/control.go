@@ -8,6 +8,7 @@ import (
 	"go.temporal.io/sdk/workflow"
 
 	"github.com/michael-bill/knotra/internal/contract"
+	"github.com/michael-bill/knotra/internal/execution"
 )
 
 func jsonValue(value any) contract.Value {
@@ -16,68 +17,15 @@ func jsonValue(value any) contract.Value {
 }
 
 func runSwitch(node contract.Node, args contract.Values) (contract.Values, error) {
-	if node.Switch == nil {
-		return nil, failure("PLAN_INVALID", "missing switch configuration")
-	}
-	route := node.Switch.Default
-
-	for _, branch := range node.Switch.Cases {
-		match, present, err := contract.EvalBool(branch.When, contract.Scope{Args: args})
-		if err != nil {
-			return nil, failure("CONDITION_INVALID", err.Error())
-		}
-		if !present {
-			return nil, failure("CONDITION_INVALID", "switch condition is missing")
-		}
-		if match {
-			route = branch.Name
-			break
-		}
-	}
-
-	return contract.Values{"route": jsonValue(route)}, nil
+	return execution.RunSwitch(node, args)
 }
 
 func bindWith(bindings map[string]contract.Binding, scope contract.Scope) (contract.Values, error) {
-	values := contract.Values{}
-
-	for _, name := range keys(bindings) {
-		value, present, err := contract.EvalBinding(bindings[name], scope)
-		if err != nil {
-			return nil, failure("BINDING_INVALID", name+": "+err.Error())
-		}
-		if present {
-			values[name] = value
-		}
-	}
-
-	return values, nil
+	return execution.BindWith(bindings, scope)
 }
 
 func items(value contract.Value) ([]contract.Value, error) {
-	if value.Collection {
-		result := make([]contract.Value, len(value.Artifacts))
-
-		for i, artifact := range value.Artifacts {
-			result[i] = contract.Value{Artifacts: []contract.Artifact{artifact}}
-		}
-
-		return result, nil
-	}
-	if value.Artifacts != nil {
-		return nil, failure("INPUT_INVALID", "foreach requires an artifact collection")
-	}
-	var raw []json.RawMessage
-	if err := json.Unmarshal(value.JSON, &raw); err != nil || string(value.JSON) == "null" {
-		return nil, failure("INPUT_INVALID", "foreach requires a JSON array")
-	}
-	result := make([]contract.Value, len(raw))
-
-	for i, v := range raw {
-		result[i] = contract.Value{JSON: v}
-	}
-
-	return result, nil
+	return execution.Items(value)
 }
 
 func (r *runtime) foreach(ctx workflow.Context, gc graphContext, state *NodeSnapshot, node contract.Node, args contract.Values) (contract.Values, error) {
@@ -196,31 +144,7 @@ func (r *runtime) foreach(ctx workflow.Context, gc graphContext, state *NodeSnap
 }
 
 func loopState(ports map[string]contract.Port, scope contract.Scope, initial bool) (contract.Values, error) {
-	result := contract.Values{}
-
-	for _, name := range keys(ports) {
-		port := ports[name]
-		binding := port.Next
-		if initial {
-			binding = port.Initial
-		}
-		if binding == nil {
-			return nil, failure("PLAN_INVALID", "loop state binding absent: "+name)
-		}
-		value, present, err := contract.EvalBinding(*binding, scope)
-		if err != nil {
-			return nil, failure("BINDING_INVALID", err.Error())
-		}
-		if !present {
-			return nil, failure("STATE_UNAVAILABLE", "loop state missing: "+name)
-		}
-		if err := contract.ValidateValue(port, value); err != nil {
-			return nil, failure("VALUE_INVALID", name+": "+err.Error())
-		}
-		result[name] = value
-	}
-
-	return result, nil
+	return execution.LoopState(ports, scope, initial)
 }
 
 func (r *runtime) loop(ctx workflow.Context, gc graphContext, state *NodeSnapshot, node contract.Node, args contract.Values) (contract.Values, error) {
@@ -341,38 +265,5 @@ func (r *runtime) pipeline(ctx workflow.Context, gc graphContext, state *NodeSna
 }
 
 func intersectPermissions(parent, child *contract.Permissions) *contract.Permissions {
-	if parent == nil {
-		copy := *child
-		return &copy
-	}
-	result := &contract.Permissions{
-		Models:    intersect(parent.Models, child.Models),
-		Sandboxes: intersect(parent.Sandboxes, child.Sandboxes),
-		Secrets:   intersect(parent.Secrets, child.Secrets),
-		MCP:       map[string][]string{},
-	}
-
-	for _, name := range keys(child.MCP) {
-		result.MCP[name] = intersect(parent.MCP[name], child.MCP[name])
-	}
-
-	return result
-}
-
-func intersect(a, b []string) []string {
-	set := map[string]bool{}
-
-	for _, value := range a {
-		set[value] = true
-	}
-
-	result := []string{}
-
-	for _, value := range b {
-		if set[value] {
-			result = append(result, value)
-		}
-	}
-
-	return result
+	return execution.IntersectPermissions(parent, child)
 }

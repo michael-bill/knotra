@@ -123,6 +123,32 @@ KNOTRA_E2E_ENDPOINT=http://127.0.0.1:8787 \
   cargo test --locked --manifest-path src-tauri/Cargo.toml real_engine -- --ignored
 ```
 
+To compare both schedulers without downloading a model, run the literal client acceptance from the
+repository root. It needs Bun/Cargo on `PATH`, PostgreSQL, Temporal, Docker, the built helper and an
+installed Playwright Chromium. `KNOTRA_CHROMIUM` can name an existing Chrome executable.
+
+```sh
+KNOTRA_TEST_DESKTOP=1 \
+  KNOTRA_TEST_DATABASE_URL='postgres://knotra:knotra-development@127.0.0.1:25432/knotra?sslmode=disable' \
+  KNOTRA_TEST_TEMPORAL=127.0.0.1:27233 \
+  KNOTRA_TEST_HELPER="$PWD/.knotra/bin/sandbox-helper" \
+  go test -mod=readonly -race -count=1 -timeout=15m ./internal/integration \
+  -run '^TestDesktopLiteralBackendCompatibility$' -v
+```
+
+This starts isolated engine services for Temporal and River and runs the existing native receipt/SSE
+test plus four browser flows: streamed greeting/history, nested human review and binary copy, agent
+file tools, and the hello starter. Only Ollama inference is replaced by a deterministic HTTP
+provider; PostgreSQL, API/SSE, Python, file tools and artifact bytes remain real. Each backend must
+retain exactly five successful runs, five physical model requests and five root tool/model debits.
+Failed evidence is retained under `.knotra/integration-work/desktop-*`. This does not replace live
+model acceptance of the remaining starter packages.
+
+The `engine-acceptance` job in `.github/workflows/desktop.yml` enables this same comparison on pull
+requests and pushes to `main`. It compiles Rust before starting the timed runtime check, starts
+disposable Compose infrastructure, and prints client/engine logs on failure. The ordinary frontend
+and native unit-test jobs remain independent.
+
 These tests create their own definitions/runs/artifacts; use a development engine. See
 [verification](../docs/verification.md) for what each test establishes.
 

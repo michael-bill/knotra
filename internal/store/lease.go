@@ -6,6 +6,8 @@ import (
 	"sync"
 
 	"github.com/jackc/pgx/v5"
+
+	"github.com/michael-bill/knotra/internal/store/db"
 )
 
 // Lease fences the single-host service deployment. It uses a dedicated
@@ -22,9 +24,9 @@ func (s *Store) AcquireLease(ctx context.Context) (*Lease, error) {
 		return nil, err
 	}
 	var acquired bool
-	err = conn.QueryRow(ctx, "SELECT pg_try_advisory_lock(hashtextextended($1,0))", "knotra.engine."+s.EngineID).Scan(&acquired)
+	acquired, err = db.New(conn).AcquireLease(ctx, "knotra.engine."+s.EngineID)
 	if err != nil || !acquired {
-		conn.Close(ctx)
+		_ = conn.Close(ctx)
 		if err == nil {
 			err = fmt.Errorf("another engine process is already running against this database")
 		}

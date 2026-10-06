@@ -47,7 +47,7 @@ func isEventStream(res *http.Response) bool {
 func readModelEvents(ctx context.Context, body io.ReadCloser, started time.Time, observation *executionObservation, id string, step int, handle modelEventHandler) (chatResponse, time.Duration, error) {
 	streamCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
-	defer body.Close()
+	defer func() { _ = body.Close() }()
 	events := make(chan modelEvent)
 	go func() {
 		reader := &io.LimitedReader{R: body, N: maxResponseBytes + 1}
@@ -76,8 +76,8 @@ func readModelEvents(ctx context.Context, body io.ReadCloser, started time.Time,
 					data.Reset()
 				}
 			} else if strings.HasPrefix(line, "data:") {
-				data.WriteString(strings.TrimPrefix(strings.TrimPrefix(line, "data:"), " "))
-				data.WriteByte('\n')
+				_, _ = data.WriteString(strings.TrimPrefix(strings.TrimPrefix(line, "data:"), " "))
+				_ = data.WriteByte('\n')
 			}
 		}
 		if scanner.Err() != nil {
@@ -113,7 +113,7 @@ func readModelEvents(ctx context.Context, body io.ReadCloser, started time.Time,
 		observation.emit(ctx, "model.delta", id, map[string]any{"step": step, "text": text[:cut]})
 		rest := strings.Clone(text[cut:])
 		pending.Reset()
-		pending.WriteString(rest)
+		_, _ = pending.WriteString(rest)
 	}
 	for {
 		select {
@@ -123,7 +123,7 @@ func readModelEvents(ctx context.Context, body io.ReadCloser, started time.Time,
 			flush(false)
 		case event := <-events:
 			if event.err != nil {
-				if event.err == io.EOF {
+				if errors.Is(event.err, io.EOF) {
 					return chatResponse{}, firstToken, invalidModelResponse()
 				}
 				return chatResponse{}, firstToken, event.err
@@ -137,7 +137,7 @@ func readModelEvents(ctx context.Context, body io.ReadCloser, started time.Time,
 				if first {
 					firstToken = time.Since(started)
 				}
-				pending.WriteString(text)
+				_, _ = pending.WriteString(text)
 				if first || pending.Len() >= 1024 {
 					flush(false)
 				}

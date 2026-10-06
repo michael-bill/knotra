@@ -10,6 +10,7 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"github.com/michael-bill/knotra/internal/contract"
+	"github.com/michael-bill/knotra/internal/execution"
 	"github.com/michael-bill/knotra/internal/protocol"
 	"github.com/michael-bill/knotra/internal/store"
 )
@@ -185,9 +186,10 @@ func (s *Server) start(w http.ResponseWriter, r *http.Request) {
 		}
 
 		for k, v := range values {
-			if v.JSON != nil {
+			switch {
+			case v.JSON != nil:
 				run.Inputs[k] = v.JSON
-			} else if v.Collection {
+			case v.Collection:
 				ids := []string{}
 
 				for _, a := range v.Artifacts {
@@ -195,12 +197,20 @@ func (s *Server) start(w http.ResponseWriter, r *http.Request) {
 				}
 
 				run.InputArtifacts[k] = ids
-			} else if len(v.Artifacts) == 1 {
+			case len(v.Artifacts) == 1:
 				run.InputArtifacts[k] = v.Artifacts[0].ID
+
 			}
 		}
 
-		e = store.PutRun(r.Context(), tx, run, *plan, values)
+		switch s.Backend {
+		case "", execution.BackendTemporal:
+			e = store.PutRun(r.Context(), tx, run, *plan, values)
+		case execution.BackendRiver:
+			run, e = store.PutRiverRun(r.Context(), tx, run, *plan, values, s.Wake)
+		default:
+			e = store.ErrExecutionVersion
+		}
 		return 201, map[string]any{"run": run}, e
 	})
 }

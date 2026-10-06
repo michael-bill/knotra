@@ -11,10 +11,13 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"slices"
+	"sort"
 	"strings"
 	"sync"
 
 	"github.com/michael-bill/knotra/internal/contract"
+	"github.com/michael-bill/knotra/internal/execution"
 )
 
 // Version identifies the execution ABI frozen by admission. Change it when a
@@ -47,6 +50,9 @@ type Hooks interface {
 	GetArtifact(context.Context, string) ([]byte, error)
 	BeginOperation(context.Context, Operation) (OperationState, error)
 	CompleteOperation(context.Context, string, json.RawMessage) error
+	RegisterResource(context.Context, string, string, string) (execution.ResourceRecord, error)
+	RecordMCPSession(context.Context, string, execution.MCPSessionRecord) error
+	CloseResource(context.Context, string) error
 }
 
 // Failure carries execution decisions without coupling adapters to a workflow SDK.
@@ -64,7 +70,9 @@ type Runner struct {
 	HTTPClient                                     *http.Client
 	DockerHost, HelperPath, WorkDir, FirewallImage string
 	EngineID                                       string
+	HostID                                         string
 	LookupEnv                                      func(string) (string, bool)
+	ResourceEvidence                               *execution.OutcomeFiles
 	mu                                             sync.Mutex
 	shared                                         *sessionCache
 }
@@ -72,6 +80,17 @@ type Runner struct {
 type sessionCache struct {
 	mu       sync.Mutex
 	sessions map[string]*mcpSession
+	// ponytail: sorted active keys bound cleanup scans; use an ordered index if insertion cost matters.
+	keys []string
+}
+
+// Caller holds the cache lock while publishing a newly connected session.
+func (c *sessionCache) save(key string, session *mcpSession) {
+	c.sessions[key] = session
+	position, found := slices.BinarySearch(c.keys, key)
+	if !found {
+		c.keys = slices.Insert(c.keys, position, key)
+	}
 }
 
 func (r *Runner) cache() *sessionCache {
@@ -87,15 +106,17 @@ func (r *Runner) cache() *sessionCache {
 // sessions. Configure a runner before its first use; never mutate it concurrently.
 func (r *Runner) WithHooks(h Hooks) *Runner {
 	return &Runner{
-		Hooks:         h,
-		HTTPClient:    r.HTTPClient,
-		DockerHost:    r.DockerHost,
-		HelperPath:    r.HelperPath,
-		WorkDir:       r.WorkDir,
-		FirewallImage: r.FirewallImage,
-		EngineID:      r.EngineID,
-		LookupEnv:     r.LookupEnv,
-		shared:        r.cache(),
+		Hooks:            h,
+		HTTPClient:       r.HTTPClient,
+		DockerHost:       r.DockerHost,
+		HelperPath:       r.HelperPath,
+		WorkDir:          r.WorkDir,
+		FirewallImage:    r.FirewallImage,
+		EngineID:         r.EngineID,
+		HostID:           r.HostID,
+		LookupEnv:        r.LookupEnv,
+		ResourceEvidence: r.ResourceEvidence,
+		shared:           r.cache(),
 	}
 }
 
@@ -169,7 +190,7 @@ func operationID(req Request, name string, perAttempt bool) string {
 	return hex.EncodeToString(sum[:])
 }
 
-func (r *Runner) operation(ctx context.Context, op Operation, fn func() (json.RawMessage, error)) (json.RawMessage, error) {
+func (r *Runner) operation(ctx context.Context, op Operation, fn func(admit func() error) (json.RawMessage, error)) (json.RawMessage, error) {
 	state, err := r.Hooks.BeginOperation(ctx, op)
 	if err != nil {
 		return nil, err
@@ -187,20 +208,30 @@ func (r *Runner) operation(ctx context.Context, op Operation, fn func() (json.Ra
 			Retryable:   safeRetry,
 		}
 	}
-	if op.Kind != "" {
-		if err = r.Hooks.Reserve(ctx, op.Kind); err != nil {
-			return nil, err
+	admitted := false
+	result, err := fn(func() error {
+		if admitted {
+			return fmt.Errorf("operation already admitted")
 		}
-	}
-	result, err := fn()
+		if op.Kind != "" {
+			if err := r.Hooks.Reserve(ctx, op.Kind); err != nil {
+				return err
+			}
+		}
+		admitted = true
+		return nil
+	})
 	if err != nil {
 		var typed *Failure
 		if errors.As(err, &typed) {
-			copy := *typed
-			if copy.OperationID == "" {
-				copy.OperationID = op.ID
+			cloned := *typed
+			if cloned.OperationID == "" {
+				cloned.OperationID = op.ID
 			}
-			return nil, &copy
+			return nil, &cloned
+		}
+		if !admitted {
+			return nil, err
 		}
 		// Transport failure after sending cannot prove absence of external effects.
 		safeRetry := op.Effect == "read" || op.IdempotencyKey != ""
@@ -211,6 +242,9 @@ func (r *Runner) operation(ctx context.Context, op Operation, fn func() (json.Ra
 			Unknown:     !safeRetry,
 			Retryable:   safeRetry,
 		}
+	}
+	if !admitted {
+		return nil, fmt.Errorf("operation returned a result without physical-call admission")
 	}
 	if err = r.Hooks.CompleteOperation(ctx, op.ID, result); err != nil {
 		return nil, &Failure{
@@ -242,26 +276,71 @@ func textSource(req Request, t contract.TextSource) (string, error) {
 func (r *Runner) Close() error {
 	cache := r.cache()
 	cache.mu.Lock()
-	defer cache.mu.Unlock()
-
-	for k, s := range cache.sessions {
-		_ = s.close()
-		delete(cache.sessions, k)
+	keys := slices.Clone(cache.keys)
+	cache.mu.Unlock()
+	var failures error
+	for _, key := range keys {
+		failures = errors.Join(failures, r.ReleaseSession(key))
 	}
-
-	return nil
+	return failures
 }
 
 // ReleaseRun closes shared MCP sessions when a run reaches a terminal state.
-func (r *Runner) ReleaseRun(runID string) {
+func (r *Runner) ReleaseRun(runID string) error {
 	cache := r.cache()
 	cache.mu.Lock()
-	defer cache.mu.Unlock()
-
-	for key, s := range cache.sessions {
+	keys := slices.Clone(cache.keys)
+	cache.mu.Unlock()
+	var failures error
+	for _, key := range keys {
 		if strings.HasPrefix(key, runID+"/") {
-			_ = s.close()
-			delete(cache.sessions, key)
+			failures = errors.Join(failures, r.ReleaseSession(key))
 		}
 	}
+	return failures
+}
+
+// SessionPage returns at most 64 sorted cache identities without waiting for
+// another run's initialization. A busy cache is retried by maintenance.
+func (r *Runner) SessionPage(cursor string) ([]string, error) {
+	cache := r.cache()
+	if !cache.mu.TryLock() {
+		return nil, errors.New("shared MCP session initialization is busy")
+	}
+	defer cache.mu.Unlock()
+	start := sort.Search(len(cache.keys), func(i int) bool { return cache.keys[i] > cursor })
+	return slices.Clone(cache.keys[start:min(start+64, len(cache.keys))]), nil
+}
+
+// ReleaseSession removes an entry after local closure and HTTP cleanup succeeds
+// or the server reports 404/405. It never
+// waits on a different session's initialization or an active call.
+func (r *Runner) ReleaseSession(key string) error {
+	cache := r.cache()
+	if !cache.mu.TryLock() {
+		return errors.New("shared MCP session initialization is busy")
+	}
+	s := cache.sessions[key]
+	cache.mu.Unlock()
+	if s == nil {
+		return nil
+	}
+	if !s.mu.TryLock() {
+		return errors.New("shared MCP session has an active call")
+	}
+	defer s.mu.Unlock()
+	if err := s.close(); err != nil {
+		return err
+	}
+	if !cache.mu.TryLock() {
+		return errors.New("shared MCP session initialization is busy")
+	}
+	defer cache.mu.Unlock()
+	if cache.sessions[key] == s {
+		delete(cache.sessions, key)
+		if position, found := slices.BinarySearch(cache.keys, key); found {
+			cache.keys = slices.Delete(cache.keys, position, position+1)
+		}
+	}
+	return nil
 }

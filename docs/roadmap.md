@@ -46,6 +46,10 @@ ready commands — in [CLI reference](../internal/cli/README.md). Acceptance sce
 Local mode without Temporal requires a separate architectural solution. Execution behavior is
 described in [execution semantics](notation/execution.md).
 
+A proposed replacement using Knotra's own scheduler, River OSS and the existing PostgreSQL database
+is detailed in the [scheduler migration plan](scheduler-river-plan.md). It covers compatibility,
+failure recovery, staged rollout and a subsequent extension to multiple worker hosts.
+
 ## Criteria for Extensions
 
 Contract change updates schema, diagnostics, fixtures, runtime and documentation together. New

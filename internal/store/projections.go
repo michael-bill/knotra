@@ -6,24 +6,37 @@ import (
 	"errors"
 	"fmt"
 	"sort"
-	"time"
 
 	"github.com/jackc/pgx/v5"
 
 	"github.com/michael-bill/knotra/internal/contract"
-	"github.com/michael-bill/knotra/internal/engine"
+	"github.com/michael-bill/knotra/internal/execution"
 	"github.com/michael-bill/knotra/internal/protocol"
+	"github.com/michael-bill/knotra/internal/store/db"
 )
 
-func (s *Store) Project(ctx context.Context, p engine.Projection) error {
+func (s *Store) Project(ctx context.Context, p execution.Projection) error {
 	tx, e := s.Pool.Begin(ctx)
 	if e != nil {
 		return e
 	}
-	defer tx.Rollback(ctx)
+	defer func() { _ = tx.Rollback(ctx) }()
+	if e = s.ProjectTx(ctx, tx, p); e != nil {
+		return e
+	}
+	return tx.Commit(ctx)
+}
+
+// ProjectTx writes an idempotent observation inside an existing transaction.
+// It acquires the run lock before touching instances, artifacts or requests.
+func (s *Store) ProjectTx(ctx context.Context, tx pgx.Tx, p execution.Projection) error {
 	var b []byte
 	var seq int64
-	e = tx.QueryRow(ctx, "SELECT document,sequence FROM knotra_runs WHERE id=$1 FOR UPDATE", p.RunID).Scan(&b, &seq)
+	storedRunProjection, e := db.New(tx).LockRunProjection(ctx, p.RunID)
+	if e == nil {
+		b = storedRunProjection.Document
+		seq = storedRunProjection.Sequence
+	}
 	if e != nil {
 		return e
 	}
@@ -32,23 +45,19 @@ func (s *Store) Project(ctx context.Context, p engine.Projection) error {
 		return e
 	}
 	var duplicate bool
-	e = tx.QueryRow(ctx, "SELECT EXISTS(SELECT 1 FROM knotra_events WHERE run_id=$1 AND sequence=$2)", p.RunID, p.Sequence).Scan(&duplicate)
+	duplicate, e = db.New(tx).EventSequenceExists(ctx, db.EventSequenceExistsParams{RunID: p.RunID, Sequence: new(p.Sequence)})
 	if e != nil {
 		return e
 	}
 	if duplicate {
 		return nil
 	}
-	if p.InstanceID != "" && p.Kind == "node" {
+	switch {
+	case p.InstanceID != "" && p.Kind == "node":
 		if p.Status == "succeeded" {
 			for _, value := range p.Outputs {
 				for _, artifact := range value.Artifacts {
-					if _, e = tx.Exec(
-						ctx,
-						"UPDATE knotra_artifacts SET published=true WHERE id=$1 AND document->'origin'->>'runId'=$2",
-						artifact.ID,
-						p.RunID,
-					); e != nil {
+					if _, e = db.New(tx).PublishArtifact(ctx, db.PublishArtifactParams{ID: artifact.ID, OriginRunID: p.RunID}); e != nil {
 						return e
 					}
 				}
@@ -76,19 +85,13 @@ func (s *Store) Project(ctx context.Context, p engine.Projection) error {
 		if e != nil {
 			return e
 		}
-		_, e = tx.Exec(
-			ctx,
-			"INSERT INTO knotra_instances(run_id,id,sequence,document) VALUES($1,$2,$3,$4) ON CONFLICT(run_id,id) DO UPDATE SET sequence=EXCLUDED.sequence,document=EXCLUDED.document WHERE knotra_instances.sequence<EXCLUDED.sequence",
-			p.RunID,
-			p.InstanceID,
-			p.Sequence,
-			ib,
-		)
+		_, e = db.New(tx).UpsertInstanceProjection(ctx, db.UpsertInstanceProjectionParams{RunID: p.RunID, ID: p.InstanceID, Sequence: p.Sequence, Document: ib})
 		if e != nil {
 			return e
 		}
-
-	} else if p.Kind == "run" && p.InstanceID == "" && p.Sequence > seq && !protocol.Terminal(run.Status) {
+	case p.Kind == "diagnostic" && p.Failure != nil:
+		run.Diagnostics = append(run.Diagnostics, diagnostic(p.Failure))
+	case p.Kind == "run" && p.InstanceID == "" && p.Sequence > seq && !protocol.Terminal(run.Status):
 		run.Status = p.Status
 		if p.Outputs != nil {
 			run.Outputs = map[string]json.RawMessage{}
@@ -106,16 +109,19 @@ func (s *Store) Project(ctx context.Context, p engine.Projection) error {
 		if p.Failure != nil {
 			run.Diagnostics = append(run.Diagnostics, diagnostic(p.Failure))
 		}
+
 	}
-	if protocol.Terminal(run.Status) {
-		if _, e = tx.Exec(ctx, "UPDATE knotra_requests SET status='cancelled' WHERE run_id=$1 AND status IN ('open','pending')", p.RunID); e != nil {
+	switch {
+	case protocol.Terminal(run.Status):
+		if _, e = db.New(tx).CancelOpenRequests(ctx, p.RunID); e != nil {
 			return e
 		}
 		run.AvailableActions = []string{}
-	} else if run.Status == "waiting_resolution" {
+	case run.Status == "waiting_resolution":
 		run.AvailableActions = []string{"cancel", "resolve"}
-	} else {
+	default:
 		run.AvailableActions = []string{"cancel"}
+
 	}
 	if p.Time.After(run.UpdatedAt) {
 		run.UpdatedAt = p.Time
@@ -129,9 +135,15 @@ func (s *Store) Project(ctx context.Context, p engine.Projection) error {
 	if p.InstanceID == "" && p.Sequence > seq {
 		seq = p.Sequence
 	}
-	_, e = tx.Exec(ctx, "UPDATE knotra_runs SET document=$2,sequence=$3 WHERE id=$1", p.RunID, b, seq)
+	_, e = db.New(tx).UpdateRunProjection(ctx, db.UpdateRunProjectionParams{ID: p.RunID, Document: b, Sequence: seq})
 	if e != nil {
 		return e
+	}
+	data := map[string]any{
+		"status": p.Status, "reason": shortEventText(p.Reason),
+		"nodeId": p.NodeID, "scope": p.Pipeline,
+		"parentInstanceId": p.ParentInstanceID, "iterationIndex": p.IterationIndex,
+		"graphPath": p.GraphPath, "nodeType": p.NodeType,
 	}
 	ev := protocol.Event{
 		RunID:      p.RunID,
@@ -139,15 +151,9 @@ func (s *Store) Project(ctx context.Context, p engine.Projection) error {
 		Type:       p.Kind,
 		Message:    p.Status,
 		InstanceID: p.InstanceID,
-		Data: map[string]any{
-			"status": p.Status, "reason": shortEventText(p.Reason),
-			"nodeId": p.NodeID, "scope": p.Pipeline,
-			"parentInstanceId": p.ParentInstanceID, "iterationIndex": p.IterationIndex,
-			"graphPath": p.GraphPath, "nodeType": p.NodeType,
-		},
+		Data:       data,
 	}
 	if p.Kind == "node" {
-		data := ev.Data.(map[string]any)
 		inputs, inputTruncated := observationContext(p.Inputs)
 		outputs, outputTruncated := observationContext(p.Outputs)
 		if inputs != nil {
@@ -174,14 +180,14 @@ func (s *Store) Project(ctx context.Context, p engine.Projection) error {
 	if e != nil {
 		return e
 	}
-	_, e = tx.Exec(ctx, "INSERT INTO knotra_events(run_id,sequence,document) VALUES($1,$2,$3)", p.RunID, p.Sequence, b)
+	_, e = db.New(tx).InsertExecutionEvent(ctx, db.InsertExecutionEventParams{RunID: p.RunID, Sequence: new(p.Sequence), Document: b})
 	if e != nil {
 		return e
 	}
-	return tx.Commit(ctx)
+	return nil
 }
 
-func diagnostic(f *engine.Failure) contract.Diagnostic {
+func diagnostic(f *execution.Failure) contract.Diagnostic {
 	return contract.Diagnostic{Severity: "error", Code: f.Code, Phase: "runtime", Message: f.Message, Path: ""}
 }
 
@@ -196,12 +202,19 @@ func sortedKeys[V any](m map[string]V) []string {
 	return k
 }
 
-func (s *Store) SaveRequest(ctx context.Context, r engine.Request) error {
+func (s *Store) SaveRequest(ctx context.Context, r execution.Request) error {
 	tx, err := s.Pool.Begin(ctx)
 	if err != nil {
 		return err
 	}
-	defer tx.Rollback(ctx)
+	defer func() { _ = tx.Rollback(ctx) }()
+	if err := s.SaveRequestTx(ctx, tx, r); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
+}
+
+func (s *Store) SaveRequestTx(ctx context.Context, tx pgx.Tx, r execution.Request) error {
 	run, cancelling, err := lockRun(ctx, tx, r.RunID)
 	if err != nil {
 		return err
@@ -213,47 +226,46 @@ func (s *Store) SaveRequest(ctx context.Context, r engine.Request) error {
 	if err != nil {
 		return err
 	}
-	_, err = tx.Exec(ctx, `INSERT INTO knotra_requests(id,run_id,kind,status,document) VALUES($1,$2,$3,$4,$5)
- ON CONFLICT(id) DO UPDATE SET status=EXCLUDED.status,document=EXCLUDED.document
- WHERE knotra_requests.status IN ('open','pending') AND EXCLUDED.status NOT IN ('open','pending')`, r.ID, r.RunID, r.Kind, r.Status, b)
+	_, err = db.New(tx).UpsertRequest(ctx, db.UpsertRequestParams{ID: r.ID, RunID: r.RunID, Kind: r.Kind, Status: r.Status, Document: b})
 	if err != nil {
 		return err
 	}
-	return tx.Commit(ctx)
+	return nil
 }
 
-func (s *Store) Request(ctx context.Context, id string) (engine.Request, error) {
-	var r engine.Request
-	var b []byte
-	var status string
-	e := s.Pool.QueryRow(ctx, "SELECT document,status FROM knotra_requests WHERE id=$1", id).Scan(&b, &status)
+func (s *Store) Request(ctx context.Context, id string) (execution.Request, error) {
+	var r execution.Request
+
+	storedRequest, e := db.New(s.Pool).ReadRequest(ctx, id)
+
 	if e == nil {
-		e = json.Unmarshal(b, &r)
-		r.Status = status
+		e = json.Unmarshal(storedRequest.Document, &r)
+		r.Status = storedRequest.Status
 	}
 	return r, classify(e)
 }
 
 func (s *Store) Requests(ctx context.Context, cursor string) ([]protocol.HumanRequest, error) {
-	rows, e := s.Pool.Query(
-		ctx,
-		"SELECT document,status,created_at FROM knotra_requests WHERE kind='human' AND ($1='' OR id<$1) ORDER BY id DESC LIMIT 101",
-		cursor,
-	)
+	rows, e := db.New(s.Pool).ListHumanRequests(ctx, db.ListHumanRequestsParams{Cursor: cursor, MaxBytes: MaxListPageBytes})
 	if e != nil {
 		return nil, e
 	}
-	defer rows.Close()
+
 	out := []protocol.HumanRequest{}
 	size := 0
 
-	for rows.Next() {
-		var r engine.Request
+	for _, record := range rows {
+		var r execution.Request
 		var b []byte
 		var v protocol.HumanRequest
-		if e = rows.Scan(&b, &v.Status, &v.CreatedAt); e != nil {
-			return nil, e
+		b = record.Document
+		v.Status = record.Status
+		if v.Status == "accepted" {
+			// River distinguishes consumed answers internally; the desktop
+			// protocol exposes both reserved and consumed answers as answered.
+			v.Status = "answered"
 		}
+		v.CreatedAt = record.CreatedAt
 		if e = json.Unmarshal(b, &r); e != nil {
 			return nil, e
 		}
@@ -275,11 +287,10 @@ func (s *Store) Requests(ctx context.Context, cursor string) ([]protocol.HumanRe
 			break
 		}
 	}
-
-	return out, rows.Err()
+	return out, nil
 }
 
-func (s *Store) Reserve(ctx context.Context, runID, kind string, scopes []engine.BudgetScope) error {
+func (s *Store) Reserve(ctx context.Context, runID, kind string, scopes []execution.BudgetScope) error {
 	if kind != "model" && kind != "tool" {
 		return fmt.Errorf("unknown budget kind %q", kind)
 	}
@@ -287,38 +298,45 @@ func (s *Store) Reserve(ctx context.Context, runID, kind string, scopes []engine
 	if e != nil {
 		return e
 	}
-	defer tx.Rollback(ctx)
-	_, e = tx.Exec(ctx, "SELECT pg_advisory_xact_lock(hashtextextended($1,0))", "budget:"+runID)
+	defer func() { _ = tx.Rollback(ctx) }()
+	backend, e := ReadRunBackend(ctx, tx, runID)
+	if e != nil {
+		return e
+	}
+	if backend != execution.BackendTemporal {
+		return ErrExecutionOwnership
+	}
+	_, e = db.New(tx).LockTransactionKey(ctx, "budget:"+runID)
 	if e != nil {
 		return e
 	}
 
+	if err := reserveCalls(ctx, tx, runID, kind, scopes); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
+}
+
+func reserveCalls(ctx context.Context, tx pgx.Tx, runID, kind string, scopes []execution.BudgetScope) error {
 	for _, scope := range scopes {
 		limit := scope.Limits.MaxModelCalls
 		if kind == "tool" {
 			limit = scope.Limits.MaxToolCalls
 		}
 		var used int64
-		e = tx.QueryRow(ctx, "SELECT used FROM knotra_budgets WHERE run_id=$1 AND scope=$2 AND kind=$3", runID, scope.ID, kind).Scan(&used)
+		used, e := db.New(tx).ReadBudgetUsed(ctx, db.ReadBudgetUsedParams{RunID: runID, Scope: scope.ID, Kind: kind})
 		if e != nil && !errors.Is(e, pgx.ErrNoRows) {
 			return e
 		}
 		if limit <= 0 || used >= int64(limit) {
 			return fmt.Errorf("BUDGET_EXCEEDED: %s in scope %s", kind, scope.ID)
 		}
-		_, e = tx.Exec(
-			ctx,
-			"INSERT INTO knotra_budgets(run_id,scope,kind,used) VALUES($1,$2,$3,1) ON CONFLICT(run_id,scope,kind) DO UPDATE SET used=knotra_budgets.used+1",
-			runID,
-			scope.ID,
-			kind,
-		)
+		_, e = db.New(tx).IncrementBudget(ctx, db.IncrementBudgetParams{RunID: runID, Scope: scope.ID, Kind: kind})
 		if e != nil {
 			return e
 		}
 	}
-
-	return tx.Commit(ctx)
+	return nil
 }
 
 type OperationState struct {
@@ -328,14 +346,7 @@ type OperationState struct {
 }
 
 func (s *Store) BeginOperation(ctx context.Context, id, runID, kind, effect string) (OperationState, error) {
-	tag, e := s.Pool.Exec(
-		ctx,
-		"INSERT INTO knotra_operations(id,run_id,kind,effect) VALUES($1,$2,$3,$4) ON CONFLICT DO NOTHING",
-		id,
-		runID,
-		kind,
-		effect,
-	)
+	tag, e := db.New(s.Pool).InsertLegacyOperation(ctx, db.InsertLegacyOperationParams{ID: id, RunID: runID, Kind: kind, Effect: effect})
 	if e != nil {
 		return OperationState{}, e
 	}
@@ -344,26 +355,26 @@ func (s *Store) BeginOperation(ctx context.Context, id, runID, kind, effect stri
 	}
 	var state OperationState
 	state.Started = true
-	e = s.Pool.QueryRow(ctx, "SELECT completed,response FROM knotra_operations WHERE id=$1 AND run_id=$2", id, runID).Scan(
-		&state.Completed,
-		&state.Response,
-	)
+	storedLegacyOperation, queryErr5 := db.New(s.Pool).ReadLegacyOperation(ctx, db.ReadLegacyOperationParams{ID: id, RunID: runID})
+	e = queryErr5
+	if e == nil {
+		state.Completed = storedLegacyOperation.Completed
+		state.Response = storedLegacyOperation.Response
+	}
+	if errors.Is(e, pgx.ErrNoRows) {
+		return OperationState{}, ErrExecutionOwnership
+	}
 	return state, e
 }
 
 func (s *Store) CompleteOperation(ctx context.Context, id string, response json.RawMessage) error {
-	tag, e := s.Pool.Exec(
-		ctx,
-		"UPDATE knotra_operations SET completed=true,response=$2 WHERE id=$1 AND NOT completed",
-		id,
-		[]byte(response),
-	)
+	tag, e := db.New(s.Pool).CompleteLegacyOperation(ctx, db.CompleteLegacyOperationParams{ID: id, Response: []byte(response)})
 	if e != nil {
 		return e
 	}
 	if tag.RowsAffected() == 0 {
 		var b []byte
-		e = s.Pool.QueryRow(ctx, "SELECT response FROM knotra_operations WHERE id=$1 AND completed", id).Scan(&b)
+		b, e = db.New(s.Pool).ReadLegacyOperationResponse(ctx, id)
 		if e != nil {
 			return e
 		}
@@ -376,55 +387,39 @@ func (s *Store) CompleteOperation(ctx context.Context, id string, response json.
 
 // Answer shares the same row lock as Respond. A timer cannot discard an answer
 // already committed before its deadline, even if outbox delivery was delayed.
-func (s *Store) Answer(ctx context.Context, q engine.AnswerRequest) (*engine.HumanSignal, error) {
+func (s *Store) Answer(ctx context.Context, q execution.AnswerRequest) (*execution.HumanSignal, error) {
 	tx, e := s.Pool.Begin(ctx)
 	if e != nil {
 		return nil, e
 	}
-	defer tx.Rollback(ctx)
+	defer func() { _ = tx.Rollback(ctx) }()
 	if _, _, e = lockRun(ctx, tx, q.RunID); e != nil {
 		return nil, e
 	}
-	var status string
-	var responseID *string
-	var response []byte
-	var acceptedAt *time.Time
-	e = tx.QueryRow(
-		ctx,
-		"SELECT status,response_id,response,accepted_at FROM knotra_requests WHERE id=$1 AND run_id=$2 FOR UPDATE",
-		q.RequestID,
-		q.RunID,
-	).Scan(
-		&status,
-		&responseID,
-		&response,
-		&acceptedAt,
-	)
+
+	storedHumanAnswer, queryErr7 := db.New(tx).LockHumanAnswer(ctx, db.LockHumanAnswerParams{ID: q.RequestID, RunID: q.RunID})
+	e = queryErr7
+
 	if e != nil {
 		return nil, classify(e)
 	}
-	if status == "answered" && responseID != nil && acceptedAt != nil {
+	if storedHumanAnswer.Status == "answered" && storedHumanAnswer.ResponseID != nil && storedHumanAnswer.AcceptedAt != nil {
 		var values contract.Values
-		if e = json.Unmarshal(response, &values); e != nil {
+		if e = json.Unmarshal(storedHumanAnswer.Response, &values); e != nil {
 			return nil, e
 		}
-		return &engine.HumanSignal{
+		return &execution.HumanSignal{
 			RequestID:  q.RequestID,
-			ResponseID: *responseID,
+			ResponseID: *storedHumanAnswer.ResponseID,
 			Values:     values,
-			AcceptedAt: *acceptedAt,
+			AcceptedAt: *storedHumanAnswer.AcceptedAt,
 		}, tx.Commit(ctx)
 	}
 	if q.CloseIfAbsent != "" {
 		if q.CloseIfAbsent != "cancelled" && q.CloseIfAbsent != "expired" {
 			return nil, ErrConflict
 		}
-		_, e = tx.Exec(
-			ctx,
-			"UPDATE knotra_requests SET status=$2 WHERE id=$1 AND status IN ('open','pending')",
-			q.RequestID,
-			q.CloseIfAbsent,
-		)
+		_, e = db.New(tx).CloseRequest(ctx, db.CloseRequestParams{ID: q.RequestID, Status: q.CloseIfAbsent})
 		if e != nil {
 			return nil, e
 		}

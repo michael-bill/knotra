@@ -23,7 +23,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/michael-bill/knotra/internal/contract"
+	"github.com/michael-bill/knotra/internal/execution"
 )
 
 type dockerClient struct {
@@ -49,14 +51,17 @@ func (d *dockerClient) remove(ctx context.Context, id string) error {
 	return err
 }
 
-func (r *Runner) docker() (*dockerClient, error) {
+func (r *Runner) docker(ctx context.Context) (*dockerClient, error) {
 	host := r.DockerHost
 	if host == "" {
 		host = os.Getenv("DOCKER_HOST")
 	}
 	if host == "" {
 		// The Docker context selects a socket only. No workload runs on the host.
-		out, err := exec.Command("docker", "context", "inspect", "--format", "{{.Endpoints.docker.Host}}").Output()
+		out, err := exec.CommandContext(ctx, "docker", "context", "inspect", "--format", "{{.Endpoints.docker.Host}}").Output()
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
 		if err == nil {
 			host = strings.TrimSpace(string(out))
 		}
@@ -80,12 +85,12 @@ type dockerDialFunc func(context.Context, string, string) (net.Conn, error)
 
 func dockerDialer(u *url.URL) (dockerDialFunc, error) {
 	if u.Host != "" || u.User != nil || u.RawQuery != "" || u.Fragment != "" {
-		return nil, fmt.Errorf("Docker host must be a local unix socket or named pipe")
+		return nil, fmt.Errorf("docker host must be a local unix socket or named pipe")
 	}
 	switch u.Scheme {
 	case "unix":
 		if !strings.HasPrefix(u.Path, "/") || u.Path == "/" {
-			return nil, fmt.Errorf("Docker unix socket path must be absolute")
+			return nil, fmt.Errorf("docker unix socket path must be absolute")
 		}
 		return func(ctx context.Context, _, _ string) (net.Conn, error) {
 			return (&net.Dialer{}).DialContext(ctx, "unix", u.Path)
@@ -97,14 +102,14 @@ func dockerDialer(u *url.URL) (dockerDialFunc, error) {
 		}
 		return namedPipeDialer(pipe)
 	default:
-		return nil, fmt.Errorf("Docker host must be a local unix socket or named pipe")
+		return nil, fmt.Errorf("docker host must be a local unix socket or named pipe")
 	}
 }
 
 func dockerPipePath(path string) (string, error) {
 	name, ok := strings.CutPrefix(path, "//./pipe/")
 	if !ok || name == "" || name == "." || name == ".." || strings.ContainsAny(name, "/\\\x00") {
-		return "", fmt.Errorf("Docker named pipe must use npipe:////./pipe/NAME")
+		return "", fmt.Errorf("docker named pipe must use npipe:////./pipe/NAME")
 	}
 	return `\\.\pipe\` + name, nil
 }
@@ -125,10 +130,10 @@ func (d *dockerClient) request(ctx context.Context, method, path string, input a
 	req.Header.Set("Content-Type", "application/json")
 	res, err := d.client.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("Docker request: %w", err)
+		return nil, fmt.Errorf("docker request: %w", err)
 	}
 	if res.StatusCode < 200 || res.StatusCode >= 300 {
-		defer res.Body.Close()
+		defer func() { _ = res.Body.Close() }()
 		return nil, &dockerAPIError{res.StatusCode, method, strings.Split(path, "?")[0]}
 	}
 	return res, nil
@@ -139,7 +144,7 @@ func (d *dockerClient) json(ctx context.Context, method, path string, input, out
 	if err != nil {
 		return err
 	}
-	defer res.Body.Close()
+	defer func() { _ = res.Body.Close() }()
 	if output == nil {
 		_, err = io.Copy(io.Discard, io.LimitReader(res.Body, 1<<20))
 		return err
@@ -148,24 +153,50 @@ func (d *dockerClient) json(ctx context.Context, method, path string, input, out
 }
 
 type sandbox struct {
-	docker    *dockerClient
-	id, dir   string
-	env       []string
-	inputs    contract.Values
-	stopLease context.CancelFunc
-	leaseDone chan struct{}
+	docker            *dockerClient
+	id, dir           string
+	env               []string
+	inputs            contract.Values
+	stopLease         context.CancelFunc
+	leaseDone         chan struct{}
+	resource          execution.ResourceRecord
+	hooks             Hooks
+	labels            map[string]string
+	dirCreated        bool
+	creationAttempted bool
 }
 
-func (s *sandbox) close() {
-	defer s.docker.client.CloseIdleConnections()
+func (s *sandbox) close() error {
+	if s.docker != nil {
+		defer s.docker.client.CloseIdleConnections()
+	}
 	if s.stopLease != nil {
 		s.stopLease()
 		<-s.leaseDone
+		s.stopLease = nil
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
-	_ = s.docker.remove(ctx, s.id)
-	_ = os.RemoveAll(s.dir)
+	var err error
+	if s.docker != nil {
+		target := s.id
+		if target == "" && s.creationAttempted {
+			target = s.resource.Name()
+		}
+		if target != "" {
+			err = s.docker.remove(ctx, target)
+		}
+	}
+	// Keep the watchdog/control mount reachable if container removal failed.
+	if err == nil && s.dirCreated {
+		err = os.RemoveAll(s.dir)
+	}
+	// An unanswered creation can still complete at the daemon. Keep its ledger
+	// record for inventory reconciliation even if deletion by name saw no container.
+	if err == nil && s.hooks != nil && (!s.creationAttempted || s.id != "") {
+		err = s.hooks.CloseResource(ctx, s.resource.ID)
+	}
+	return err
 }
 
 type dockerMount struct {
@@ -196,38 +227,39 @@ func (r *Runner) newSandbox(ctx context.Context, req Request, profile contract.S
 			return nil, fmt.Errorf("sandbox helper changed after admission")
 		}
 	}
-	if err = os.MkdirAll(r.workRoot(), 0700); err != nil {
-		return nil, err
+	resource := execution.ResourceRecord{ID: uuid.NewString(), Kind: "sandbox", Lifetime: "attempt"}
+	if req.service {
+		resource.Lifetime = "run"
 	}
-	dir, err := os.MkdirTemp(r.workRoot(), "sandbox-")
-	if err != nil {
-		return nil, err
+	if r.Hooks != nil {
+		resource, err = r.Hooks.RegisterResource(ctx, resource.ID, resource.Kind, resource.Lifetime)
+		if err != nil {
+			return nil, err
+		}
 	}
-	dir, err = filepath.Abs(dir)
-	if err != nil {
-		return nil, err
-	}
-	s := &sandbox{
-		dir:    dir,
-		env:    append([]string{"KNOTRA_INPUT_JSON=/knotra/input.json", "KNOTRA_OUTPUT_JSON=/knotra/output.json"}, environment...),
-		inputs: contract.Values{},
-	}
+	s := &sandbox{resource: resource, hooks: r.Hooks, env: append([]string{"KNOTRA_INPUT_JSON=/knotra/input.json", "KNOTRA_OUTPUT_JSON=/knotra/output.json"}, environment...), inputs: contract.Values{}}
 	ok := false
 	defer func() {
 		if !ok {
-			if s.stopLease != nil {
-				s.stopLease()
-				<-s.leaseDone
-				s.stopLease = nil
-			}
-			if s.id != "" {
-				s.close()
-			} else {
-				_ = os.RemoveAll(dir)
-			}
+			_ = s.close()
 		}
 	}()
-	s.docker, err = r.docker()
+	if resource.Ownership.WorkerID != "" && (resource.EngineID != r.EngineID || resource.HostID != r.HostID) {
+		return nil, fmt.Errorf("sandbox runner does not match resource engine or host")
+	}
+	if err = os.MkdirAll(r.workRoot(), 0700); err != nil {
+		return nil, err
+	}
+	s.dir, err = filepath.Abs(filepath.Join(r.workRoot(), resource.Name()))
+	if err != nil {
+		return nil, err
+	}
+	if err = os.Mkdir(s.dir, 0700); err != nil {
+		return nil, err
+	}
+	s.dirCreated = true
+	dir := s.dir
+	s.docker, err = r.docker(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -351,6 +383,16 @@ func (r *Runner) newSandbox(ctx context.Context, req Request, profile contract.S
 	tmpfs := func(size int64) string {
 		return fmt.Sprintf("rw,nosuid,nodev,size=%d,uid=65532,gid=65532,mode=0700", size)
 	}
+	s.labels = map[string]string{
+		"io.knotra.engine":     r.EngineID,
+		"io.knotra.run":        req.RunID,
+		"io.knotra.instance":   req.InstanceID,
+		"io.knotra.resource":   resource.ID,
+		"io.knotra.host":       resource.HostID,
+		"io.knotra.worker":     resource.Ownership.WorkerID,
+		"io.knotra.attempt":    fmt.Sprint(resource.Ownership.Number),
+		"io.knotra.generation": fmt.Sprint(resource.Ownership.Generation),
+	}
 	body := map[string]any{
 		"Image":      profile.Image,
 		"Entrypoint": []string{"/knotra/bin/helper", "init"},
@@ -358,11 +400,7 @@ func (r *Runner) newSandbox(ctx context.Context, req Request, profile contract.S
 		"User":       "65532:65532",
 		"WorkingDir": "/workspace",
 		"Env":        s.env,
-		"Labels": map[string]string{
-			"io.knotra.engine":   r.EngineID,
-			"io.knotra.run":      req.RunID,
-			"io.knotra.instance": req.InstanceID,
-		},
+		"Labels":     s.labels,
 		"HostConfig": map[string]any{
 			"ReadonlyRootfs": true,
 			"CapDrop":        []string{"ALL"},
@@ -387,7 +425,8 @@ func (r *Runner) newSandbox(ctx context.Context, req Request, profile contract.S
 	var created struct {
 		ID string `json:"Id"`
 	}
-	if err = s.docker.json(ctx, "POST", "/containers/create", body, &created); err != nil {
+	s.creationAttempted = true
+	if err = s.docker.json(ctx, "POST", "/containers/create?name="+url.QueryEscape(resource.Name()), body, &created); err != nil {
 		return nil, err
 	}
 	s.id = created.ID
@@ -429,7 +468,7 @@ func (r *Runner) installFirewall(ctx context.Context, s *sandbox, ips []string, 
 	body := map[string]any{
 		"Image":      image,
 		"Entrypoint": []string{"/bin/sh", "-c", script},
-		"Labels":     map[string]string{"io.knotra.engine": r.EngineID},
+		"Labels":     s.labels,
 		"HostConfig": map[string]any{
 			"NetworkMode":    "container:" + s.id,
 			"ReadonlyRootfs": true,
@@ -443,7 +482,7 @@ func (r *Runner) installFirewall(ctx context.Context, s *sandbox, ips []string, 
 	var created struct {
 		ID string `json:"Id"`
 	}
-	if err := s.docker.json(ctx, "POST", "/containers/create", body, &created); err != nil {
+	if err := s.docker.json(ctx, "POST", "/containers/create?name="+url.QueryEscape(s.resource.Name()+"-firewall"), body, &created); err != nil {
 		return err
 	}
 	defer func() {
@@ -473,13 +512,13 @@ func (s *sandbox) helper(ctx context.Context, operation string, payload any) (js
 	if err != nil {
 		return nil, err
 	}
-	defer os.Remove(file.Name())
+	defer func() { _ = os.Remove(file.Name()) }()
 	if err = file.Chmod(0444); err != nil {
-		file.Close()
+		_ = file.Close()
 		return nil, err
 	}
 	if _, err = file.Write(b); err != nil {
-		file.Close()
+		_ = file.Close()
 		return nil, err
 	}
 	if err = file.Close(); err != nil {
@@ -504,7 +543,7 @@ func (s *sandbox) helper(ctx context.Context, operation string, payload any) (js
 	if err != nil {
 		return nil, s.diagnose(err)
 	}
-	defer res.Body.Close()
+	defer func() { _ = res.Body.Close() }()
 	stdout, _, err := demultiplex(res.Body, 360<<20)
 	if err != nil {
 		return nil, s.diagnose(err)
@@ -536,7 +575,7 @@ func demultiplex(reader io.Reader, limit int64) ([]byte, []byte, error) {
 
 	for {
 		_, err := io.ReadFull(reader, header[:])
-		if err == io.EOF {
+		if errors.Is(err, io.EOF) {
 			return stdout.Bytes(), stderr.Bytes(), nil
 		}
 		if err != nil {
@@ -545,7 +584,7 @@ func demultiplex(reader io.Reader, limit int64) ([]byte, []byte, error) {
 		size := int64(binary.BigEndian.Uint32(header[4:]))
 		total += size
 		if total > limit {
-			return nil, nil, fmt.Errorf("Docker output exceeds limit")
+			return nil, nil, fmt.Errorf("docker output exceeds limit")
 		}
 		var out io.Writer
 
@@ -576,7 +615,7 @@ func (r *Runner) nodeSandbox(ctx context.Context, req Request) (*sandbox, error)
 		if strings.HasPrefix(name, "KNOTRA_") {
 			return nil, fmt.Errorf("reserved environment variable")
 		}
-		text := ""
+		var text string
 		if value.Value != nil {
 			text = *value.Value
 		} else {
@@ -649,7 +688,7 @@ func (r *Runner) code(ctx context.Context, req Request) (contract.Values, error)
 	if err != nil {
 		return nil, &Failure{Code: "SANDBOX_FAILED", Message: err.Error(), Retryable: true}
 	}
-	defer s.close()
+	defer func() { _ = s.close() }()
 	if err = r.Hooks.Reserve(ctx, "tool"); err != nil {
 		return nil, err
 	}

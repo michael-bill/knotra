@@ -42,6 +42,55 @@ jobs:
       - run: cargo fmt --manifest-path app/src-tauri/Cargo.toml -- --check
       - run: cargo test --locked --manifest-path app/src-tauri/Cargo.toml
 
+  engine-acceptance:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      COMPOSE_PROJECT_NAME: knotra-desktop-ci
+      KNOTRA_TEST_DESKTOP: '1'
+      KNOTRA_TEST_DATABASE_URL: postgres://knotra:knotra-development@127.0.0.1:25432/knotra?sslmode=disable
+      KNOTRA_TEST_TEMPORAL: 127.0.0.1:27233
+      KNOTRA_TEST_FIREWALL_IMAGE: knotra-firewall:dev
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Linux native prerequisites
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev
+      - run: npm install --global bun@1.3.10
+      - run: bun install --frozen-lockfile
+        working-directory: app
+      - run: bun run build
+        working-directory: app
+      - run: bunx playwright install --with-deps chromium
+        working-directory: app
+      - run: rustup show
+      - name: Compile native acceptance before its runtime deadline
+        run: cargo test --locked --manifest-path app/src-tauri/Cargo.toml --no-run
+      - run: docker compose --profile temporal up -d --wait --wait-timeout 120
+      - run: make helper firewall
+      - run: docker pull python:3.13-alpine
+      - name: Native and browser clients against Temporal and River
+        run: |
+          export KNOTRA_TEST_HELPER="$PWD/.knotra/bin/sandbox-helper"
+          go test -mod=readonly -race -count=1 -timeout=15m ./internal/integration -run '^TestDesktopLiteralBackendCompatibility$' -v
+      - name: Acceptance and infrastructure logs
+        if: failure()
+        run: |
+          docker compose --profile temporal logs --no-color --tail=100
+          if test -d .knotra/integration-work; then
+            rg --files --hidden --no-ignore .knotra/integration-work -g '*.log' -g error-context.md | xargs -r tail -n 100
+          fi
+      - name: Clean up test infrastructure
+        if: always()
+        run: docker compose --profile temporal down --volumes
+
   contract-script:
     runs-on: ubuntu-latest
     timeout-minutes: 5

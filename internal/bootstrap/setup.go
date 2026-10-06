@@ -24,8 +24,8 @@ import (
 )
 
 type Config struct {
-	Dir, Provider, Model, HelperPath           string
-	PostgresPort, TemporalPort, TemporalUIPort int
+	Dir, Provider, Model, HelperPath string
+	PostgresPort                     int
 }
 
 type Setup struct {
@@ -93,12 +93,8 @@ func (s *Setup) Validate() error {
 	if s.Config.Model == "" {
 		return fmt.Errorf("--model is required for cloud providers")
 	}
-	ports := map[int]bool{}
-	for _, port := range []int{s.Config.PostgresPort, s.Config.TemporalPort, s.Config.TemporalUIPort} {
-		if port < 1 || port > 65535 || ports[port] {
-			return fmt.Errorf("infrastructure ports must be distinct numbers from 1 to 65535")
-		}
-		ports[port] = true
+	if s.Config.PostgresPort < 1 || s.Config.PostgresPort > 65535 {
+		return fmt.Errorf("PostgreSQL port must be from 1 to 65535")
 	}
 	if s.Config.Dir == "" {
 		return fmt.Errorf("quickstart directory is required")
@@ -123,7 +119,7 @@ func (s *Setup) Doctor(ctx context.Context) error {
 	}
 	info := strings.Fields(string(data))
 	if len(info) != 2 || info[0] != "linux" {
-		return fmt.Errorf("Docker must run Linux containers; on Windows switch Docker Desktop to Linux containers")
+		return fmt.Errorf("docker must run Linux containers; on Windows switch Docker Desktop to Linux containers")
 	}
 	s.arch = info[1]
 	switch s.arch {
@@ -178,15 +174,15 @@ func (s *Setup) Doctor(ctx context.Context) error {
 		if err != nil {
 			return fmt.Errorf("start Ollama first (ollama serve)")
 		}
-		defer res.Body.Close()
+		defer func() { _ = res.Body.Close() }()
 		if res.StatusCode != http.StatusOK {
-			return fmt.Errorf("Ollama returned HTTP %d", res.StatusCode)
+			return fmt.Errorf("ollama returned HTTP %d", res.StatusCode)
 		}
 		var tags struct {
 			Models []struct{ Name, Model string }
 		}
 		if json.NewDecoder(io.LimitReader(res.Body, 4<<20)).Decode(&tags) != nil {
-			return fmt.Errorf("Ollama returned an invalid model catalog")
+			return fmt.Errorf("ollama returned an invalid model catalog")
 		}
 		found := false
 		for _, model := range tags.Models {
@@ -196,7 +192,7 @@ func (s *Setup) Doctor(ctx context.Context) error {
 		}
 		s.modelInstalled = found
 		if !found {
-			fmt.Fprintf(s.Out, "Model %s will be downloaded on startup.\n", s.Config.Model)
+			_, _ = fmt.Fprintf(s.Out, "Model %s will be downloaded on startup.\n", s.Config.Model)
 			if _, err := exec.LookPath("ollama"); err != nil {
 				return fmt.Errorf("install the Ollama CLI to download %s, or select an installed --model", s.Config.Model)
 			}
@@ -207,7 +203,7 @@ func (s *Setup) Doctor(ctx context.Context) error {
 			return fmt.Errorf("set %s in the engine environment before starting", key)
 		}
 	}
-	fmt.Fprintf(s.Out, "Ready: Docker %s, Compose, sandbox helper and %s.\n", s.arch, s.Config.Provider)
+	_, _ = fmt.Fprintf(s.Out, "Ready: Docker %s, Compose, sandbox helper and %s.\n", s.arch, s.Config.Provider)
 	return nil
 }
 
@@ -265,7 +261,7 @@ func (s *Setup) WriteOnce() (settings, error) {
 	if err = json.Unmarshal(data, &state); err != nil {
 		return state, fmt.Errorf("invalid quickstart settings: %w", err)
 	}
-	if state.Config.Provider != s.Config.Provider || state.Config.Model != s.Config.Model || state.Config.PostgresPort != s.Config.PostgresPort || state.Config.TemporalPort != s.Config.TemporalPort || state.Config.TemporalUIPort != s.Config.TemporalUIPort {
+	if state.Config.Provider != s.Config.Provider || state.Config.Model != s.Config.Model || state.Config.PostgresPort != s.Config.PostgresPort {
 		return state, fmt.Errorf("this directory uses a different provider, model or ports; reuse its flags or choose another --dir")
 	}
 	if state.Password == "" || state.OperationID == "" {
@@ -331,7 +327,7 @@ func writeNewMode(name string, data []byte, mode os.FileMode) error {
 	if err != nil {
 		return err
 	}
-	defer os.Remove(file.Name())
+	defer func() { _ = os.Remove(file.Name()) }()
 	if err = file.Chmod(mode); err == nil {
 		_, err = file.Write(data)
 	}
@@ -364,22 +360,22 @@ func (s *Setup) StartInfrastructure(ctx context.Context) (string, string, error)
 	}
 	env := []string{
 		"KNOTRA_DEV_DB_PASSWORD=" + state.Password,
-		fmt.Sprintf("KNOTRA_PG_PORT=%d", s.Config.PostgresPort), fmt.Sprintf("KNOTRA_TEMPORAL_PORT=%d", s.Config.TemporalPort), fmt.Sprintf("KNOTRA_TEMPORAL_UI_PORT=%d", s.Config.TemporalUIPort),
+		fmt.Sprintf("KNOTRA_PG_PORT=%d", s.Config.PostgresPort),
 	}
-	fmt.Fprintln(s.Out, "Starting persistent PostgreSQL and Temporal development services…")
+	_, _ = fmt.Fprintln(s.Out, "Starting persistent PostgreSQL development service…")
 	if _, err = s.run(ctx, s.compose, args, env); err != nil {
 		return "", "", fmt.Errorf("infrastructure startup failed; check port conflicts and Docker logs: %w", err)
 	}
 	for _, image := range []string{"python:3.13-alpine", "node:22-alpine"} {
 		if _, err = s.run(ctx, "docker", []string{"image", "inspect", image}, nil); err != nil {
-			fmt.Fprintf(s.Out, "Downloading %s…\n", image)
+			_, _ = fmt.Fprintf(s.Out, "Downloading %s…\n", image)
 			if _, err = s.run(ctx, "docker", []string{"pull", image}, nil); err != nil {
 				return "", "", err
 			}
 		}
 	}
 	if s.Config.Provider == "ollama" && !s.modelInstalled {
-		fmt.Fprintf(s.Out, "Ensuring model %s is installed…\n", s.Config.Model)
+		_, _ = fmt.Fprintf(s.Out, "Ensuring model %s is installed…\n", s.Config.Model)
 		if _, err = s.run(ctx, "ollama", []string{"pull", s.Config.Model}, nil); err != nil {
 			return "", "", err
 		}

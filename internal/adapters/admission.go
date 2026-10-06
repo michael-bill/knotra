@@ -43,7 +43,7 @@ func (r *Runner) modelInfo(ctx context.Context, profile contract.Profile, c cont
 	if err != nil {
 		return fmt.Errorf("model discovery request failed")
 	}
-	defer res.Body.Close()
+	defer func() { _ = res.Body.Close() }()
 	if res.StatusCode != 200 {
 		return fmt.Errorf("model discovery returned HTTP %d", res.StatusCode)
 	}
@@ -84,7 +84,7 @@ func (r *Runner) modelDigest(ctx context.Context, profile contract.Profile, c co
 		}
 	}
 
-	return "", fmt.Errorf("Ollama model %q is not installed", c.Model)
+	return "", fmt.Errorf("ollama model %q is not installed", c.Model)
 }
 
 func (r *Runner) prepareModels(ctx context.Context, req Request) error {
@@ -202,7 +202,7 @@ func (r *Runner) prepareSandboxes(ctx context.Context, plan *contract.Plan) erro
 	}
 	sum := sha256.Sum256(helper)
 	plan.Runtime.HelperSHA256 = hex.EncodeToString(sum[:])
-	d, err := r.docker()
+	d, err := r.docker(ctx)
 	if err != nil {
 		return err
 	}

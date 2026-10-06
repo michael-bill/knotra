@@ -38,9 +38,9 @@ keys in PowerShell with `$env:OPENAI_API_KEY = 'YOUR_KEY'` or `$env:ANTHROPIC_AP
 Repeat the command with the same `--dir`, `--provider`, `--model`, and ports. Settings, DB password,
 first operation ID, profile, and examples are written once; your edits are not overwritten. Services
 and volumes remain after Ctrl-C. For another profile use a separate directory and free
-`--postgres-port`, `--temporal-port`, `--temporal-ui-port`, `--listen`. `--no-run` starts the engine
-without greeting. `--cors-origin http://127.0.0.1:1420` is needed for preview. Engine data lies in
-`engine/`, logs in `engine.log`; keep this directory and both volumes together.
+`--postgres-port`, `--listen`. `--no-run` starts the engine without greeting.
+`--cors-origin http://127.0.0.1:1420` is needed for preview. Engine data lies in `engine/`, logs in
+`engine.log`; keep this directory and both volumes together.
 
 The persistent directory must be accessible to Docker. On macOS, choose a path shared with Colima or
 Docker Desktop. Quickstart copies the verified sandbox helper into this directory so execution does
@@ -104,16 +104,15 @@ Linux-helper in `.knotra/bin/sandbox-helper`. A sandbox profile may choose anoth
 does not require Python or shell, but the pipeline program itself must be present in the chosen
 image.
 
-## Variant A: Existing PostgreSQL and Temporal
+## Variant A: Existing PostgreSQL
 
 Use a separate Knotra database, not an application's foreign database. Tables are created by the
-engine at startup. Temporal namespace must already exist.
+engine at startup. River is the default execution backend.
 
 ```sh
 export KNOTRA_DATABASE_URL='postgres://127.0.0.1:5432/knotra?sslmode=disable'
 bin/knotra serve \
-  --profile examples/local/profile.yaml \
-  --temporal-address 127.0.0.1:7233
+  --profile examples/local/profile.yaml
 ```
 
 PostgreSQL user and password are defined by your installation. Model tokens and MCP are set via
@@ -128,23 +127,17 @@ on Windows, a local named pipe. Remote TCP Docker endpoints are not supported.
 docker compose up -d --wait
 export KNOTRA_DATABASE_URL='postgres://knotra:knotra-development@127.0.0.1:25432/knotra?sslmode=disable'
 bin/knotra serve \
-  --profile examples/local/profile.yaml \
-  --temporal-address 127.0.0.1:27233
+  --profile examples/local/profile.yaml
 ```
 
 If Homebrew installed a separate `docker-compose`, use this name instead of `docker compose`; file
-format is identical. Compose publishes ports only on loopback: PostgreSQL — `25432`, Temporal gRPC —
-`27233`, Temporal UI — `28233`. Variables `KNOTRA_PG_PORT`, `KNOTRA_TEMPORAL_PORT`,
-`KNOTRA_TEMPORAL_UI_PORT` override them. `KNOTRA_DEV_DB_PASSWORD` changes password on first database
-creation; update the connection string accordingly.
+format is identical. Default Compose starts PostgreSQL on loopback port `25432`; `KNOTRA_PG_PORT`
+overrides it. `KNOTRA_DEV_DB_PASSWORD` changes the password on first creation; update the connection
+string accordingly.
 
-Compose uses pinned digest of official PostgreSQL 18.6 and Temporal CLI 1.9.1. PostgreSQL volume is
-mounted in `/var/lib/postgresql`, as required by official PostgreSQL 18 image.
-[Image documentation](https://hub.docker.com/_/postgres)
-
-Temporal here is **development server with SQLite persistence in named volume**. It saves history
-between container restarts but is not intended for production. Mode properties and `--db-filename`
-are described in [Temporal documentation](https://docs.temporal.io/cli/command-reference/server).
+Compose pins PostgreSQL 18.6 and mounts its volume in `/var/lib/postgresql`. Temporal is optional
+for legacy comparison tests: `docker compose --profile temporal up -d --wait` and
+`serve --backend temporal --temporal-address 127.0.0.1:27233`.
 
 ```sh
 docker compose stop
@@ -213,7 +206,6 @@ For browser preview add at engine startup:
 ```sh
 bin/knotra serve \
   --profile examples/local/profile.yaml \
-  --temporal-address 127.0.0.1:27233 \
   --cors-origin http://127.0.0.1:1420
 ```
 
@@ -233,6 +225,82 @@ external operations. Temporal stores execution history. Catalog `--data-dir` sto
 and offloaded payload data from Temporal, as well as sandbox temporary materials. Recovery requires
 **all three storages**. A single PostgreSQL copy is insufficient. Do not delete `.knotra` while
 history is needed.
+
+For the default River backend, execution records and River delivery live in PostgreSQL. Its durable
+files are `artifacts/` and `outcomes/` under `--shared-data-dir`, which defaults to `--data-dir`.
+Keep complete directories, including outcome files whose publication has not committed, MCP
+initialization/session evidence and private artifact bytes. River job retention does not authorize
+deleting these files or Knotra history. A River-only engine does not need Temporal storage; a
+mixed-backend engine still needs all stores described above.
+
+### River backup and restore
+
+The supported initial procedure uses a maintenance stop on the single engine host. Stop admission
+and the API/worker process, wait for process exit, and keep all other writers stopped until the
+database dump and file archives finish. If an engine crashed, confirm the process has exited before
+backing up its surviving database and files. An HTTP outage alone does not prove that writers have
+stopped. This procedure preserves pending evidence without needing a distributed snapshot protocol.
+
+Record the exact Knotra release/binary, PostgreSQL major version, engine ID (`GET /v1/info` before
+stopping), host ID, data paths, profile/credential references, helper and image versions with the
+backup. Restore with that Knotra release and execution format; an older binary or another backend is
+not a rollback procedure. Preserve credentials/TLS/configuration through the deployment's existing
+secure backup mechanism. Use PostgreSQL client tools matching the server major version.
+
+With writers stopped, set these paths and libpq connection settings for the existing database:
+
+```sh
+set -eu
+umask 077
+backup_dir=/absolute/path/to/new-backup
+local_dir=/absolute/path/to/engine-data
+shared_dir=/absolute/path/to/shared-data
+# Configure PGHOST, PGPORT, PGDATABASE, PGUSER and a protected PGPASSFILE.
+mkdir -m 700 "$backup_dir"
+pg_dump --format=custom --no-owner --no-acl > "$backup_dir/database.dump"
+tar -cf "$backup_dir/local.tar" -C "$local_dir" .
+if [ "$shared_dir" != "$local_dir" ]; then
+  tar -cf "$backup_dir/shared.tar" -C "$shared_dir" .
+fi
+```
+
+Archive the whole application database, including River tables, migration metadata, command receipts
+and ownership records. The commands above intentionally omit database ownership and grants:
+provision the same application role and database access separately. Mark/copy a backup as complete
+only after every command succeeds, and retain the matching release/configuration inventory with it.
+Do not restart writers midway through making the archives.
+
+Restore into an empty database created from `template0` and fresh empty directories, with the engine
+still stopped. Set libpq settings to the restoration target, provision its application role, and run
+as that role:
+
+```sh
+set -eu
+umask 077
+pg_restore --no-owner --no-acl --exit-on-error --single-transaction \
+  --dbname="$PGDATABASE" "$backup_dir/database.dump"
+mkdir -m 700 "$local_dir"
+tar -xpf "$backup_dir/local.tar" -C "$local_dir"
+if [ "$shared_dir" != "$local_dir" ]; then
+  mkdir -m 700 "$shared_dir"
+  tar -xpf "$backup_dir/shared.tar" -C "$shared_dir"
+fi
+```
+
+Keep the engine stopped if either database or file restoration fails. Do not merge an archive into
+an active/newer engine. Preserve file contents, permissions and modification times. Start the
+matching binary with the restored database and data directories, original host ID, and compatible
+profiles/helpers/images. Check the original engine ID, waiting request IDs/deadlines, downloaded
+artifact bytes and SSE history. Lease reconciliation imports saved results idempotently; missing
+external evidence requires explicit outcome resolution and never justifies automatic repetition.
+
+The PostgreSQL commands follow its documented
+[custom dump](https://www.postgresql.org/docs/18/backup-dump.html) and
+[transactional restore](https://www.postgresql.org/docs/18/app-pgrestore.html) procedures. The
+integration check `TestRiverBackupRestoresHumanAndUncommittedOutcome` exercises actual `pg_dump`,
+`tar`, schema/data loss, `pg_restore`, restored publication, CLI human responses, exact SSE history
+and a second engine restart. It covers a stopped single-host River engine; online snapshots, network
+filesystem faults, multi-host recovery and mixed-backend backups need separate acceptance.
 
 The current release is one API/worker process on one host. If the worker moves, it needs the same
 saved data, profile references, and compatible helpers/images. Multiple hosts with independent local
@@ -268,6 +336,42 @@ attempts, HTTP request counter and their duration can be sent via OTLP/HTTP by s
 `OTEL_EXPORTER_OTLP_METRICS_ENDPOINT`. Without an explicit endpoint export is disabled.
 `OTEL_SDK_DISABLED=true` disables it. Prompts, request bodies, input values, and credentials are not
 included in attributes.
+
+The River runtime also exports these instruments through the same OTLP metric reader:
+
+| Instrument prefix `knotra.scheduler.`      | Meaning                                                                                                                                   |
+| ------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| `dirty_run.age`                            | Oldest live run's unconsumed wake, in seconds; coalesced wakes retain the first timestamp.                                                |
+| `ready_job.age`                            | Oldest due available/retryable/scheduled delivery in this engine's queues, in seconds. Future jobs are excluded.                          |
+| `steps`                                    | Pure scheduler calls attempted, including preparation and transactions that subsequently roll back.                                       |
+| `lease.expired`                            | Currently claimed attempts whose database lease has expired.                                                                              |
+| `outcome.pending`, `outcome.pending.age`   | Unimported immutable envelope count and oldest file age in seconds, including fenced/terminal attempts. Files not yet saved are excluded. |
+| `outcome.unknown`                          | Instances currently waiting for an outcome resolution.                                                                                    |
+| `slot.reservations`                        | Unreleased scope reservations; nested attempts can reserve more than one scope.                                                           |
+| `timer.lag`                                | Oldest unconsumed due timer for a live run, in seconds.                                                                                   |
+| `publication.failures`, `cleanup.failures` | Failed publication transactions and cleanup deliveries/session scans in this process, including retries.                                  |
+
+Gauges have no run, instance, provider or credential labels. Collection uses a one-second database
+deadline and reads envelope metadata without loading outputs. A database or storage error fails
+collection instead of exporting healthy zeros. Collection runs only when a metric reader is
+configured; it adds no database poll to the maintenance loop. Pending-file scans remain proportional
+to unimported outcome keys and should be measured before increasing that backlog substantially.
+
+River traces include delivery/job, engine and host identities. Claimed execution, outcome
+publication and claimed cleanup retain run, instance, attempt, owning worker and ownership
+generation; `knotra.actor.id` identifies the process handling recovery when the owner belongs to a
+previous incarnation. Advance spans carry the wake generation, and execution/cleanup deliveries
+carry their dispatch generation. Deliveries that acquire no ownership retain only their delivery
+identities. Each delivery starts its own trace; node and publication spans are children of that
+delivery. Command advancement retains the HTTP request's trace context.
+
+Operation intent, physical-call admission and response confirmation are trace events with
+`knotra.operation.id`. Successful execution boundaries are logged at debug level; failures are
+logged at warning level with identity and error type. Use `serve --debug` for successful boundary
+logs. Payloads, prompts, provider reasoning, credentials, endpoint URLs and raw error text are
+excluded. River's delivery error journal stores the sanitized error type, retaining
+cancellation/snooze classification internally. Panic values are sanitized before River handles them.
+Complete outputs and confirmed operation responses remain in their existing execution stores.
 
 One engine ID is served by one process: ownership is secured by a separate PostgreSQL connection.
 This is a deployment limitation, not parallel run capability. The engine simultaneously executes

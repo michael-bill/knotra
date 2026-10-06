@@ -1,0 +1,834 @@
+{
+  "complete": true,
+  "created_at": "2026-10-06T09:57:52Z",
+  "platform": "macOS-27.0.1-arm64-arm-64bit-Mach-O",
+  "logical_cpus": 10,
+  "docker": {
+    "cpus": 10,
+    "memory_bytes": 8393289728,
+    "server_version": "29.4.0"
+  },
+  "postgres_version": "PostgreSQL 18.0 (Debian 18.0-1.pgdg13+3) on aarch64-unknown-linux-gnu, compiled by gcc (Debian 14.2.0-19) 14.2.0, 64-bit",
+  "binary_sha256": "0c38c143ed26cfbc4e11d96bff98b66a7e104ab6a689bc438882ec0fe99b74ed",
+  "git_head": "cba4082e990940b2b291fa0664e32f8215823ffc",
+  "git_dirty": true,
+  "sample_interval_seconds": 1,
+  "fixture_model_delay_seconds": 0.01,
+  "poll_interval_seconds": 0.25,
+  "repeats": 3,
+  "profile_sql": false,
+  "requested_backends": ["temporal", "river"],
+  "requested_workloads": ["short_dag", "large_controls", "human_wait"],
+  "idle_seconds": 15,
+  "human_wait_seconds": 60,
+  "infrastructure_storage_paths": {
+    "knotra-scheduler-benchmark-pg": "/var/lib/postgresql/18/docker",
+    "knotra-scheduler-benchmark-temporal": "/home/temporal"
+  },
+  "work_directory": "/Users/kxrxh/Develop/knotra/.knotra/benchmarks/work-fc5eb7e6de7b40f598548eea2bfb09ea",
+  "containers": {
+    "knotra-scheduler-benchmark-pg": {
+      "image": "postgres@sha256:41fc5342eefba6cc2ccda736aaf034bbbb7c3df0fdb81516eba1ba33f360162c",
+      "image_id": "sha256:5f6e92239cac9f3549f99dfc0152362e2d0d071a04f7159082c687e09ea989da",
+      "memory_limit_bytes": 536870912,
+      "pids_limit": 128
+    },
+    "knotra-scheduler-benchmark-temporal": {
+      "image": "temporalio/temporal:1.9.1@sha256:ad4c82c97bd12b417d1ea942610dbcd511afb250c4d5ed26c694009533df447e",
+      "image_id": "sha256:0b0fe9806c4426a737c2cce630339919b3fdd27d9a3799da6e0df29daabf2a9e",
+      "memory_limit_bytes": 2147483648,
+      "pids_limit": 512
+    }
+  },
+  "backends": [
+    {
+      "backend": "temporal",
+      "measurements": [
+        {
+          "workload": "idle",
+          "repeat": 1,
+          "elapsed_seconds": 15.005163583991816,
+          "samples": 15,
+          "maximum_sample_gap_seconds": 1.1322737080045044,
+          "deployment_peak_memory_bytes": 235229184,
+          "deployment_cpu_seconds": 0.8150139999999999,
+          "engine_peak_rss_bytes": 47300608,
+          "engine_cpu_seconds": 0.04999999999999999,
+          "database_connection_peak": 2,
+          "storage_bytes": 0,
+          "database_deltas": {
+            "wal_bytes": 244472,
+            "query_calls": 243,
+            "query_exec_ms": 33.25421199999995,
+            "transactions": 128,
+            "schema_bytes": 0
+          },
+          "infrastructure": {
+            "knotra-scheduler-benchmark-pg": {
+              "peak_working_set_bytes": 43065344,
+              "cpu_seconds": 0.4607809999999999,
+              "allocated_storage_before_bytes": 49942528,
+              "allocated_storage_after_bytes": 49999872,
+              "allocated_storage_growth_bytes": 57344
+            },
+            "knotra-scheduler-benchmark-temporal": {
+              "peak_working_set_bytes": 144863232,
+              "cpu_seconds": 0.304233,
+              "allocated_storage_before_bytes": 679936,
+              "allocated_storage_after_bytes": 679936,
+              "allocated_storage_growth_bytes": 0
+            }
+          }
+        },
+        {
+          "workload": "short_dag",
+          "repeat": 1,
+          "admission_ms": 6.201874988619238,
+          "admission_to_terminal_seconds": 4.8629042909888085,
+          "run_id": "711b1551-8571-46f3-8cba-4e34f5dfecf9",
+          "nodes": 64,
+          "physical_model_calls": 64,
+          "model_debits": 64,
+          "first_physical_call_ms": 2817.5035410095006,
+          "elapsed_seconds": 4.876168666000012,
+          "samples": 6,
+          "maximum_sample_gap_seconds": 1.0667749999847729,
+          "deployment_peak_memory_bytes": 310251520,
+          "deployment_cpu_seconds": 2.3978479999999998,
+          "engine_peak_rss_bytes": 73203712,
+          "engine_cpu_seconds": 0.53,
+          "database_connection_peak": 8,
+          "storage_bytes": 43831,
+          "database_deltas": {
+            "wal_bytes": 1003152,
+            "query_calls": 3654,
+            "query_exec_ms": 676.2512879999998,
+            "transactions": 686,
+            "schema_bytes": 1007616
+          },
+          "infrastructure": {
+            "knotra-scheduler-benchmark-pg": {
+              "peak_working_set_bytes": 59686912,
+              "cpu_seconds": 0.452604,
+              "allocated_storage_before_bytes": 49999872,
+              "allocated_storage_after_bytes": 51011584,
+              "allocated_storage_growth_bytes": 1011712
+            },
+            "knotra-scheduler-benchmark-temporal": {
+              "peak_working_set_bytes": 177360896,
+              "cpu_seconds": 1.415244,
+              "allocated_storage_before_bytes": 679936,
+              "allocated_storage_after_bytes": 1310720,
+              "allocated_storage_growth_bytes": 630784
+            }
+          },
+          "nodes_per_second": 13.12505870567026
+        },
+        {
+          "workload": "short_dag",
+          "repeat": 2,
+          "admission_ms": 8.082082989858463,
+          "admission_to_terminal_seconds": 4.591249624994816,
+          "run_id": "9ad10b37-bbbe-4505-b506-8704e37ee3ff",
+          "nodes": 64,
+          "physical_model_calls": 64,
+          "model_debits": 64,
+          "first_physical_call_ms": 2643.4246249846183,
+          "elapsed_seconds": 4.600281874998473,
+          "samples": 7,
+          "maximum_sample_gap_seconds": 1.0642076670192182,
+          "deployment_peak_memory_bytes": 329703424,
+          "deployment_cpu_seconds": 2.324703000000001,
+          "engine_peak_rss_bytes": 73547776,
+          "engine_cpu_seconds": 0.48,
+          "database_connection_peak": 8,
+          "storage_bytes": 43831,
+          "database_deltas": {
+            "wal_bytes": 1112936,
+            "query_calls": 3645,
+            "query_exec_ms": 578.9336060000011,
+            "transactions": 1064,
+            "schema_bytes": 679936
+          },
+          "infrastructure": {
+            "knotra-scheduler-benchmark-pg": {
+              "peak_working_set_bytes": 60772352,
+              "cpu_seconds": 0.42024700000000026,
+              "allocated_storage_before_bytes": 51011584,
+              "allocated_storage_after_bytes": 51740672,
+              "allocated_storage_growth_bytes": 729088
+            },
+            "knotra-scheduler-benchmark-temporal": {
+              "peak_working_set_bytes": 196505600,
+              "cpu_seconds": 1.4244560000000006,
+              "allocated_storage_before_bytes": 1310720,
+              "allocated_storage_after_bytes": 1945600,
+              "allocated_storage_growth_bytes": 634880
+            }
+          },
+          "nodes_per_second": 13.912190978519387
+        },
+        {
+          "workload": "short_dag",
+          "repeat": 3,
+          "admission_ms": 5.6968329881783575,
+          "admission_to_terminal_seconds": 5.870929958007764,
+          "run_id": "56396317-f875-42ef-b553-0d2fb8d333d0",
+          "nodes": 64,
+          "physical_model_calls": 64,
+          "model_debits": 64,
+          "first_physical_call_ms": 3300.3838330041617,
+          "elapsed_seconds": 5.877355042001,
+          "samples": 8,
+          "maximum_sample_gap_seconds": 1.0761254159733653,
+          "deployment_peak_memory_bytes": 343810048,
+          "deployment_cpu_seconds": 2.898332,
+          "engine_peak_rss_bytes": 72925184,
+          "engine_cpu_seconds": 0.52,
+          "database_connection_peak": 10,
+          "storage_bytes": 43831,
+          "database_deltas": {
+            "wal_bytes": 1008464,
+            "query_calls": 3684,
+            "query_exec_ms": 845.6464750000002,
+            "transactions": 877,
+            "schema_bytes": 647168
+          },
+          "infrastructure": {
+            "knotra-scheduler-benchmark-pg": {
+              "peak_working_set_bytes": 66727936,
+              "cpu_seconds": 0.5250699999999999,
+              "allocated_storage_before_bytes": 51740672,
+              "allocated_storage_after_bytes": 69169152,
+              "allocated_storage_growth_bytes": 17428480
+            },
+            "knotra-scheduler-benchmark-temporal": {
+              "peak_working_set_bytes": 204156928,
+              "cpu_seconds": 1.853262,
+              "allocated_storage_before_bytes": 1945600,
+              "allocated_storage_after_bytes": 2600960,
+              "allocated_storage_growth_bytes": 655360
+            }
+          },
+          "nodes_per_second": 10.88925197518961
+        },
+        {
+          "workload": "large_controls",
+          "repeat": 1,
+          "admission_ms": 97.7886249893345,
+          "admission_to_terminal_seconds": 72.29190691598342,
+          "run_id": "da1eda5d-a0f7-4912-bc4c-c7e53b051ab6",
+          "nodes": 1004,
+          "physical_model_calls": 4,
+          "model_debits": 4,
+          "first_physical_call_ms": 51286.2643749977,
+          "elapsed_seconds": 72.4586071659869,
+          "samples": 70,
+          "maximum_sample_gap_seconds": 1.223054083995521,
+          "deployment_peak_memory_bytes": 527781888,
+          "deployment_cpu_seconds": 32.075151,
+          "engine_peak_rss_bytes": 205307904,
+          "engine_cpu_seconds": 10.53,
+          "database_connection_peak": 10,
+          "storage_bytes": 11095747,
+          "database_deltas": {
+            "wal_bytes": 7176984,
+            "query_calls": 23474,
+            "query_exec_ms": 3864.7786769999966,
+            "transactions": 4827,
+            "schema_bytes": 4136960
+          },
+          "infrastructure": {
+            "knotra-scheduler-benchmark-pg": {
+              "peak_working_set_bytes": 96825344,
+              "cpu_seconds": 4.2889409999999994,
+              "allocated_storage_before_bytes": 69169152,
+              "allocated_storage_after_bytes": 73420800,
+              "allocated_storage_growth_bytes": 4251648
+            },
+            "knotra-scheduler-benchmark-temporal": {
+              "peak_working_set_bytes": 237727744,
+              "cpu_seconds": 17.25621,
+              "allocated_storage_before_bytes": 2600960,
+              "allocated_storage_after_bytes": 6836224,
+              "allocated_storage_growth_bytes": 4235264
+            }
+          },
+          "nodes_per_second": 13.856186852999457
+        },
+        {
+          "workload": "large_controls",
+          "repeat": 2,
+          "admission_ms": 98.82741700857878,
+          "admission_to_terminal_seconds": 67.32912783400388,
+          "run_id": "6de4830d-bc5e-499a-9807-01ca2472111c",
+          "nodes": 1004,
+          "physical_model_calls": 4,
+          "model_debits": 4,
+          "first_physical_call_ms": 50568.89837500057,
+          "elapsed_seconds": 67.46005337501992,
+          "samples": 66,
+          "maximum_sample_gap_seconds": 1.1248702089942526,
+          "deployment_peak_memory_bytes": 538574848,
+          "deployment_cpu_seconds": 30.937329,
+          "engine_peak_rss_bytes": 214368256,
+          "engine_cpu_seconds": 10.18,
+          "database_connection_peak": 10,
+          "storage_bytes": 14615305,
+          "database_deltas": {
+            "wal_bytes": 6976688,
+            "query_calls": 23319,
+            "query_exec_ms": 3868.5357730000105,
+            "transactions": 4546,
+            "schema_bytes": 4227072
+          },
+          "infrastructure": {
+            "knotra-scheduler-benchmark-pg": {
+              "peak_working_set_bytes": 97837056,
+              "cpu_seconds": 4.036183,
+              "allocated_storage_before_bytes": 73420800,
+              "allocated_storage_after_bytes": 77680640,
+              "allocated_storage_growth_bytes": 4259840
+            },
+            "knotra-scheduler-benchmark-temporal": {
+              "peak_working_set_bytes": 238055424,
+              "cpu_seconds": 16.721145999999997,
+              "allocated_storage_before_bytes": 6836224,
+              "allocated_storage_after_bytes": 11079680,
+              "allocated_storage_growth_bytes": 4243456
+            }
+          },
+          "nodes_per_second": 14.882881791074531
+        },
+        {
+          "workload": "large_controls",
+          "repeat": 3,
+          "admission_ms": 97.2269170160871,
+          "admission_to_terminal_seconds": 68.79228604200762,
+          "run_id": "97fc8baf-5eee-4c8a-8547-bfcffdd7bcae",
+          "nodes": 1004,
+          "physical_model_calls": 4,
+          "model_debits": 4,
+          "first_physical_call_ms": 50545.54150000331,
+          "elapsed_seconds": 68.92529441701481,
+          "samples": 67,
+          "maximum_sample_gap_seconds": 1.1446100000175647,
+          "deployment_peak_memory_bytes": 552837120,
+          "deployment_cpu_seconds": 31.142235000000007,
+          "engine_peak_rss_bytes": 215121920,
+          "engine_cpu_seconds": 10.14,
+          "database_connection_peak": 10,
+          "storage_bytes": 18138542,
+          "database_deltas": {
+            "wal_bytes": 6926704,
+            "query_calls": 23357,
+            "query_exec_ms": 4976.622480000018,
+            "transactions": 4548,
+            "schema_bytes": 4161536
+          },
+          "infrastructure": {
+            "knotra-scheduler-benchmark-pg": {
+              "peak_working_set_bytes": 101240832,
+              "cpu_seconds": 4.398493,
+              "allocated_storage_before_bytes": 77680640,
+              "allocated_storage_after_bytes": 98807808,
+              "allocated_storage_growth_bytes": 21127168
+            },
+            "knotra-scheduler-benchmark-temporal": {
+              "peak_working_set_bytes": 245612544,
+              "cpu_seconds": 16.603742000000004,
+              "allocated_storage_before_bytes": 11079680,
+              "allocated_storage_after_bytes": 14983168,
+              "allocated_storage_growth_bytes": 3903488
+            }
+          },
+          "nodes_per_second": 14.566495631132971
+        },
+        {
+          "workload": "human_wait",
+          "repeat": 1,
+          "admission_ms": 4.862458998104557,
+          "admission_to_terminal_seconds": 63.40335312500247,
+          "run_id": "607362ec-5f42-47df-9db2-234bee2c2529",
+          "nodes": 32,
+          "physical_model_calls": 0,
+          "model_debits": 0,
+          "first_physical_call_ms": null,
+          "elapsed_seconds": 63.41252358301426,
+          "samples": 61,
+          "maximum_sample_gap_seconds": 1.14963012500084,
+          "deployment_peak_memory_bytes": 524910592,
+          "deployment_cpu_seconds": 5.205011999999996,
+          "engine_peak_rss_bytes": 191889408,
+          "engine_cpu_seconds": 0.46000000000000085,
+          "database_connection_peak": 10,
+          "storage_bytes": 18157890,
+          "database_deltas": {
+            "wal_bytes": 2521640,
+            "query_calls": 2411,
+            "query_exec_ms": 256.32710399999814,
+            "transactions": 849,
+            "schema_bytes": 237568
+          },
+          "infrastructure": {
+            "knotra-scheduler-benchmark-pg": {
+              "peak_working_set_bytes": 105959424,
+              "cpu_seconds": 2.182924,
+              "allocated_storage_before_bytes": 98807808,
+              "allocated_storage_after_bytes": 99110912,
+              "allocated_storage_growth_bytes": 303104
+            },
+            "knotra-scheduler-benchmark-temporal": {
+              "peak_working_set_bytes": 236982272,
+              "cpu_seconds": 2.5620879999999957,
+              "allocated_storage_before_bytes": 14983168,
+              "allocated_storage_after_bytes": 15024128,
+              "allocated_storage_growth_bytes": 40960
+            }
+          }
+        }
+      ],
+      "sample_errors": []
+    },
+    {
+      "backend": "river",
+      "measurements": [
+        {
+          "workload": "idle",
+          "repeat": 1,
+          "elapsed_seconds": 15.005113582999911,
+          "samples": 15,
+          "maximum_sample_gap_seconds": 1.1133489169878885,
+          "deployment_peak_memory_bytes": 120946688,
+          "deployment_cpu_seconds": 0.6400530000000016,
+          "engine_peak_rss_bytes": 41697280,
+          "engine_cpu_seconds": 0.16,
+          "database_connection_peak": 5,
+          "storage_bytes": 0,
+          "database_deltas": {
+            "wal_bytes": 2656,
+            "query_calls": 161,
+            "query_exec_ms": 45.212852999999086,
+            "transactions": 215,
+            "schema_bytes": 0
+          },
+          "infrastructure": {
+            "knotra-scheduler-benchmark-pg": {
+              "peak_working_set_bytes": 79552512,
+              "cpu_seconds": 0.4800530000000016,
+              "allocated_storage_before_bytes": 84946944,
+              "allocated_storage_after_bytes": 84951040,
+              "allocated_storage_growth_bytes": 4096
+            }
+          }
+        },
+        {
+          "workload": "short_dag",
+          "repeat": 1,
+          "advance_backlog_before_admission": [],
+          "admission_ms": 88.39870800147764,
+          "admission_to_terminal_seconds": 2.2098755829792935,
+          "run_id": "0d80d82c-f59b-475b-83a5-aee6d5ba2fa2",
+          "nodes": 64,
+          "physical_model_calls": 64,
+          "model_debits": 64,
+          "first_physical_call_ms": 226.29916699952446,
+          "delivery_timings": {
+            "first_node_start_ms": 128.22,
+            "queues": {
+              "knotra_advance_v1": {
+                "jobs": 8,
+                "maximum_attempt": 1,
+                "first_start_ms": 84.341,
+                "queue_wait_p50_ms": 27.27,
+                "queue_wait_p95_ms": 579.5312999999999,
+                "queue_wait_max_ms": 733.134
+              },
+              "knotra_execute_v1": {
+                "jobs": 64,
+                "maximum_attempt": 1,
+                "first_start_ms": 121.77,
+                "queue_wait_p50_ms": 43.872,
+                "queue_wait_p95_ms": 93.1968,
+                "queue_wait_max_ms": 111.648
+              }
+            }
+          },
+          "elapsed_seconds": 2.255590165994363,
+          "samples": 4,
+          "maximum_sample_gap_seconds": 1.0558335410023574,
+          "deployment_peak_memory_bytes": 175542272,
+          "deployment_cpu_seconds": 1.5482500000000001,
+          "engine_peak_rss_bytes": 52969472,
+          "engine_cpu_seconds": 0.45,
+          "database_connection_peak": 12,
+          "storage_bytes": 30905,
+          "database_deltas": {
+            "wal_bytes": 2771032,
+            "query_calls": 10812,
+            "query_exec_ms": 15960.046590000022,
+            "transactions": 695,
+            "schema_bytes": 2555904
+          },
+          "infrastructure": {
+            "knotra-scheduler-benchmark-pg": {
+              "peak_working_set_bytes": 122572800,
+              "cpu_seconds": 1.0982500000000002,
+              "allocated_storage_before_bytes": 84951040,
+              "allocated_storage_after_bytes": 87535616,
+              "allocated_storage_growth_bytes": 2584576
+            }
+          },
+          "nodes_per_second": 28.373948851557437
+        },
+        {
+          "workload": "short_dag",
+          "repeat": 2,
+          "advance_backlog_before_admission": [],
+          "admission_ms": 69.23683398053981,
+          "admission_to_terminal_seconds": 1.8637533339788206,
+          "run_id": "98edfdeb-f597-43fa-8345-d73865515bed",
+          "nodes": 64,
+          "physical_model_calls": 64,
+          "model_debits": 64,
+          "first_physical_call_ms": 160.703208995983,
+          "delivery_timings": {
+            "first_node_start_ms": 94.142,
+            "queues": {
+              "knotra_advance_v1": {
+                "jobs": 4,
+                "maximum_attempt": 1,
+                "first_start_ms": 65.84,
+                "queue_wait_p50_ms": 14.684,
+                "queue_wait_p95_ms": 841.9360999999999,
+                "queue_wait_max_ms": 933.853
+              },
+              "knotra_execute_v1": {
+                "jobs": 64,
+                "maximum_attempt": 1,
+                "first_start_ms": 90.985,
+                "queue_wait_p50_ms": 37.903,
+                "queue_wait_p95_ms": 115.78659999999999,
+                "queue_wait_max_ms": 185.982
+              }
+            }
+          },
+          "elapsed_seconds": 1.9095693339768331,
+          "samples": 4,
+          "maximum_sample_gap_seconds": 1.0559578750107903,
+          "deployment_peak_memory_bytes": 181985280,
+          "deployment_cpu_seconds": 1.3116739999999987,
+          "engine_peak_rss_bytes": 54050816,
+          "engine_cpu_seconds": 0.44000000000000006,
+          "database_connection_peak": 12,
+          "storage_bytes": 61808,
+          "database_deltas": {
+            "wal_bytes": 2700064,
+            "query_calls": 10651,
+            "query_exec_ms": 14384.707005000004,
+            "transactions": 877,
+            "schema_bytes": 1507328
+          },
+          "infrastructure": {
+            "knotra-scheduler-benchmark-pg": {
+              "peak_working_set_bytes": 127934464,
+              "cpu_seconds": 0.8716739999999987,
+              "allocated_storage_before_bytes": 87535616,
+              "allocated_storage_after_bytes": 89042944,
+              "allocated_storage_growth_bytes": 1507328
+            }
+          },
+          "nodes_per_second": 33.51541044425698
+        },
+        {
+          "workload": "short_dag",
+          "repeat": 3,
+          "advance_backlog_before_admission": [],
+          "admission_ms": 88.82895900751464,
+          "admission_to_terminal_seconds": 2.1005998750042636,
+          "run_id": "581827a0-f7cf-4fc5-a38f-c560bcbf86ae",
+          "nodes": 64,
+          "physical_model_calls": 64,
+          "model_debits": 64,
+          "first_physical_call_ms": 188.05633400916122,
+          "delivery_timings": {
+            "first_node_start_ms": 115.658,
+            "queues": {
+              "knotra_advance_v1": {
+                "jobs": 6,
+                "maximum_attempt": 1,
+                "first_start_ms": 84.263,
+                "queue_wait_p50_ms": 69.227,
+                "queue_wait_p95_ms": 779.6179999999999,
+                "queue_wait_max_ms": 807.91
+              },
+              "knotra_execute_v1": {
+                "jobs": 64,
+                "maximum_attempt": 1,
+                "first_start_ms": 112.806,
+                "queue_wait_p50_ms": 42.6335,
+                "queue_wait_p95_ms": 126.61724999999998,
+                "queue_wait_max_ms": 503.676
+              }
+            }
+          },
+          "elapsed_seconds": 2.1476687910035253,
+          "samples": 4,
+          "maximum_sample_gap_seconds": 1.0734967080061324,
+          "deployment_peak_memory_bytes": 185692160,
+          "deployment_cpu_seconds": 1.366292000000002,
+          "engine_peak_rss_bytes": 54296576,
+          "engine_cpu_seconds": 0.44999999999999996,
+          "database_connection_peak": 12,
+          "storage_bytes": 92708,
+          "database_deltas": {
+            "wal_bytes": 4228864,
+            "query_calls": 10749,
+            "query_exec_ms": 13066.049313999938,
+            "transactions": 918,
+            "schema_bytes": 1302528
+          },
+          "infrastructure": {
+            "knotra-scheduler-benchmark-pg": {
+              "peak_working_set_bytes": 131395584,
+              "cpu_seconds": 0.9162920000000021,
+              "allocated_storage_before_bytes": 89042944,
+              "allocated_storage_after_bytes": 107335680,
+              "allocated_storage_growth_bytes": 18292736
+            }
+          },
+          "nodes_per_second": 29.799753233875133
+        },
+        {
+          "workload": "large_controls",
+          "repeat": 1,
+          "advance_backlog_before_admission": [],
+          "admission_ms": 196.6625000059139,
+          "admission_to_terminal_seconds": 16.659865000023274,
+          "run_id": "d3f588c0-a2e5-45fd-82f7-6988990bb0e9",
+          "nodes": 1004,
+          "physical_model_calls": 4,
+          "model_debits": 4,
+          "first_physical_call_ms": 7254.2367090063635,
+          "delivery_timings": {
+            "first_node_start_ms": 6843.943,
+            "queues": {
+              "knotra_advance_v1": {
+                "jobs": 43,
+                "maximum_attempt": 1,
+                "first_start_ms": 140.248,
+                "queue_wait_p50_ms": 5.613,
+                "queue_wait_p95_ms": 902.6216000000001,
+                "queue_wait_max_ms": 914.7
+              },
+              "knotra_execute_v1": {
+                "jobs": 4,
+                "maximum_attempt": 1,
+                "first_start_ms": 6921.564,
+                "queue_wait_p50_ms": 3.912,
+                "queue_wait_p95_ms": 4.75485,
+                "queue_wait_max_ms": 4.863
+              }
+            }
+          },
+          "elapsed_seconds": 16.86464441602584,
+          "samples": 18,
+          "maximum_sample_gap_seconds": 1.085858750011539,
+          "deployment_peak_memory_bytes": 362962944,
+          "deployment_cpu_seconds": 6.357211,
+          "engine_peak_rss_bytes": 216973312,
+          "engine_cpu_seconds": 3.5599999999999996,
+          "database_connection_peak": 12,
+          "storage_bytes": 94640,
+          "database_deltas": {
+            "wal_bytes": 15691264,
+            "query_calls": 29744,
+            "query_exec_ms": 5099.462791000013,
+            "transactions": 846,
+            "schema_bytes": 13860864
+          },
+          "infrastructure": {
+            "knotra-scheduler-benchmark-pg": {
+              "peak_working_set_bytes": 147234816,
+              "cpu_seconds": 2.797211000000001,
+              "allocated_storage_before_bytes": 107335680,
+              "allocated_storage_after_bytes": 137973760,
+              "allocated_storage_growth_bytes": 30638080
+            }
+          },
+          "nodes_per_second": 59.532829464577176
+        },
+        {
+          "workload": "large_controls",
+          "repeat": 2,
+          "advance_backlog_before_admission": [],
+          "admission_ms": 181.04312499053776,
+          "admission_to_terminal_seconds": 16.197718249983154,
+          "run_id": "45d1b14c-ca42-4900-8633-0e499009484c",
+          "nodes": 1004,
+          "physical_model_calls": 4,
+          "model_debits": 4,
+          "first_physical_call_ms": 5791.1083749786485,
+          "delivery_timings": {
+            "first_node_start_ms": 5507.861,
+            "queues": {
+              "knotra_advance_v1": {
+                "jobs": 43,
+                "maximum_attempt": 1,
+                "first_start_ms": 124.611,
+                "queue_wait_p50_ms": 12.574,
+                "queue_wait_p95_ms": 871.4617999999999,
+                "queue_wait_max_ms": 921.007
+              },
+              "knotra_execute_v1": {
+                "jobs": 4,
+                "maximum_attempt": 1,
+                "first_start_ms": 5578.605,
+                "queue_wait_p50_ms": 4.471,
+                "queue_wait_p95_ms": 5.243,
+                "queue_wait_max_ms": 5.339
+              }
+            }
+          },
+          "elapsed_seconds": 16.369310874986695,
+          "samples": 18,
+          "maximum_sample_gap_seconds": 1.0956562079954892,
+          "deployment_peak_memory_bytes": 386539520,
+          "deployment_cpu_seconds": 6.236799999999999,
+          "engine_peak_rss_bytes": 216956928,
+          "engine_cpu_seconds": 3.5199999999999996,
+          "database_connection_peak": 12,
+          "storage_bytes": 96572,
+          "database_deltas": {
+            "wal_bytes": 16093824,
+            "query_calls": 29729,
+            "query_exec_ms": 3047.8038070000766,
+            "transactions": 711,
+            "schema_bytes": 14008320
+          },
+          "infrastructure": {
+            "knotra-scheduler-benchmark-pg": {
+              "peak_working_set_bytes": 175693824,
+              "cpu_seconds": 2.716799999999999,
+              "allocated_storage_before_bytes": 137973760,
+              "allocated_storage_after_bytes": 168759296,
+              "allocated_storage_growth_bytes": 30785536
+            }
+          },
+          "nodes_per_second": 61.334286315874984
+        },
+        {
+          "workload": "large_controls",
+          "repeat": 3,
+          "advance_backlog_before_admission": [],
+          "admission_ms": 175.87329098023474,
+          "admission_to_terminal_seconds": 14.386818208004115,
+          "run_id": "8ba16038-c8c1-43c4-889f-ca0cc6db24b3",
+          "nodes": 1004,
+          "physical_model_calls": 4,
+          "model_debits": 4,
+          "first_physical_call_ms": 5295.843999978388,
+          "delivery_timings": {
+            "first_node_start_ms": 5132.632,
+            "queues": {
+              "knotra_advance_v1": {
+                "jobs": 43,
+                "maximum_attempt": 1,
+                "first_start_ms": 124.284,
+                "queue_wait_p50_ms": 2.829,
+                "queue_wait_p95_ms": 813.303,
+                "queue_wait_max_ms": 901.213
+              },
+              "knotra_execute_v1": {
+                "jobs": 4,
+                "maximum_attempt": 1,
+                "first_start_ms": 5201.322,
+                "queue_wait_p50_ms": 4.342499999999999,
+                "queue_wait_p95_ms": 5.0546,
+                "queue_wait_max_ms": 5.144
+              }
+            }
+          },
+          "elapsed_seconds": 14.558785291999811,
+          "samples": 16,
+          "maximum_sample_gap_seconds": 1.125912417017389,
+          "deployment_peak_memory_bytes": 392077312,
+          "deployment_cpu_seconds": 6.092966000000002,
+          "engine_peak_rss_bytes": 213073920,
+          "engine_cpu_seconds": 3.2700000000000014,
+          "database_connection_peak": 12,
+          "storage_bytes": 98504,
+          "database_deltas": {
+            "wal_bytes": 16101248,
+            "query_calls": 29673,
+            "query_exec_ms": 2456.3316589999304,
+            "transactions": 577,
+            "schema_bytes": 14204928
+          },
+          "infrastructure": {
+            "knotra-scheduler-benchmark-pg": {
+              "peak_working_set_bytes": 184332288,
+              "cpu_seconds": 2.822966000000001,
+              "allocated_storage_before_bytes": 168759296,
+              "allocated_storage_after_bytes": 182964224,
+              "allocated_storage_growth_bytes": 14204928
+            }
+          },
+          "nodes_per_second": 68.96179728343871
+        },
+        {
+          "workload": "human_wait",
+          "repeat": 1,
+          "advance_backlog_before_admission": [],
+          "admission_ms": 119.08291699364781,
+          "admission_to_terminal_seconds": 60.22569320900948,
+          "run_id": "7196c23a-9f96-4f61-ab57-eebdac3bd2f1",
+          "nodes": 32,
+          "physical_model_calls": 0,
+          "model_debits": 0,
+          "first_physical_call_ms": null,
+          "delivery_timings": {
+            "first_node_start_ms": 5.093,
+            "queues": {
+              "knotra_advance_v1": {
+                "jobs": 2,
+                "maximum_attempt": 1,
+                "first_start_ms": 116.431,
+                "queue_wait_p50_ms": 14.7305,
+                "queue_wait_p95_ms": 23.09555,
+                "queue_wait_max_ms": 24.025
+              }
+            }
+          },
+          "elapsed_seconds": 60.269807834003586,
+          "samples": 58,
+          "maximum_sample_gap_seconds": 1.1144719170115422,
+          "deployment_peak_memory_bytes": 383938560,
+          "deployment_cpu_seconds": 2.876406999999995,
+          "engine_peak_rss_bytes": 199802880,
+          "engine_cpu_seconds": 0.5999999999999996,
+          "database_connection_peak": 12,
+          "storage_bytes": 98504,
+          "database_deltas": {
+            "wal_bytes": 3202616,
+            "query_calls": 1901,
+            "query_exec_ms": 296.590640000024,
+            "transactions": 794,
+            "schema_bytes": 1155072
+          },
+          "infrastructure": {
+            "knotra-scheduler-benchmark-pg": {
+              "peak_working_set_bytes": 185577472,
+              "cpu_seconds": 2.2764069999999954,
+              "allocated_storage_before_bytes": 182964224,
+              "allocated_storage_after_bytes": 200904704,
+              "allocated_storage_growth_bytes": 17940480
+            }
+          }
+        }
+      ],
+      "sample_errors": []
+    }
+  ],
+  "completed_at": "2026-10-06T10:05:10Z"
+}

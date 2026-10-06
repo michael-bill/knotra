@@ -95,7 +95,7 @@ func TestRunUsesStableDistinctMutationKeys(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		if r.URL.Path == "/v1/info" {
-			fmt.Fprintf(w, `{"protocol":%q,"engineId":"engine","principalId":"user"}`, protocol.Version)
+			_, _ = fmt.Fprintf(w, `{"protocol":%q,"engineId":"engine","principalId":"user"}`, protocol.Version)
 			return
 		}
 		mu.Lock()
@@ -105,7 +105,7 @@ func TestRunUsesStableDistinctMutationKeys(t *testing.T) {
 
 		switch r.URL.Path {
 		case "/v1/definitions":
-			fmt.Fprint(w, `{"definition":{"id":"definition"}}`)
+			_, _ = fmt.Fprint(w, `{"definition":{"id":"definition"}}`)
 		case "/v1/runs":
 			var body map[string]json.RawMessage
 			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
@@ -114,7 +114,7 @@ func TestRunUsesStableDistinctMutationKeys(t *testing.T) {
 			if string(body["definitionId"]) != `"definition"` || string(body["inputs"]) != `{"count":3}` {
 				t.Errorf("wrong request %s", body)
 			}
-			fmt.Fprint(w, `{"run":{"id":"run","status":"pending"}}`)
+			_, _ = fmt.Fprint(w, `{"run":{"id":"run","status":"pending"}}`)
 		default:
 			http.NotFound(w, r)
 		}
@@ -155,13 +155,15 @@ func TestArtifactDownloadIntegrityBeforeWriting(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if strings.HasSuffix(r.URL.Path, "/content") {
 			if bad {
-				w.Write([]byte("corrupt"))
+				_, _ = w.Write([]byte("corrupt"))
 			} else {
-				w.Write(data)
+				_, _ = w.Write(data)
 			}
 			return
 		}
-		json.NewEncoder(w).Encode(map[string]any{"artifact": contract.Artifact{ID: "a", Size: int64(len(data)), SHA256: hex.EncodeToString(sum[:])}})
+		if err := json.NewEncoder(w).Encode(map[string]any{"artifact": contract.Artifact{ID: "a", Size: int64(len(data)), SHA256: hex.EncodeToString(sum[:])}}); err != nil {
+			t.Error(err)
+		}
 	}))
 	defer server.Close()
 	output := filepath.Join(t.TempDir(), "artifact.txt")
@@ -191,16 +193,19 @@ func TestHumanResponseTargetsExactRequest(t *testing.T) {
 	var route string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/v1/info" {
-			fmt.Fprintf(w, `{"protocol":%q,"engineId":"e","principalId":"p"}`, protocol.Version)
+			_, _ = fmt.Fprintf(w, `{"protocol":%q,"engineId":"e","principalId":"p"}`, protocol.Version)
 			return
 		}
 		route = r.URL.Path
 		var body map[string]json.RawMessage
-		json.NewDecoder(r.Body).Decode(&body)
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Error(err)
+			return
+		}
 		if string(body["outputs"]) != `{"approved":true}` {
 			t.Errorf("unexpected outputs %s", body["outputs"])
 		}
-		fmt.Fprint(w, `{"accepted":true,"requestId":"request"}`)
+		_, _ = fmt.Fprint(w, `{"accepted":true,"requestId":"request"}`)
 	}))
 	defer server.Close()
 	_, _, err := invoke(
@@ -231,13 +236,13 @@ func TestWatchJournalsBeforeTerminalDisplay(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/v1/info":
-			fmt.Fprintf(w, `{"protocol":%q,"engineId":"e","principalId":"p"}`, protocol.Version)
+			_, _ = fmt.Fprintf(w, `{"protocol":%q,"engineId":"e","principalId":"p"}`, protocol.Version)
 		case "/v1/runs/run/events":
 			w.Header().Set("Content-Type", "text/event-stream")
 			data, _ := json.Marshal(event)
-			fmt.Fprintf(w, "id: event-1\ndata: %s\n\n", data)
+			_, _ = fmt.Fprintf(w, "id: event-1\ndata: %s\n\n", data)
 		case "/v1/runs/run":
-			fmt.Fprint(w, `{"run":{"id":"run","status":"succeeded"}}`)
+			_, _ = fmt.Fprint(w, `{"run":{"id":"run","status":"succeeded"}}`)
 		default:
 			http.NotFound(w, r)
 		}

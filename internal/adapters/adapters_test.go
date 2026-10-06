@@ -1,24 +1,28 @@
 package adapters
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/michael-bill/knotra/internal/contract"
+	"github.com/michael-bill/knotra/internal/execution"
 )
 
 type memoryHooks struct {
@@ -116,7 +120,7 @@ func TestLLMStrictOutputAndReplay(t *testing.T) {
 		if string(body["stream"]) != "true" || body["format"] == nil {
 			t.Error("model request lacks deterministic protocol fields")
 		}
-		fmt.Fprint(w, `{"message":{"role":"assistant","content":"{\"answer\":42}"},"done":true,"done_reason":"stop"}`)
+		_, _ = fmt.Fprint(w, `{"message":{"role":"assistant","content":"{\"answer\":42}"},"done":true,"done_reason":"stop"}`)
 	}))
 	defer server.Close()
 	hooks := newHooks()
@@ -160,7 +164,13 @@ func TestJournalPreventsDuplicateEffects(t *testing.T) {
 	op := Operation{ID: "write", Kind: "tool", Effect: "write"}
 	_, _ = hooks.BeginOperation(context.Background(), op)
 	called := false
-	_, err := r.operation(context.Background(), op, func() (json.RawMessage, error) { called = true; return nil, nil })
+	_, err := r.operation(context.Background(), op, func(admit func() error) (json.RawMessage, error) {
+		if err := admit(); err != nil {
+			return nil, err
+		}
+		called = true
+		return nil, nil
+	})
 	var f *Failure
 	if !errors.As(err, &f) || !f.Unknown || called {
 		t.Fatal("started write was reissued")
@@ -188,7 +198,7 @@ func TestIdempotencyProjection(t *testing.T) {
 func TestMCPDiscoveryCallAndReplay(t *testing.T) {
 	calls := 0
 	server := mcp.NewServer(&mcp.Implementation{Name: "test", Version: "1"}, nil)
-	mcp.AddTool(server, &mcp.Tool{Name: "sum", Description: "Sum two numbers"}, func(ctx context.Context, req *mcp.CallToolRequest, args struct {
+	mcp.AddTool(server, &mcp.Tool{Name: "sum", Description: "Sum two numbers"}, func(_ context.Context, _ *mcp.CallToolRequest, args struct {
 		A int `json:"a"`
 		B int `json:"b"`
 	}) (*mcp.CallToolResult, map[string]int, error) {
@@ -264,7 +274,7 @@ func TestRunSessionSharedAndLostStateIsExplicit(t *testing.T) {
 	req.ToolArguments = json.RawMessage(`{}`)
 	hooks := newHooks()
 	base := &Runner{}
-	defer base.Close()
+	defer func() { _ = base.Close() }()
 	runner := base.WithHooks(hooks)
 	if err := runner.Prepare(context.Background(), req.Plan); err != nil {
 		t.Fatal(err)
@@ -286,9 +296,140 @@ func TestRunSessionSharedAndLostStateIsExplicit(t *testing.T) {
 	if !errors.As(err, &failure) || !failure.Unknown || calls != 2 {
 		t.Fatalf("lost session silently recovered: %v, calls=%d", err, calls)
 	}
-	base.ReleaseRun(req.RunID)
+	if err := base.ReleaseRun(req.RunID); err != nil {
+		t.Fatal(err)
+	}
 	if len(base.cache().sessions) != 0 {
 		t.Fatal("run session leaked")
+	}
+}
+
+func TestSessionCleanupPageBoundsAndBusyInitialization(t *testing.T) {
+	runner := &Runner{}
+	cache := runner.cache()
+	cache.mu.Lock()
+	for i := 64; i >= 0; i-- {
+		cache.save(fmt.Sprintf("run-%03d/scope/data", i), &mcpSession{})
+	}
+	if _, err := runner.SessionPage(""); err == nil {
+		t.Fatal("cleanup waited on a busy session cache")
+	}
+	cache.mu.Unlock()
+	page, err := runner.SessionPage("")
+	if err != nil || len(page) != 64 || page[0] != "run-000/scope/data" || page[63] != "run-063/scope/data" {
+		t.Fatalf("first cache page=%v error=%v", page, err)
+	}
+	page, err = runner.SessionPage(page[63])
+	if err != nil || len(page) != 1 || page[0] != "run-064/scope/data" {
+		t.Fatalf("last cache page=%v error=%v", page, err)
+	}
+}
+
+func TestSessionCleanupRetriesOriginalHTTPDelete(t *testing.T) {
+	for _, firstStatus := range []int{http.StatusOK, http.StatusServiceUnavailable, http.StatusNotFound, http.StatusMethodNotAllowed} {
+		t.Run(http.StatusText(firstStatus), func(t *testing.T) {
+			var deletes, initializations atomic.Int32
+			requests := make(chan http.Header, 4)
+			server := mcp.NewServer(&mcp.Implementation{Name: "cleanup-test", Version: "1"}, nil)
+			transport := mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return server }, &mcp.StreamableHTTPOptions{SessionTimeout: time.Second})
+			remote := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+				if req.Method == http.MethodPost {
+					body, err := io.ReadAll(req.Body)
+					if err != nil {
+						t.Error(err)
+						return
+					}
+					req.Body = io.NopCloser(bytes.NewReader(body))
+					var message struct{ Method string }
+					if err := json.Unmarshal(body, &message); err != nil {
+						t.Error(err)
+						return
+					}
+					if message.Method == "initialize" {
+						initializations.Add(1)
+					}
+				}
+				if req.Method == http.MethodDelete {
+					requests <- req.Header.Clone()
+					if deletes.Add(1) == 1 && firstStatus != http.StatusOK {
+						if firstStatus == http.StatusNotFound {
+							transport.ServeHTTP(httptest.NewRecorder(), req)
+						}
+						w.WriteHeader(firstStatus)
+						return
+					}
+				}
+				transport.ServeHTTP(w, req)
+			}))
+			defer remote.Close()
+			runner := &Runner{}
+			credential := "pinned-cleanup-key"
+			session, err := runner.connectMCP(t.Context(), testRequest(""), "local", contract.MCPConnection{
+				Transport: "streamable_http", URL: remote.URL,
+				Headers: map[string]contract.Credential{"X-Cleanup-Key": {Value: &credential}},
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { _ = session.close() })
+			identity := session.session.ID()
+			if identity == "" {
+				t.Fatal("fixture did not assign a session identity")
+			}
+			cache := runner.cache()
+			cache.mu.Lock()
+			cache.save("run/root/data", session)
+			cache.mu.Unlock()
+			err = runner.ReleaseSession("run/root/data")
+			wantDeletes := int32(1)
+			if firstStatus == http.StatusServiceUnavailable {
+				if err == nil {
+					t.Fatal("failed remote deletion was accepted")
+				}
+				page, pageErr := runner.SessionPage("")
+				if pageErr != nil || len(page) != 1 || page[0] != "run/root/data" {
+					t.Fatalf("failed cleanup lost its identity: page=%v error=%v", page, pageErr)
+				}
+				err = runner.ReleaseSession("run/root/data")
+				wantDeletes = 2
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			page, err := runner.SessionPage("")
+			if err != nil || len(page) != 0 {
+				t.Fatalf("completed cleanup retained its identity: page=%v error=%v", page, err)
+			}
+			if err := session.close(); err != nil {
+				t.Fatalf("completed cleanup replayed the SDK's cached failure: %v", err)
+			}
+			if deletes.Load() != wantDeletes || initializations.Load() != 1 {
+				t.Fatalf("cleanup created extra traffic: deletes=%d initializations=%d", deletes.Load(), initializations.Load())
+			}
+			var headers http.Header
+			for range wantDeletes {
+				headers = <-requests
+				if headers.Get("Mcp-Session-Id") != identity || headers.Get("Mcp-Protocol-Version") == "" || headers.Get("X-Cleanup-Key") != credential {
+					t.Fatal("cleanup did not preserve session, protocol or credentials")
+				}
+			}
+			if firstStatus != http.StatusMethodNotAllowed {
+				probe, err := http.NewRequestWithContext(t.Context(), http.MethodGet, remote.URL, nil)
+				if err != nil {
+					t.Fatal(err)
+				}
+				probe.Header = headers.Clone()
+				probe.Header.Set("Accept", "text/event-stream")
+				response, err := remote.Client().Do(probe)
+				if err != nil {
+					t.Fatal(err)
+				}
+				_ = response.Body.Close()
+				if response.StatusCode != http.StatusNotFound {
+					t.Fatalf("remote session survived cleanup: HTTP %d", response.StatusCode)
+				}
+			}
+		})
 	}
 }
 
@@ -356,15 +497,15 @@ func TestDockerAgentFileFinish(t *testing.T) {
 	hooks := newObservationHooks()
 	r.Hooks = hooks
 	turn := 0
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		turn++
 		if turn == 1 {
-			fmt.Fprint(
+			_, _ = fmt.Fprint(
 				w,
 				`{"message":{"role":"assistant","tool_calls":[{"function":{"name":"knotra_files_write","arguments":{"path":"report.txt","content":"hello"}}}]},"done":true}`,
 			)
 		} else {
-			fmt.Fprint(
+			_, _ = fmt.Fprint(
 				w,
 				`{"message":{"role":"assistant","tool_calls":[{"function":{"name":"knotra_finish","arguments":{"answer":42}}}]},"done":true}`,
 			)
@@ -417,4 +558,12 @@ func TestDockerAgentFileFinish(t *testing.T) {
 	if iterations != 2 || tools != 1 || outputs != 1 {
 		t.Fatalf("incomplete or duplicated agent cycle: iterations=%d tools=%d outputs=%d", iterations, tools, outputs)
 	}
+}
+
+func (h *memoryHooks) RegisterResource(_ context.Context, id, kind, lifetime string) (execution.ResourceRecord, error) {
+	return execution.ResourceRecord{ID: id, Kind: kind, Lifetime: lifetime}, nil
+}
+func (h *memoryHooks) CloseResource(context.Context, string) error { return nil }
+func (h *memoryHooks) RecordMCPSession(context.Context, string, execution.MCPSessionRecord) error {
+	return nil
 }

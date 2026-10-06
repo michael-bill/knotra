@@ -12,7 +12,7 @@ import (
 func (s *commandState) serveCommand() *cobra.Command {
 	o := app.Options{Version: s.options.Version}
 	var debug bool
-	cmd := &cobra.Command{Use: "serve", Short: "Run the HTTP engine and Temporal worker", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, _ []string) error {
+	cmd := &cobra.Command{Use: "serve", Short: "Run the HTTP engine and execution workers", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, _ []string) error {
 		if o.DatabaseURL == "" {
 			return fmt.Errorf("--database-url or KNOTRA_DATABASE_URL is required")
 		}
@@ -28,6 +28,10 @@ func (s *commandState) serveCommand() *cobra.Command {
 		return app.Serve(cmd.Context(), o, log)
 	}}
 	f := cmd.Flags()
+	f.StringVar(&o.Backend, "backend", s.env("KNOTRA_BACKEND", "river"), "Execution backend: river or temporal (legacy)")
+	f.StringVar(&o.HostID, "host-id", s.env("KNOTRA_HOST_ID", "local"), "Stable execution host identity (retain across restarts)")
+	f.StringVar(&o.SharedDataDir, "shared-data-dir", s.env("KNOTRA_SHARED_DATA_DIR", ""), "Shared artifact/outcome directory; defaults to --data-dir")
+	f.IntVar(&o.ExecutionWorkers, "execution-workers", 16, "Maximum simultaneous River leaf deliveries")
 	f.StringVar(&o.Listen, "listen", s.env("KNOTRA_LISTEN", "127.0.0.1:8787"), "HTTP listen address")
 	f.StringVar(
 		&o.DatabaseURL,

@@ -86,7 +86,7 @@ func (r *Runner) chat(
 			})
 		}
 	}()
-	response, err := r.operation(ctx, op, func() (json.RawMessage, error) {
+	response, err := r.operation(ctx, op, func(admit func() error) (json.RawMessage, error) {
 		key := pipeline(req).Spec.Models[alias].Connection + "/" + c.Model
 		if expected := req.Plan.ModelDigests[key]; expected != "" {
 			actual, err := r.modelDigest(ctx, req.Plan.Profile, c)
@@ -112,6 +112,9 @@ func (r *Runner) chat(
 		req.observation.emit(ctx, "model.started", op.ID, map[string]any{
 			"step": step + 1, "model": c.Model, "messages": visibleMessages,
 		})
+		if err := admit(); err != nil {
+			return nil, err
+		}
 		started := time.Now()
 		startedAt = started
 		executed = true
@@ -120,7 +123,7 @@ func (r *Runner) chat(
 		if err != nil {
 			return nil, fmt.Errorf("model request failed: %w", err)
 		}
-		defer res.Body.Close()
+		defer func() { _ = res.Body.Close() }()
 		if res.StatusCode != http.StatusOK {
 			if c.Provider == "ollama" {
 				return nil, fmt.Errorf("model returned HTTP %d", res.StatusCode)

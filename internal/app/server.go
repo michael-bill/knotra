@@ -11,11 +11,10 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
-	"strings"
 	"time"
 
-	"go.opentelemetry.io/otel"
-	"go.opentelemetry.io/otel/attribute"
+	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"go.temporal.io/api/enums/v1"
 	"go.temporal.io/api/serviceerror"
 	"go.temporal.io/sdk/activity"
@@ -28,30 +27,56 @@ import (
 	"github.com/michael-bill/knotra/internal/api"
 	"github.com/michael-bill/knotra/internal/contract"
 	"github.com/michael-bill/knotra/internal/engine"
+	"github.com/michael-bill/knotra/internal/execution"
+	"github.com/michael-bill/knotra/internal/executor"
 	"github.com/michael-bill/knotra/internal/protocol"
+	"github.com/michael-bill/knotra/internal/queue"
 	"github.com/michael-bill/knotra/internal/store"
+	storedb "github.com/michael-bill/knotra/internal/store/db"
 	"github.com/michael-bill/knotra/internal/telemetry"
 )
 
 type Options struct {
-	Listen          string
-	DatabaseURL     string
-	TemporalAddress string
-	Namespace       string
-	TaskQueue       string
-	DataDir         string
-	DockerHost      string
-	HelperPath      string
-	FirewallImage   string
-	Token           string
-	CORSOrigin      string
-	TLSCert         string
-	TLSKey          string
-	Version         string
-	Profiles        []string
+	Backend          string
+	HostID           string
+	SharedDataDir    string
+	ExecutionWorkers int
+	Listen           string
+	DatabaseURL      string
+	TemporalAddress  string
+	Namespace        string
+	TaskQueue        string
+	DataDir          string
+	DockerHost       string
+	HelperPath       string
+	FirewallImage    string
+	Token            string
+	CORSOrigin       string
+	TLSCert          string
+	TLSKey           string
+	Version          string
+	Profiles         []string
 }
 
-func Serve(ctx context.Context, o Options, log *slog.Logger) error {
+func Serve(ctx context.Context, o Options, log *slog.Logger) (serveErr error) {
+	if o.Backend == "" {
+		o.Backend = execution.BackendRiver
+	}
+	if o.Backend != execution.BackendTemporal && o.Backend != execution.BackendRiver {
+		return fmt.Errorf("unsupported execution backend %q", o.Backend)
+	}
+	if o.HostID == "" {
+		o.HostID = "local"
+	}
+	if err := execution.ValidateHostID(o.HostID); err != nil {
+		return err
+	}
+	if o.ExecutionWorkers == 0 {
+		o.ExecutionWorkers = 16
+	}
+	if o.ExecutionWorkers < 1 {
+		return errors.New("execution workers must be positive")
+	}
 	stopTelemetry, err := telemetry.Start(ctx, o.Version)
 	if err != nil {
 		return err
@@ -100,29 +125,21 @@ func Serve(ctx context.Context, o Options, log *slog.Logger) error {
 	if err != nil {
 		return err
 	}
-	defer lease.Close(context.Background())
+	defer func() { _ = lease.Close(context.Background()) }()
 	// Separate databases must never consume each other's activity tasks.
 	o.TaskQueue += "." + db.EngineID
 	dataDir, err := filepath.Abs(o.DataDir)
 	if err != nil {
 		return err
 	}
-	blobs, err := engine.NewFileBlobStore(filepath.Join(dataDir, "payloads"))
-	if err != nil {
-		return err
+	sharedDir := dataDir
+	if o.SharedDataDir != "" {
+		sharedDir, err = filepath.Abs(o.SharedDataDir)
+		if err != nil {
+			return err
+		}
 	}
-	dc := converter.NewCodecDataConverter(converter.GetDefaultDataConverter(), &engine.PayloadCodec{Store: blobs})
-	tc, err := temporalclient.Dial(temporalclient.Options{
-		HostPort:      o.TemporalAddress,
-		Namespace:     o.Namespace,
-		DataConverter: dc,
-		Logger:        temporalLog{log},
-	})
-	if err != nil {
-		return fmt.Errorf("connect Temporal: %w", err)
-	}
-	defer tc.Close()
-	artifacts := store.Artifacts{Root: filepath.Join(dataDir, "artifacts"), Store: db}
+	artifacts := store.Artifacts{Root: filepath.Join(sharedDir, "artifacts"), Store: db}
 	runner := &adapters.Runner{
 		EngineID:      db.EngineID,
 		DockerHost:    o.DockerHost,
@@ -130,31 +147,130 @@ func Serve(ctx context.Context, o Options, log *slog.Logger) error {
 		WorkDir:       filepath.Join(dataDir, "work"),
 		FirewallImage: o.FirewallImage,
 	}
-	defer runner.Close()
-	cleanupCtx, stopCleanup := context.WithTimeout(ctx, 30*time.Second)
-	cleanupErr := runner.CleanupOwned(cleanupCtx)
-	stopCleanup()
-	if cleanupErr != nil {
-		return fmt.Errorf("clean abandoned sandboxes: %w", cleanupErr)
-	}
-	acts := &activities{db: db, artifacts: artifacts, runner: runner}
-	w := worker.New(tc, o.TaskQueue, worker.Options{WorkerStopTimeout: 10 * time.Second})
-	w.RegisterWorkflowWithOptions(engine.Workflow, workflow.RegisterOptions{Name: engine.WorkflowName})
-	w.RegisterActivityWithOptions(acts.execute, activity.RegisterOptions{Name: engine.ExecuteActivity})
-	w.RegisterActivityWithOptions(acts.plan, activity.RegisterOptions{Name: engine.PlanActivity})
-	w.RegisterActivityWithOptions(acts.project, activity.RegisterOptions{Name: engine.ProjectActivity})
-	w.RegisterActivityWithOptions(db.SaveRequest, activity.RegisterOptions{Name: engine.RequestActivity})
-	w.RegisterActivityWithOptions(db.Answer, activity.RegisterOptions{Name: engine.AnswerActivity})
-	w.RegisterActivityWithOptions(db.Resolution, activity.RegisterOptions{Name: engine.ResolutionActivity})
-	if err = w.Start(); err != nil {
-		return err
-	}
-	defer w.Stop()
-	srv := &api.Server{Store: db, Artifacts: artifacts, Profiles: profiles, Token: o.Token, Version: o.Version, CORSOrigin: o.CORSOrigin, Log: log, Admit: func(ctx context.Context, p *contract.Plan) error {
+	defer func() { _ = runner.Close() }()
+	srv := &api.Server{Store: db, Artifacts: artifacts, Profiles: profiles, Token: o.Token, Version: o.Version, CORSOrigin: o.CORSOrigin, Backend: o.Backend, HostID: o.HostID, Log: log, Admit: func(ctx context.Context, p *contract.Plan) error {
 		ctx, cancel := context.WithTimeout(ctx, 2*time.Minute)
 		defer cancel()
 		return runner.Prepare(ctx, p)
 	}}
+
+	var tc temporalclient.Client
+	var runtimeDone <-chan struct{}
+	var runtimeFailures <-chan error
+	var native *queue.Runtime
+	backends, err := storedb.New(db.Pool).RequiredExecutionBackends(ctx)
+	if err != nil {
+		return err
+	}
+	riverNeeded, temporalNeeded := o.Backend == execution.BackendRiver, o.Backend == execution.BackendTemporal
+	for _, backend := range backends {
+		riverNeeded = riverNeeded || backend == execution.BackendRiver
+		temporalNeeded = temporalNeeded || backend == execution.BackendTemporal
+	}
+	if temporalNeeded {
+		// Legacy cleanup must finish before either worker starts. River resources
+		// have durable identities and may only be removed through ownership claims.
+		cleanupCtx, stopCleanup := context.WithTimeout(ctx, 30*time.Second)
+		cleanupErr := runner.CleanupOwned(cleanupCtx, func(ctx context.Context, id string) (bool, error) {
+			_, err := storedb.New(db.Pool).ReadResourceIdentity(ctx, storedb.ReadResourceIdentityParams{ID: id, EngineID: db.EngineID})
+			if errors.Is(err, pgx.ErrNoRows) {
+				return false, nil
+			}
+			return err == nil, err
+		})
+		stopCleanup()
+		if cleanupErr != nil {
+			return fmt.Errorf("clean abandoned sandboxes: %w", cleanupErr)
+		}
+	}
+	if riverNeeded {
+		config := queue.Config{EngineID: db.EngineID, HostID: o.HostID, Logger: log, ExecutionWorkers: o.ExecutionWorkers}
+		// The combined service holds the exclusive engine lease. Cluster host
+		// identities and placement are enabled separately after acceptance.
+		for _, profile := range profiles {
+			duration, err := contract.Duration(profile.Spec.Limits.Timeout)
+			if err != nil {
+				return err
+			}
+			config.ExecutionTimeout = max(config.ExecutionTimeout, duration+time.Minute)
+		}
+		// Replacing a profile must not shorten an already admitted plan's delivery.
+		micros, err := storedb.New(db.Pool).MaximumActiveExecutionDurationMicros(ctx)
+		if err != nil {
+			return err
+		}
+		if micros < 0 || micros > int64(365*24*time.Hour/time.Microsecond) {
+			return errors.New("stored execution duration exceeds the supported admission bound")
+		}
+		config.ExecutionTimeout = max(config.ExecutionTimeout, time.Duration(micros)*time.Microsecond+time.Minute)
+		config.Schema, err = storedb.New(db.Pool).CurrentSchema(ctx)
+		if err != nil {
+			return err
+		}
+		if err := queue.Migrate(ctx, db.Pool, config.Schema); err != nil {
+			return err
+		}
+		outcomes, err := execution.OpenOutcomeFiles(filepath.Join(sharedDir, "outcomes"))
+		if err != nil {
+			return err
+		}
+		defer func() { _ = outcomes.Close() }()
+		// Runtime.Start sets ownership fields on its runner before use. Keep the
+		// legacy/admission runner unchanged when both workers share this service.
+		riverRunner := runner.WithHooks(nil)
+		native = &queue.Runtime{Store: db, Host: &executor.Host{Store: db, Artifacts: artifacts, Runner: riverRunner},
+			Outcomes: outcomes, WorkerID: uuid.NewString(), HostID: config.HostID}
+		native.Client, err = queue.New(db.Pool, config, native.Handlers())
+		if err != nil {
+			return err
+		}
+		if err := native.Start(ctx); err != nil {
+			return err
+		}
+		defer func() {
+			stopCtx, stop := context.WithTimeout(context.Background(), 10*time.Second)
+			defer stop()
+			if stopErr := native.Stop(stopCtx); stopErr != nil {
+				log.Error("execution shutdown failed", "engineId", db.EngineID, "hostId", native.HostID, "workerId", native.WorkerID, "error", telemetry.RedactError(stopErr))
+				serveErr = errors.Join(serveErr, stopErr)
+			}
+		}()
+		srv.Wake = native.CommandWake
+		srv.ExecutionTimeout = config.ExecutionTimeout
+		srv.WorkerBackends = append(srv.WorkerBackends, execution.BackendRiver)
+		runtimeDone, runtimeFailures = native.Done(), native.Failure
+	}
+	if temporalNeeded {
+		blobs, err := engine.NewFileBlobStore(filepath.Join(dataDir, "payloads"))
+		if err != nil {
+			return err
+		}
+		dc := converter.NewCodecDataConverter(converter.GetDefaultDataConverter(), &engine.PayloadCodec{Store: blobs})
+		tc, err = temporalclient.DialContext(ctx, temporalclient.Options{
+			HostPort:      o.TemporalAddress,
+			Namespace:     o.Namespace,
+			DataConverter: dc,
+			Logger:        temporalLog{log},
+		})
+		if err != nil {
+			return fmt.Errorf("connect Temporal: %w", err)
+		}
+		defer tc.Close()
+		acts := &activities{db: db, artifacts: artifacts, runner: runner}
+		w := worker.New(tc, o.TaskQueue, worker.Options{WorkerStopTimeout: 10 * time.Second})
+		w.RegisterWorkflowWithOptions(engine.Workflow, workflow.RegisterOptions{Name: engine.WorkflowName})
+		w.RegisterActivityWithOptions(acts.execute, activity.RegisterOptions{Name: engine.ExecuteActivity})
+		w.RegisterActivityWithOptions(acts.plan, activity.RegisterOptions{Name: engine.PlanActivity})
+		w.RegisterActivityWithOptions(acts.project, activity.RegisterOptions{Name: engine.ProjectActivity})
+		w.RegisterActivityWithOptions(db.SaveRequest, activity.RegisterOptions{Name: engine.RequestActivity})
+		w.RegisterActivityWithOptions(db.Answer, activity.RegisterOptions{Name: engine.AnswerActivity})
+		w.RegisterActivityWithOptions(db.Resolution, activity.RegisterOptions{Name: engine.ResolutionActivity})
+		if err = w.Start(); err != nil {
+			return err
+		}
+		defer w.Stop()
+		srv.WorkerBackends = append(srv.WorkerBackends, execution.BackendTemporal)
+	}
 	server := &http.Server{
 		Addr:              o.Listen,
 		Handler:           telemetry.HTTP(srv.Handler()),
@@ -163,15 +279,19 @@ func Serve(ctx context.Context, o Options, log *slog.Logger) error {
 		IdleTimeout:       2 * time.Minute,
 		MaxHeaderBytes:    64 << 10,
 	}
-	listener, err := net.Listen("tcp", o.Listen)
+	listener, err := (&net.ListenConfig{}).Listen(ctx, "tcp", o.Listen)
 	if err != nil {
 		return err
 	}
-	defer listener.Close()
+	defer func() { _ = listener.Close() }()
 	serviceCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	deliveryDone := make(chan struct{})
-	go func() { defer close(deliveryDone); deliver(serviceCtx, db, tc, o.TaskQueue, log) }()
+	if tc != nil {
+		go func() { defer close(deliveryDone); deliver(serviceCtx, db, tc, o.TaskQueue, log) }()
+	} else {
+		close(deliveryDone)
+	}
 	leaseFailed := make(chan error, 1)
 	go func() {
 		ticker := time.NewTicker(5 * time.Second)
@@ -209,17 +329,25 @@ func Serve(ctx context.Context, o Options, log *slog.Logger) error {
 		listener.Addr().String(),
 		"engineId",
 		db.EngineID,
-		"taskQueue",
-		o.TaskQueue,
+		"backend",
+		o.Backend,
 	)
 
-	select {
-	case <-ctx.Done():
-	case err = <-leaseFailed:
-		log.Error("engine ownership connection lost; stopping service")
-	case err = <-failures:
-		if !errors.Is(err, http.ErrServerClosed) {
-			return err
+serveLoop:
+	for {
+		select {
+		case <-ctx.Done():
+			break serveLoop
+		case problem := <-runtimeFailures:
+			log.Warn("execution background check failed", "engineId", db.EngineID, "hostId", native.HostID, "workerId", native.WorkerID, "error", telemetry.RedactError(problem))
+		case <-runtimeDone:
+			err = native.Err()
+			break serveLoop
+		case err = <-leaseFailed:
+			log.Error("engine ownership connection lost; stopping service")
+			break serveLoop
+		case err = <-failures:
+			break serveLoop
 		}
 	}
 
@@ -315,20 +443,12 @@ func (a *activities) project(ctx context.Context, p engine.Projection) error {
 		return e
 	}
 	if p.InstanceID == "" && protocol.Terminal(p.Status) {
-		a.runner.ReleaseRun(p.RunID)
+		return a.runner.ReleaseRun(p.RunID)
 	}
 	return nil
 }
 
 func (a *activities) execute(ctx context.Context, q engine.ExecuteRequest) (engine.ExecuteResult, error) {
-	ctx, span := otel.Tracer("knotra/engine").Start(ctx, "node."+q.Node.Type)
-	defer span.End()
-	span.SetAttributes(
-		attribute.String("knotra.run.id", q.RunID),
-		attribute.String("knotra.instance.id", q.InstanceID),
-		attribute.Int("knotra.attempt", q.Attempt),
-	)
-
 	done := make(chan struct{})
 	defer close(done)
 	go func() {
@@ -346,103 +466,8 @@ func (a *activities) execute(ctx context.Context, q engine.ExecuteRequest) (engi
 			}
 		}
 	}()
-	var loadErr error
-	q.Plan, loadErr = a.db.Plan(ctx, q.RunID)
-	if loadErr != nil {
-		return engine.ExecuteResult{Failure: &engine.Failure{Code: "STORAGE_UNAVAILABLE", Message: "cannot load admitted plan", Retryable: true}}, nil
-	}
-	h := &executionHooks{store: a.db, artifacts: a.artifacts, request: q}
-	scopeID := q.RunID
-	if len(q.Scopes) > 0 {
-		scopeID = q.Scopes[len(q.Scopes)-1].ID
-	}
-	outputs, e := a.runner.WithHooks(h).Execute(
-		ctx,
-		adapters.Request{
-			RunID:         q.RunID,
-			InstanceID:    q.InstanceID,
-			Attempt:       q.Attempt,
-			Pipeline:      q.Pipeline,
-			ScopeID:       scopeID,
-			Plan:          &q.Plan,
-			Node:          q.Node,
-			Inputs:        q.Inputs,
-			ToolArguments: q.ToolArguments,
-		},
-	)
-	if e == nil {
-		return engine.ExecuteResult{Outputs: outputs}, nil
-	}
-	var f *adapters.Failure
-	if errors.As(e, &f) {
-		return engine.ExecuteResult{Failure: &engine.Failure{
-			Code:                  f.Code,
-			Message:               f.Message,
-			Retryable:             f.Retryable,
-			Unknown:               f.Unknown,
-			OperationID:           f.OperationID,
-			CanRetryIfNotExecuted: q.Node.Type != "agent",
-		}}, nil
-	}
-	code := "EXECUTION_FAILED"
-	if strings.Contains(e.Error(), "BUDGET_EXCEEDED") {
-		code = "BUDGET_EXCEEDED"
-	}
-	if errors.Is(e, context.Canceled) {
-		code = "CANCELLED"
-	}
-	if errors.Is(e, context.DeadlineExceeded) {
-		code = "TIMEOUT"
-	}
-	return engine.ExecuteResult{Failure: &engine.Failure{Code: code, Message: e.Error()}}, nil
-}
-
-type executionHooks struct {
-	store     *store.Store
-	artifacts store.Artifacts
-	request   engine.ExecuteRequest
-}
-
-func (h *executionHooks) Observe(ctx context.Context, event adapters.ExecutionEvent) error {
-	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
-	defer cancel()
-	return h.store.Observe(ctx, protocol.Event{
-		RunID: h.request.RunID, InstanceID: h.request.InstanceID,
-		AttemptID:   fmt.Sprintf("%s.a%d", h.request.InstanceID, h.request.Attempt),
-		OperationID: event.OperationID, Type: event.Type, Message: event.Type,
-		Data: event.Data,
-	})
-}
-
-func (h *executionHooks) Reserve(ctx context.Context, kind string) error {
-	return h.store.Reserve(ctx, h.request.RunID, kind, h.request.Scopes)
-}
-
-func (h *executionHooks) PutArtifact(ctx context.Context, name, mime string, b []byte) (contract.Artifact, error) {
-	return h.artifacts.Put(
-		ctx,
-		name,
-		mime,
-		b,
-		map[string]string{
-			"runId":      h.request.RunID,
-			"instanceId": h.request.InstanceID,
-			"attemptId":  fmt.Sprintf("%s.a%d", h.request.InstanceID, h.request.Attempt),
-		},
-	)
-}
-
-func (h *executionHooks) GetArtifact(ctx context.Context, id string) ([]byte, error) {
-	return h.artifacts.Get(ctx, id)
-}
-
-func (h *executionHooks) BeginOperation(ctx context.Context, op adapters.Operation) (adapters.OperationState, error) {
-	s, e := h.store.BeginOperation(ctx, op.ID, h.request.RunID, op.Kind, op.Effect)
-	return adapters.OperationState{Started: s.Started, Completed: s.Completed, Response: s.Response}, e
-}
-
-func (h *executionHooks) CompleteOperation(ctx context.Context, id string, b json.RawMessage) error {
-	return h.store.CompleteOperation(ctx, id, b)
+	host := executor.Host{Store: a.db, Artifacts: a.artifacts, Runner: a.runner}
+	return host.Execute(ctx, q), nil
 }
 
 type temporalLog struct{ log *slog.Logger }

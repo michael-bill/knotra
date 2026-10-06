@@ -72,7 +72,7 @@ func TestDockerLeaseTransientReadFailureDoesNotRevokeValidExpiry(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer sandbox.close()
+	defer func() { _ = sandbox.close() }()
 	// Ensure PID 1 has observed its initial lease, then emulate a brief missing
 	// inode during shared-filesystem rename visibility without renewing it.
 	if _, err = sandbox.helper(ctx, "exec", map[string]any{"command": []string{"python", "-c", "import time;time.sleep(1)"}}); err != nil {
@@ -108,13 +108,13 @@ func TestDockerCleanupIsBoundToEngineIdentity(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer owned.close()
+	defer func() { _ = owned.close() }()
 	unrelated, err := other.nodeSandbox(ctx, req)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer unrelated.close()
-	if err = runner.CleanupOwned(ctx); err != nil {
+	defer func() { _ = unrelated.close() }()
+	if err = runner.CleanupOwned(ctx, nil); err != nil {
 		t.Fatal(err)
 	}
 	assertContainerGone(t, ctx, owned.docker, owned.id)
@@ -125,7 +125,7 @@ func TestDockerCleanupIsBoundToEngineIdentity(t *testing.T) {
 	if err = unrelated.docker.json(ctx, "GET", "/containers/"+unrelated.id+"/json", nil, &inspect); err != nil {
 		t.Fatalf("cleanup affected other engine: %v", err)
 	}
-	if err = runner.CleanupOwned(ctx); err != nil {
+	if err = runner.CleanupOwned(ctx, nil); err != nil {
 		t.Fatalf("cleanup is not idempotent: %v", err)
 	}
 }
@@ -140,7 +140,7 @@ func TestDockerHardDeadlineCannotBeRenewed(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer sandbox.close()
+	defer func() { _ = sandbox.close() }()
 	waitContainerStopped(t, sandbox.docker, sandbox.id, 5*time.Second)
 	if err := sandbox.diagnose(errors.New("original")); !strings.Contains(err.Error(), "hard deadline expired") {
 		t.Fatal(err)
@@ -161,7 +161,7 @@ func TestDockerWatchdogSurvivesOwnerSIGKILL(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		defer sandbox.close()
+		defer func() { _ = sandbox.close() }()
 		go func() {
 			_, _ = sandbox.helper(
 				ctx,
@@ -170,7 +170,7 @@ func TestDockerWatchdogSurvivesOwnerSIGKILL(t *testing.T) {
 			)
 		}()
 		b, _ := json.Marshal(map[string]string{"id": sandbox.id, "dir": sandbox.dir, "engine": runner.EngineID})
-		fmt.Println("KNOTRA_SANDBOX_READY " + string(b))
+		_, _ = fmt.Println("KNOTRA_SANDBOX_READY " + string(b))
 		<-ctx.Done()
 		return
 	}
@@ -205,7 +205,7 @@ func TestDockerWatchdogSurvivesOwnerSIGKILL(t *testing.T) {
 	}
 	// Transfer cleanup responsibility before killing the owner; test failures must
 	// never leave a live test workload or its host package directory behind.
-	docker, err := runner.docker()
+	docker, err := runner.docker(t.Context())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -220,7 +220,7 @@ func TestDockerWatchdogSurvivesOwnerSIGKILL(t *testing.T) {
 		t.Fatalf("watchdog test accidentally ran host cleanup: %v", err)
 	}
 	runner.EngineID = ready.Engine
-	if err = runner.CleanupOwned(ctx); err != nil {
+	if err = runner.CleanupOwned(ctx, nil); err != nil {
 		t.Fatal(err)
 	}
 	assertContainerGone(t, ctx, docker, ready.ID)

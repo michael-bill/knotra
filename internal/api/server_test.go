@@ -26,7 +26,7 @@ func TestStrictBodiesAndBearerAuthentication(t *testing.T) {
 	srv := Server{Token: "secret", Store: &store.Store{EngineID: "test"}}
 
 	for _, header := range []string{"", "secret", "Basic secret", "Bearer wrong"} {
-		r := httptest.NewRequest("GET", "/v1/info", nil)
+		r := httptest.NewRequestWithContext(t.Context(), "GET", "/v1/info", nil)
 		r.Header.Set("Authorization", header)
 		w := httptest.NewRecorder()
 		srv.Handler().ServeHTTP(w, r)
@@ -37,7 +37,7 @@ func TestStrictBodiesAndBearerAuthentication(t *testing.T) {
 
 	for _, body := range []string{`null`, `[]`, `{"a":1,"a":2}`, `{} {}`, `{"unexpected":true}`} {
 		w := httptest.NewRecorder()
-		r := httptest.NewRequest("POST", "/", strings.NewReader(body))
+		r := httptest.NewRequestWithContext(t.Context(), "POST", "/", strings.NewReader(body))
 		var v struct{}
 		if _, err := readBody(w, r, &v); err == nil {
 			t.Errorf("accepted %s", body)
@@ -48,7 +48,7 @@ func TestStrictBodiesAndBearerAuthentication(t *testing.T) {
 	var v struct {
 		Source string `json:"source"`
 	}
-	if _, err := readBody(httptest.NewRecorder(), httptest.NewRequest("POST", "/", bytes.NewReader(b)), &v); err != nil {
+	if _, err := readBody(httptest.NewRecorder(), httptest.NewRequestWithContext(t.Context(), "POST", "/", bytes.NewReader(b)), &v); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -87,7 +87,7 @@ func apiStore(t *testing.T) *store.Store {
 		if err != nil {
 			t.Error(err)
 		}
-		admin.Close(ctx)
+		_ = admin.Close(ctx)
 	})
 	return db
 }
@@ -115,7 +115,7 @@ spec:
 		if err != nil {
 			t.Fatal(err)
 		}
-		r := httptest.NewRequest("POST", "/v1"+route, bytes.NewReader(b))
+		r := httptest.NewRequestWithContext(t.Context(), "POST", "/v1"+route, bytes.NewReader(b))
 		r.Header.Set("Idempotency-Key", key)
 		w := httptest.NewRecorder()
 		handler.ServeHTTP(w, r)
@@ -231,7 +231,7 @@ spec:
 	if err = json.Unmarshal(b, &artifact); err != nil {
 		t.Fatal(err)
 	}
-	r := httptest.NewRequest("GET", "/v1/artifacts/"+artifact.Artifact.ID+"/content", nil)
+	r := httptest.NewRequestWithContext(t.Context(), "GET", "/v1/artifacts/"+artifact.Artifact.ID+"/content", nil)
 	w := httptest.NewRecorder()
 	handler.ServeHTTP(w, r)
 	if w.Code != http.StatusOK || w.Body.String() != "durable file" {
@@ -248,7 +248,7 @@ spec:
 	if err != nil || len(events) != 1 {
 		t.Fatal(events, err)
 	}
-	r = httptest.NewRequest("GET", "/v1/runs/"+id+"/events", nil)
+	r = httptest.NewRequestWithContext(t.Context(), "GET", "/v1/runs/"+id+"/events", nil)
 	r.Header.Set("Last-Event-ID", "999999")
 	w = httptest.NewRecorder()
 	handler.ServeHTTP(w, r)
@@ -266,7 +266,7 @@ spec:
 	}
 	getHistory := func(cursor string) protocol.Page[protocol.Event] {
 		t.Helper()
-		request := httptest.NewRequest("GET", "/v1/runs/"+id+"/history?instanceId=node&cursor="+url.QueryEscape(cursor), nil)
+		request := httptest.NewRequestWithContext(t.Context(), "GET", "/v1/runs/"+id+"/history?instanceId=node&cursor="+url.QueryEscape(cursor), nil)
 		response := httptest.NewRecorder()
 		handler.ServeHTTP(response, request)
 		if response.Code != 200 {
@@ -305,7 +305,7 @@ func TestProfilesUseNameWhenTitleOmitted(t *testing.T) {
 		"local": {Metadata: contract.Metadata{Name: "Local engine"}},
 	}}
 	response := httptest.NewRecorder()
-	srv.profiles(response, httptest.NewRequest(http.MethodGet, "/v1/profiles", nil))
+	srv.profiles(response, httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/v1/profiles", nil))
 	var catalog struct {
 		Items []struct {
 			Title string `json:"title"`
@@ -333,7 +333,7 @@ func TestArtifactUploadRequiresBase64StringContent(t *testing.T) {
 		{"empty", `{"name":"empty.txt","mediaType":"text/plain","content":""}`, 201},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			r := httptest.NewRequest(http.MethodPost, "/v1/artifacts", strings.NewReader(tc.body))
+			r := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/v1/artifacts", strings.NewReader(tc.body))
 			r.Header.Set("Idempotency-Key", tc.name)
 			w := httptest.NewRecorder()
 			srv.Handler().ServeHTTP(w, r)

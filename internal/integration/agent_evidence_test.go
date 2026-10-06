@@ -33,12 +33,12 @@ func assertAgentEvidence(t *testing.T, ctx context.Context, dsn string, run prot
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer connection.Close(ctx)
+	defer func() { _ = connection.Close(ctx) }()
 	tx, err := connection.BeginTx(ctx, pgx.TxOptions{AccessMode: pgx.ReadOnly})
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer tx.Rollback(ctx)
+	defer func() { _ = tx.Rollback(ctx) }()
 	var rawPlan []byte
 	if err = tx.QueryRow(ctx, "SELECT plan FROM knotra_runs WHERE id=$1", run.ID).Scan(&rawPlan); err != nil {
 		t.Fatal(err)

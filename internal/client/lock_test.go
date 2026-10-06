@@ -20,7 +20,7 @@ func TestCommandLockSurvivesContentionAndOwnerDeath(t *testing.T) {
 			t.Fatal(err)
 		}
 		defer unlock()
-		fmt.Fprintln(os.Stdout, "locked")
+		_, _ = fmt.Fprintln(os.Stdout, "locked")
 		_, _ = io.Copy(io.Discard, os.Stdin)
 		return
 	}
@@ -34,7 +34,7 @@ func TestCommandLockSurvivesContentionAndOwnerDeath(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer stdin.Close()
+	defer func() { _ = stdin.Close() }()
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
 		t.Fatal(err)

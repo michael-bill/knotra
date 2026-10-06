@@ -95,24 +95,21 @@ func compareCELKeys(a, b ref.Val) int {
 		return order
 	}
 
-	switch x := a.(type) {
-	case types.Bool:
-		if x == b.(types.Bool) {
-			return 0
-		}
-		if x == types.False {
-			return -1
-		}
-		return 1
-	case types.Int:
-		return cmp.Compare(int64(x), int64(b.(types.Int)))
-	case types.Uint:
-		return cmp.Compare(uint64(x), uint64(b.(types.Uint)))
-	case types.String:
-		return cmp.Compare(string(x), string(b.(types.String)))
+	// Only CEL's scalar map keys have a deterministic total order.
+	switch a.(type) {
+	case types.Bool, types.Int, types.Uint, types.String:
 	default:
 		panic("unexpected CEL map key type")
 	}
+	comparer, ok := a.(traits.Comparer)
+	if !ok {
+		panic("CEL map key does not support comparison")
+	}
+	order, ok := comparer.Compare(b).(types.Int)
+	if !ok {
+		panic("incompatible CEL map keys")
+	}
+	return int(order)
 }
 
 func (m *orderedMap) Iterator() traits.Iterator {

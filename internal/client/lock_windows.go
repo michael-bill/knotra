@@ -29,14 +29,14 @@ func (c *Client) lockCommand(ctx context.Context, id string) (func(), error) {
 			return func() { _ = windows.UnlockFileEx(handle, 0, 1, 0, &overlapped); _ = f.Close() }, nil
 		}
 		if !errors.Is(err, windows.ERROR_LOCK_VIOLATION) {
-			f.Close()
+			_ = f.Close()
 			return nil, err
 		}
 		timer := time.NewTimer(25 * time.Millisecond)
 		select {
 		case <-ctx.Done():
 			timer.Stop()
-			f.Close()
+			_ = f.Close()
 			return nil, ctx.Err()
 		case <-timer.C:
 		}

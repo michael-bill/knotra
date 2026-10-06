@@ -22,9 +22,9 @@ func TestCloudToolConversationPreservesIDsAndPrivateContext(t *testing.T) {
 				body := decodeRequest(t, req)
 				if calls.Add(1) == 1 {
 					if provider == "openai" {
-						fmt.Fprint(w, `{"status":"completed","output":[{"type":"reasoning","id":"rs_1","encrypted_content":"private-encrypted-context","summary":[]},{"type":"function_call","id":"fc_1","call_id":"call_1","name":"work","arguments":"{\"value\":7}"}],"usage":{"input_tokens":4,"output_tokens":3}}`)
+						_, _ = fmt.Fprint(w, `{"status":"completed","output":[{"type":"reasoning","id":"rs_1","encrypted_content":"private-encrypted-context","summary":[]},{"type":"function_call","id":"fc_1","call_id":"call_1","name":"work","arguments":"{\"value\":7}"}],"usage":{"input_tokens":4,"output_tokens":3}}`)
 					} else {
-						fmt.Fprint(w, `{"type":"message","role":"assistant","content":[{"type":"thinking","thinking":"private-thinking","signature":"private-signature"},{"type":"tool_use","id":"call_1","name":"work","input":{"value":7}}],"stop_reason":"tool_use","usage":{"input_tokens":4,"output_tokens":3}}`)
+						_, _ = fmt.Fprint(w, `{"type":"message","role":"assistant","content":[{"type":"thinking","thinking":"private-thinking","signature":"private-signature"},{"type":"tool_use","id":"call_1","name":"work","input":{"value":7}}],"stop_reason":"tool_use","usage":{"input_tokens":4,"output_tokens":3}}`)
 					}
 					return
 				}
@@ -86,7 +86,7 @@ func TestCloudDockerAgentToolsValidationAndReplay(t *testing.T) {
 	for _, provider := range []string{"openai", "anthropic"} {
 		t.Run(provider, func(t *testing.T) {
 			runner := integrationRunner(t)
-			defer runner.Close()
+			defer func() { _ = runner.Close() }()
 			var turns atomic.Int32
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 				body := decodeRequest(t, req)
@@ -135,7 +135,7 @@ func TestCloudDockerAgentToolsValidationAndReplay(t *testing.T) {
 func TestCloudStructuredStreamingObservations(t *testing.T) {
 	for _, provider := range []string{"openai", "anthropic"} {
 		t.Run(provider, func(t *testing.T) {
-			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 				writeCloudOutput(w, provider, "knotra_output", `{"answer":42}`, true)
 			}))
 			defer server.Close()
@@ -147,7 +147,7 @@ func TestCloudStructuredStreamingObservations(t *testing.T) {
 			var complete bool
 			for _, event := range hooks.snapshot() {
 				if event.Type == "model.delta" {
-					deltas.WriteString(fmt.Sprint(event.Data["text"]))
+					_, _ = fmt.Fprint(&deltas, event.Data["text"])
 				}
 				if event.Type == "model.completed" {
 					complete = event.Data["content"] == `{"answer":42}` && event.Data["inputTokens"] == json.Number("17") && event.Data["outputTokens"] == json.Number("9")

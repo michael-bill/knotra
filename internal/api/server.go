@@ -15,10 +15,12 @@ import (
 	"net/http"
 	"regexp"
 	"strings"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 
 	"github.com/michael-bill/knotra/internal/contract"
+	"github.com/michael-bill/knotra/internal/execution"
 	"github.com/michael-bill/knotra/internal/protocol"
 	"github.com/michael-bill/knotra/internal/store"
 )
@@ -28,14 +30,19 @@ const maxRequestBytes = 256 << 20
 var operationPattern = regexp.MustCompile(`^[A-Za-z0-9_-]{1,128}$`)
 
 type Server struct {
-	Store      *store.Store
-	Artifacts  store.Artifacts
-	Profiles   map[string]contract.Profile
-	Token      string
-	Version    string
-	CORSOrigin string
-	Admit      func(context.Context, *contract.Plan) error
-	Log        *slog.Logger
+	Store            *store.Store
+	Artifacts        store.Artifacts
+	Profiles         map[string]contract.Profile
+	Token            string
+	Version          string
+	CORSOrigin       string
+	Admit            func(context.Context, *contract.Plan) error
+	Backend          string
+	HostID           string
+	WorkerBackends   []string
+	ExecutionTimeout time.Duration
+	Wake             store.EnqueueWake
+	Log              *slog.Logger
 }
 
 func (s *Server) Handler() http.Handler {
@@ -112,15 +119,17 @@ func (s *Server) fail(w http.ResponseWriter, status int, code, message string, d
 }
 
 func (s *Server) err(w http.ResponseWriter, e error) {
-	if errors.Is(e, store.ErrNotFound) {
+	switch {
+	case errors.Is(e, store.ErrNotFound):
 		s.fail(w, 404, "NOT_FOUND", "object not found", nil)
-	} else if errors.Is(e, store.ErrConflict) {
+	case errors.Is(e, store.ErrConflict):
 		s.fail(w, 409, "OPERATION_CONFLICT", "operation conflicts with existing state", nil)
-	} else {
+	default:
 		s.fail(w, 503, "UNAVAILABLE", "engine storage or service is unavailable", nil)
 		if s.Log != nil {
 			s.Log.Error("engine request failed", "error", e)
 		}
+
 	}
 }
 
@@ -170,7 +179,7 @@ func (s *Server) command(w http.ResponseWriter, r *http.Request, payload []byte,
 		if rollback := nested.Rollback(r.Context()); rollback != nil {
 			return 0, nil, rollback
 		}
-		code, message := "", ""
+		var code, message string
 		var validation *store.ValidationError
 
 		switch {
@@ -195,16 +204,30 @@ func (s *Server) command(w http.ResponseWriter, r *http.Request, payload []byte,
 	_, _ = w.Write(b)
 }
 
-func (s *Server) info(w http.ResponseWriter, r *http.Request) {
+func (s *Server) info(w http.ResponseWriter, _ *http.Request) {
+	backend := s.Backend
+	if backend == "" {
+		backend = execution.BackendTemporal
+	}
+	schedulerVersion, stateFormatVersion := 0, 0
+	if backend == execution.BackendRiver {
+		schedulerVersion, stateFormatVersion = execution.SchedulerVersion, execution.StateFormatVersion
+	}
 	s.write(
 		w,
 		200,
 		map[string]any{
-			"protocol":     protocol.Version,
-			"engineId":     s.Store.EngineID,
-			"principalId":  s.principal(),
-			"version":      s.Version,
-			"capabilities": []string{"validate", "definitions", "runs", "events", "history", "execution-observations", "human", "artifacts", "resolution"},
+			"protocol":           protocol.Version,
+			"engineId":           s.Store.EngineID,
+			"principalId":        s.principal(),
+			"version":            s.Version,
+			"backend":            backend,
+			"workerBackends":     s.WorkerBackends,
+			"hostId":             s.HostID,
+			"schedulerVersion":   schedulerVersion,
+			"stateFormatVersion": stateFormatVersion,
+			"executionTimeout":   s.ExecutionTimeout.String(),
+			"capabilities":       []string{"validate", "definitions", "runs", "events", "history", "execution-observations", "human", "artifacts", "resolution"},
 		},
 	)
 }

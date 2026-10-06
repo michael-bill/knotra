@@ -17,9 +17,31 @@ make build
 make check
 ```
 
-`make check` runs formatting checks, `go vet`, unit tests and the race detector. Unit tests may open
-loopback listeners. They require no paid model calls, installed Ollama, PostgreSQL or Docker daemon;
-integration tests skip unless explicitly enabled.
+Use `make help` to list commands. `make format` formats Go sources, `make test` runs unit tests,
+`make test-race` enables the race detector, and `make build` writes the CLI to `bin/`. `make vet`
+and `make format-check` are available separately.
+
+`make integration` runs enabled database, Docker and service checks. For the real River disaster
+restore check, also set `KNOTRA_TEST_RECOVERY=1`, `KNOTRA_TEST_HELPER`, and
+`KNOTRA_TEST_POSTGRES_CONTAINER` to the PostgreSQL container serving `KNOTRA_TEST_DATABASE_URL`. It
+uses that container's `pg_dump`/`pg_restore` and removes only its own temporary schema and data
+directories. The Go CI integration job enables it alongside the process recovery checks.
+
+`make check` runs strict golangci-lint checks, formatting checks, `go vet`, unit tests and the race
+detector. Unit tests may open loopback listeners. They require no paid model calls, installed
+Ollama, PostgreSQL or Docker daemon; integration tests skip unless explicitly enabled.
+
+Run `make lint` for lint checks alone. The Makefile pins golangci-lint **2.14.0**; no global
+installation is required. An installed copy of that version can be used with
+`make lint GOLANGCI_LINT=golangci-lint`. Both Linux and Windows CI apply `.golangci.yml` to all Go
+packages, including tests. The configuration checks error handling, contexts, HTTP/SQL resource
+closure, error wrapping and readability. Only generated code is excluded; there are no blanket test
+or directory exemptions. A necessary `//nolint:linter` must name the check and explain why it does
+not apply; unused suppressions fail lint.
+
+PostgreSQL queries live in `internal/store/queries`; regenerate their typed pgx methods with
+`make generate-sql` after changing queries or `internal/store/schema.sql`. Commit the generated
+`internal/store/db` files too. CI checks generation with the sqlc version pinned in the Makefile.
 
 ## Package boundaries
 
@@ -120,7 +142,7 @@ export KNOTRA_TEST_DATABASE_URL='postgres://knotra:knotra-development@127.0.0.1:
 export KNOTRA_TEST_HELPER="$PWD/.knotra/bin/sandbox-helper"
 export KNOTRA_TEST_WORKDIR="$PWD/.knotra/test-work"
 export KNOTRA_TEST_FIREWALL_IMAGE=knotra-firewall:dev
-go test -mod=readonly -race -count=1 -timeout=15m ./internal/store ./internal/api ./internal/adapters/...
+make integration
 ```
 
 Use a development database. Database tests create isolated schemas; Docker tests remove their own
@@ -148,10 +170,10 @@ runtime failures and uncertain external outcomes distinct; do not turn an ambigu
 automatic retry.
 
 New adapters must validate capabilities before admission, fix resolved resources in the plan, count
-every outbound call, and document retry/idempotency behavior. Persistence changes must preserve
-existing histories and deployed data; add explicit migrations instead of resetting tables. Workflow
-changes need replay-compatible versioning when they would alter already recorded execution
-decisions.
+every outbound call, and document retry/idempotency behavior. The project has not launched: edit the
+initial application schema directly; schema upgrades for existing deployments are outside the
+current scope. Workflow changes need replay-compatible versioning when they would alter already
+recorded execution decisions.
 
 Knotra is MIT licensed. Contributions are made under the same [license](LICENSE). Follow the
 [community conduct](CODE_OF_CONDUCT.md) and report vulnerabilities privately according to
@@ -163,7 +185,11 @@ Default adapter tests use literal Responses/Messages fixtures, including fragmen
 responses, auth/status handling, tool ID correlation, budgets and operation replay. Real Docker
 agent checks use `KNOTRA_TEST_HELPER` and `KNOTRA_TEST_WORKDIR`. The recovery suite includes both
 fixture providers against real PostgreSQL/Temporal when `KNOTRA_TEST_RECOVERY=1`; the generation
-count must remain one across process restart.
+count must remain one across process restart. On Unix, `KNOTRA_TEST_RUNTIME_RECOVERY=1` also enables
+actual River Runtime SIGKILL checks against literal HTTP fixtures and isolated PostgreSQL schemas,
+with natural lease expiry. Run
+`go test -race -count=1 -timeout=6m -run '^TestRuntimeProcessCrashBoundaries$' ./internal/queue`
+with `KNOTRA_TEST_DATABASE_URL` set.
 
 Paid smoke tests require explicit `KNOTRA_TEST_CLOUD=1`, a provider key and
 `KNOTRA_TEST_OPENAI_MODEL` or `KNOTRA_TEST_ANTHROPIC_MODEL`. See the

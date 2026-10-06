@@ -163,7 +163,7 @@ func TestDirectToolReceivesEvaluatedArguments(t *testing.T) {
 
 func TestInvalidOutputStopsDependentBeforeEffects(t *testing.T) {
 	h := newHarness(t)
-	h.leaf = func(request ExecuteRequest) ExecuteResult {
+	h.leaf = func(_ ExecuteRequest) ExecuteResult {
 		return ExecuteResult{Outputs: contract.Values{"value": jsonValue(123)}}
 	}
 	a, b := llm(), llm()
@@ -207,12 +207,11 @@ func TestConcurrencyLimitQueuesLeafAttempts(t *testing.T) {
 
 func TestUnknownOutcomeBlocksQueuedLeaf(t *testing.T) {
 	h := newHarness(t)
-	var unknownInstance atomic.Value
-	unknownInstance.Store("")
+	var unknownInstance atomic.Pointer[string]
 	h.leaf = func(request ExecuteRequest) ExecuteResult {
 		// Independent ready projections can complete in either order. Whichever
 		// leaf acquires the first execution slot must block the remaining leaf.
-		if unknownInstance.CompareAndSwap("", request.InstanceID) {
+		if unknownInstance.CompareAndSwap(nil, &request.InstanceID) {
 			return ExecuteResult{Failure: &Failure{Code: "UNKNOWN", Unknown: true, OperationID: "op"}}
 		}
 		return ExecuteResult{Outputs: contract.Values{"value": jsonValue("ok")}}
@@ -221,15 +220,15 @@ func TestUnknownOutcomeBlocksQueuedLeaf(t *testing.T) {
 	p.Profile.Spec.Limits.MaxConcurrentNodes = 1
 	resumeAt := h.env.Now().Add(2 * time.Second)
 	h.env.RegisterDelayedCallback(func() {
-		instanceID := unknownInstance.Load().(string)
-		if instanceID == "" {
+		instanceID := unknownInstance.Load()
+		if instanceID == nil {
 			t.Error("no leaf produced an unknown outcome before resolution")
 			return
 		}
 		h.env.SignalWorkflow(
 			ResolveSignalName,
 			ResolutionSignal{
-				InstanceID:  instanceID,
+				InstanceID:  *instanceID,
 				OperationID: "op",
 				Decision:    "completed",
 				ResponseID:  "evidence",
@@ -246,7 +245,7 @@ func TestUnknownOutcomeBlocksQueuedLeaf(t *testing.T) {
 		t.Fatalf("external calls=%d, want 2", len(h.calls))
 	}
 
-	unknownID := unknownInstance.Load().(string)
+	unknownID := *unknownInstance.Load()
 	queuedStarts := 0
 	for _, event := range h.events {
 		if event.Kind == "node" && event.InstanceID != unknownID && event.Status == "running" && event.Attempt == 1 {

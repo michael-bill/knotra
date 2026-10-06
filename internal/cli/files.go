@@ -16,8 +16,8 @@ import (
 	"github.com/michael-bill/knotra/internal/fsutil"
 )
 
-func (s *commandState) readFile(name string, max int64) ([]byte, error) {
-	var reader io.Reader = s.options.In
+func (s *commandState) readFile(name string, limitBytes int64) ([]byte, error) {
+	var reader = s.options.In
 	var file *os.File
 	var err error
 	if name != "-" {
@@ -25,15 +25,15 @@ func (s *commandState) readFile(name string, max int64) ([]byte, error) {
 		if err != nil {
 			return nil, err
 		}
-		defer file.Close()
+		defer func() { _ = file.Close() }()
 		reader = file
 	}
-	b, err := io.ReadAll(io.LimitReader(reader, max+1))
+	b, err := io.ReadAll(io.LimitReader(reader, limitBytes+1))
 	if err != nil {
 		return nil, err
 	}
-	if int64(len(b)) > max {
-		return nil, fmt.Errorf("%s exceeds %d bytes", name, max)
+	if int64(len(b)) > limitBytes {
+		return nil, fmt.Errorf("%s exceeds %d bytes", name, limitBytes)
 	}
 	return b, nil
 }
@@ -165,13 +165,13 @@ func atomicFile(name string, data []byte, replace bool) error {
 	if err != nil {
 		return err
 	}
-	defer os.Remove(file.Name())
+	defer func() { _ = os.Remove(file.Name()) }()
 	if _, err = file.Write(data); err != nil {
-		file.Close()
+		_ = file.Close()
 		return err
 	}
 	if err = file.Sync(); err != nil {
-		file.Close()
+		_ = file.Close()
 		return err
 	}
 	if err = file.Close(); err != nil {

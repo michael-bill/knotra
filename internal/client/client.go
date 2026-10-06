@@ -98,7 +98,7 @@ func (c *Client) request(ctx context.Context, method, route string, body []byte,
 }
 
 func response(res *http.Response, out any) error {
-	defer res.Body.Close()
+	defer res.Body.Close() //nolint:errcheck // The response is consumed below; closing cannot change the request's outcome.
 	b, e := io.ReadAll(io.LimitReader(res.Body, (256<<20)+1))
 	if e != nil {
 		return e
@@ -159,13 +159,13 @@ func (c *Client) save(v Command) error {
 		return e
 	}
 	name := f.Name()
-	defer os.Remove(name)
+	defer func() { _ = os.Remove(name) }()
 	if _, e = f.Write(b); e != nil {
-		f.Close()
+		_ = f.Close()
 		return e
 	}
 	if e = f.Sync(); e != nil {
-		f.Close()
+		_ = f.Close()
 		return e
 	}
 	if e = f.Close(); e != nil {
@@ -183,7 +183,7 @@ func validID(s string) bool {
 	}
 
 	for _, r := range s {
-		if !(r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || r == '_' || r == '-') {
+		if (r < 'a' || r > 'z') && (r < 'A' || r > 'Z') && (r < '0' || r > '9') && r != '_' && r != '-' {
 			return false
 		}
 	}
@@ -256,7 +256,7 @@ func (c *Client) Command(ctx context.Context, route string, payload any, id stri
 	if e != nil {
 		return fmt.Errorf("operation %s is pending; reconcile with operations retry: %w", id, e)
 	}
-	defer res.Body.Close()
+	defer func() { _ = res.Body.Close() }()
 	data, e := io.ReadAll(io.LimitReader(res.Body, (256<<20)+1))
 	if e != nil || len(data) > 256<<20 {
 		return fmt.Errorf("operation %s remains pending after incomplete response", id)
@@ -347,7 +347,7 @@ func (c *Client) Bytes(ctx context.Context, route string) ([]byte, error) {
 	if e != nil {
 		return nil, e
 	}
-	defer res.Body.Close()
+	defer func() { _ = res.Body.Close() }()
 	if res.StatusCode != 200 {
 		return nil, fmt.Errorf("artifact download: HTTP %d", res.StatusCode)
 	}
@@ -383,12 +383,12 @@ func (c *Client) Watch(ctx context.Context, runID, cursor string, emit func(prot
 		res, e := c.httpClient().Do(req)
 		if e == nil {
 			if res.StatusCode != 200 {
-				res.Body.Close()
+				_ = res.Body.Close()
 				return fmt.Errorf("event stream: HTTP %d", res.StatusCode)
 			}
 			mediaType, _, mediaErr := mime.ParseMediaType(res.Header.Get("Content-Type"))
 			if mediaErr != nil || mediaType != "text/event-stream" {
-				res.Body.Close()
+				_ = res.Body.Close()
 				return errors.New("event stream has invalid content type")
 			}
 			var callbackErr error
@@ -403,7 +403,7 @@ func (c *Client) Watch(ctx context.Context, runID, cursor string, emit func(prot
 				cursor = v.ID
 				return nil
 			})
-			res.Body.Close()
+			_ = res.Body.Close()
 			if callbackErr != nil {
 				return callbackErr
 			}

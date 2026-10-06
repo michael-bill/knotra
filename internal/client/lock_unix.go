@@ -29,7 +29,7 @@ func (c *Client) lockCommand(ctx context.Context, id string) (func(), error) {
 			return func() { _ = syscall.Flock(int(f.Fd()), syscall.LOCK_UN); _ = f.Close() }, nil
 		}
 		if !errors.Is(err, syscall.EWOULDBLOCK) && !errors.Is(err, syscall.EAGAIN) {
-			f.Close()
+			_ = f.Close()
 			return nil, err
 		}
 		timer := time.NewTimer(25 * time.Millisecond)
@@ -37,7 +37,7 @@ func (c *Client) lockCommand(ctx context.Context, id string) (func(), error) {
 		select {
 		case <-ctx.Done():
 			timer.Stop()
-			f.Close()
+			_ = f.Close()
 			return nil, ctx.Err()
 		case <-timer.C:
 		}

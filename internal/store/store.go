@@ -1,16 +1,15 @@
-// Package store persists projections and command receipts. Temporal remains the scheduler.
+// Package store persists command receipts, public projections and authoritative
+// execution records. Queue delivery is composed by the application bridge.
 package store
 
 import (
 	"context"
 	"crypto/sha256"
-	"embed"
+	_ "embed"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io/fs"
-	"sort"
 	"strconv"
 	"time"
 
@@ -19,12 +18,13 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/michael-bill/knotra/internal/contract"
-	"github.com/michael-bill/knotra/internal/engine"
+	"github.com/michael-bill/knotra/internal/execution"
 	"github.com/michael-bill/knotra/internal/protocol"
+	"github.com/michael-bill/knotra/internal/store/db"
 )
 
-//go:embed migrations/*.sql
-var migrations embed.FS
+//go:embed schema.sql
+var schemaSQL string
 
 var ErrNotFound = errors.New("not found")
 
@@ -49,20 +49,28 @@ func Open(ctx context.Context, dsn string) (_ *Store, err error) {
 	if err != nil {
 		return nil, err
 	}
-	defer tx.Rollback(ctx)
-	if _, err = tx.Exec(ctx, "SELECT pg_advisory_xact_lock(712865723)"); err != nil {
+	defer func() { _ = tx.Rollback(ctx) }()
+	if _, err = db.New(tx).LockStoreSchema(ctx); err != nil {
 		return nil, err
 	}
-	if err = migrate(ctx, tx); err != nil {
-		return nil, fmt.Errorf("migrate database: %w", err)
+	initialized, err := db.New(tx).SchemaInitialized(ctx)
+	if err != nil {
+		return nil, err
 	}
-	if _, err = tx.Exec(ctx, "INSERT INTO knotra_settings(key,value) VALUES ('engine_id',$1) ON CONFLICT DO NOTHING", uuid.NewString()); err != nil {
+	if !initialized {
+		if _, err = tx.Exec(ctx, schemaSQL); err != nil {
+			return nil, fmt.Errorf("initialize database: %w", err)
+		}
+	}
+	if _, err = db.New(tx).InsertEngineID(ctx, uuid.NewString()); err != nil {
 		return nil, err
 	}
 	s := &Store{Pool: p}
-	if err = tx.QueryRow(ctx, "SELECT value FROM knotra_settings WHERE key='engine_id'").Scan(&s.EngineID); err != nil {
+	s.EngineID, err = db.New(tx).ReadEngineID(ctx)
+	if err != nil {
 		return nil, err
 	}
+
 	if err = tx.Commit(ctx); err != nil {
 		return nil, err
 	}
@@ -87,24 +95,24 @@ func (s *Store) Command(ctx context.Context, principal, key, route string, paylo
 	if err != nil {
 		return 0, nil, err
 	}
-	defer tx.Rollback(ctx)
-	_, err = tx.Exec(ctx, "SELECT pg_advisory_xact_lock(hashtextextended($1,0))", principal+":"+key)
+	defer func() { _ = tx.Rollback(ctx) }()
+	_, err = db.New(tx).LockTransactionKey(ctx, principal+":"+key)
 	if err != nil {
 		return 0, nil, err
 	}
 	sum := sha256.Sum256(payload)
 	digest := hex.EncodeToString(sum[:])
-	var oldRoute, oldDigest string
+
 	var status int
 	var response []byte
-	err = tx.QueryRow(ctx, "SELECT route,digest,status,response FROM knotra_commands WHERE principal=$1 AND id=$2", principal, key).Scan(
-		&oldRoute,
-		&oldDigest,
-		&status,
-		&response,
-	)
+	storedCommandReceipt, queryErr2 := db.New(tx).ReadCommandReceipt(ctx, db.ReadCommandReceiptParams{Principal: principal, ID: key})
+	err = queryErr2
 	if err == nil {
-		if oldRoute != route || oldDigest != digest {
+		status = storedCommandReceipt.Status
+		response = storedCommandReceipt.Response
+	}
+	if err == nil {
+		if storedCommandReceipt.Route != route || storedCommandReceipt.Digest != digest {
 			return 0, nil, ErrConflict
 		}
 		return status, response, nil
@@ -120,16 +128,14 @@ func (s *Store) Command(ctx context.Context, principal, key, route string, paylo
 	if err != nil {
 		return 0, nil, err
 	}
-	_, err = tx.Exec(
-		ctx,
-		"INSERT INTO knotra_commands(principal,id,route,digest,status,response) VALUES($1,$2,$3,$4,$5,$6)",
-		principal,
-		key,
-		route,
-		digest,
-		status,
-		response,
-	)
+	_, err = db.New(tx).InsertCommandReceipt(ctx, db.InsertCommandReceiptParams{
+		Principal: principal,
+		ID:        key,
+		Route:     route,
+		Digest:    digest,
+		Status:    status,
+		Response:  response,
+	})
 	if err != nil {
 		return 0, nil, err
 	}
@@ -142,13 +148,7 @@ func PutDefinition(ctx context.Context, tx pgx.Tx, d protocol.Definition) (proto
 		return d, e
 	}
 	var saved []byte
-	e = tx.QueryRow(
-		ctx,
-		"INSERT INTO knotra_definitions(id,digest,document) VALUES($1,$2,$3) ON CONFLICT(digest) DO UPDATE SET digest=EXCLUDED.digest RETURNING document",
-		d.ID,
-		d.PackageDigest,
-		b,
-	).Scan(&saved)
+	saved, e = db.New(tx).PutDefinition(ctx, db.PutDefinitionParams{ID: d.ID, Digest: d.PackageDigest, Document: b})
 	if e == nil {
 		e = json.Unmarshal(saved, &d)
 	}
@@ -158,14 +158,12 @@ func PutDefinition(ctx context.Context, tx pgx.Tx, d protocol.Definition) (proto
 // Querier is implemented by a pool and a transaction. Command handlers must use
 // their transaction for reads too, so concurrent admissions cannot exhaust a pool
 // while holding every connection and waiting for an additional one.
-type Querier interface {
-	QueryRow(context.Context, string, ...any) pgx.Row
-}
+type Querier = db.DBTX
 
 func ReadDefinition(ctx context.Context, q Querier, id string) (protocol.Definition, error) {
 	var d protocol.Definition
 	var b []byte
-	err := q.QueryRow(ctx, "SELECT document FROM knotra_definitions WHERE id=$1", id).Scan(&b)
+	b, err := db.New(q).ReadDefinition(ctx, id)
 	if err == nil {
 		err = json.Unmarshal(b, &d)
 	}
@@ -177,18 +175,14 @@ func (s *Store) Definition(ctx context.Context, id string) (protocol.Definition,
 }
 
 func (s *Store) Definitions(ctx context.Context, cursor string) ([]protocol.Definition, error) {
-	return listPage[protocol.Definition](
-		ctx,
-		s.Pool,
-		"SELECT document FROM knotra_definitions WHERE ($1='' OR id<$1) ORDER BY id DESC LIMIT 101",
-		cursor,
-	)
+	documents, err := db.New(s.Pool).ListDefinitions(ctx, db.ListDefinitionsParams{Cursor: cursor, MaxBytes: MaxListPageBytes})
+	return decodePage[protocol.Definition](documents, err)
 }
 
 func (s *Store) Run(ctx context.Context, id string) (protocol.Run, error) {
 	var v protocol.Run
 	var b []byte
-	e := s.Pool.QueryRow(ctx, "SELECT document FROM knotra_runs WHERE id=$1", id).Scan(&b)
+	b, e := db.New(s.Pool).ReadRunProjection(ctx, id)
 	if e == nil {
 		e = json.Unmarshal(b, &v)
 	}
@@ -199,9 +193,13 @@ func (s *Store) Run(ctx context.Context, id string) (protocol.Run, error) {
 }
 
 func (s *Store) Plan(ctx context.Context, id string) (contract.Plan, error) {
+	return ReadPlan(ctx, s.Pool, id)
+}
+
+func ReadPlan(ctx context.Context, q Querier, id string) (contract.Plan, error) {
 	var v contract.Plan
 	var b []byte
-	e := s.Pool.QueryRow(ctx, "SELECT plan FROM knotra_runs WHERE id=$1", id).Scan(&b)
+	b, e := db.New(q).ReadPlan(ctx, id)
 	if e == nil {
 		e = json.Unmarshal(b, &v)
 	}
@@ -209,12 +207,8 @@ func (s *Store) Plan(ctx context.Context, id string) (contract.Plan, error) {
 }
 
 func (s *Store) Runs(ctx context.Context, cursor string) ([]protocol.Run, error) {
-	runs, err := list[protocol.Run](
-		ctx,
-		s.Pool,
-		"SELECT document FROM knotra_runs WHERE ($1='' OR id<$1) ORDER BY id DESC LIMIT 101",
-		cursor,
-	)
+	documents, err := db.New(s.Pool).ListRuns(ctx, cursor)
+	runs, err := decodeRecords[protocol.Run](documents, err)
 	if err != nil {
 		return nil, err
 	}
@@ -236,34 +230,32 @@ func (s *Store) Runs(ctx context.Context, cursor string) ([]protocol.Run, error)
 			return runs[:i+1], nil
 		}
 	}
-
 	return runs, nil
 }
 
-func list[T any](ctx context.Context, p *pgxpool.Pool, query string, args ...any) ([]T, error) {
-	rows, err := p.Query(ctx, query, args...)
+func decodeRecords[T any](documents [][]byte, err error) ([]T, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
-	out := []T{}
-
-	for rows.Next() {
-		var b []byte
-		var v T
-		if err = rows.Scan(&b); err != nil {
+	out := make([]T, 0, len(documents))
+	for _, document := range documents {
+		var record T
+		if err := json.Unmarshal(document, &record); err != nil {
 			return nil, err
 		}
-		if err = json.Unmarshal(b, &v); err != nil {
-			return nil, err
-		}
-		out = append(out, v)
+		out = append(out, record)
 	}
-
-	return out, rows.Err()
+	return out, nil
 }
 
 func PutRun(ctx context.Context, tx pgx.Tx, run protocol.Run, plan contract.Plan, inputs contract.Values) error {
+	if err := insertRun(ctx, tx, run, plan, inputs); err != nil {
+		return err
+	}
+	return Enqueue(ctx, tx, run.ID, "start", execution.RunAdmission{RunID: run.ID, AcceptedAt: run.CreatedAt, Inputs: inputs})
+}
+
+func insertRun(ctx context.Context, tx pgx.Tx, run protocol.Run, plan contract.Plan, inputs contract.Values) error {
 	state := run
 	state.Package = contract.Package{}
 	state.Inputs = nil
@@ -281,19 +273,11 @@ func PutRun(ctx context.Context, tx pgx.Tx, run protocol.Run, plan contract.Plan
 	if e != nil {
 		return e
 	}
-	_, e = tx.Exec(
-		ctx,
-		"INSERT INTO knotra_runs(id,definition_id,document,plan,inputs) VALUES($1,$2,$3,$4,$5)",
-		run.ID,
-		run.DefinitionID,
-		b,
-		p,
-		i,
-	)
+	_, e = db.New(tx).InsertRun(ctx, db.InsertRunParams{ID: run.ID, DefinitionID: run.DefinitionID, Document: b, Plan: p, Inputs: i})
 	if e != nil {
 		return e
 	}
-	return Enqueue(ctx, tx, run.ID, "start", engine.RunInput{RunID: run.ID, AcceptedAt: run.CreatedAt, Inputs: inputs})
+	return nil
 }
 
 func Enqueue(ctx context.Context, tx pgx.Tx, runID, kind string, payload any) error {
@@ -301,7 +285,7 @@ func Enqueue(ctx context.Context, tx pgx.Tx, runID, kind string, payload any) er
 	if e != nil {
 		return e
 	}
-	_, e = tx.Exec(ctx, "INSERT INTO knotra_outbox(run_id,kind,payload) VALUES($1,$2,$3)", runID, kind, b)
+	_, e = db.New(tx).Enqueue(ctx, db.EnqueueParams{RunID: runID, Kind: kind, Payload: b})
 	return e
 }
 
@@ -310,29 +294,21 @@ func (s *Store) Deliver(ctx context.Context, send func(context.Context, Querier,
 	if e != nil {
 		return e
 	}
-	defer tx.Rollback(ctx)
-	var id int64
-	var runID, kind string
-	var payload []byte
-	e = tx.QueryRow(
-		ctx,
-		"SELECT o.id,o.run_id,o.kind,o.payload FROM knotra_outbox o WHERE o.sent_at IS NULL AND NOT EXISTS (SELECT 1 FROM knotra_outbox earlier WHERE earlier.run_id=o.run_id AND earlier.id<o.id AND earlier.sent_at IS NULL) ORDER BY o.id FOR UPDATE OF o SKIP LOCKED LIMIT 1",
-	).Scan(
-		&id,
-		&runID,
-		&kind,
-		&payload,
-	)
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	storedNextOutbox, queryErr7 := db.New(tx).LockNextOutbox(ctx)
+	e = queryErr7
+
 	if errors.Is(e, pgx.ErrNoRows) {
 		return nil
 	}
 	if e != nil {
 		return e
 	}
-	if e = send(ctx, tx, runID, kind, payload); e != nil {
+	if e = send(ctx, tx, storedNextOutbox.RunID, storedNextOutbox.Kind, storedNextOutbox.Payload); e != nil {
 		return e
 	}
-	_, e = tx.Exec(ctx, "UPDATE knotra_outbox SET sent_at=now() WHERE id=$1", id)
+	_, e = db.New(tx).MarkOutboxSent(ctx, storedNextOutbox.ID)
 	if e != nil {
 		return e
 	}
@@ -354,7 +330,7 @@ func (s *Store) History(ctx context.Context, runID, after, instanceID string) ([
 			return nil, ErrConflict
 		}
 		var exists bool
-		err = s.Pool.QueryRow(ctx, "SELECT EXISTS(SELECT 1 FROM knotra_events WHERE run_id=$1 AND id=$2)", runID, n).Scan(&exists)
+		exists, err = db.New(s.Pool).EventIDExists(ctx, db.EventIDExistsParams{RunID: runID, ID: n})
 		if err != nil {
 			return nil, err
 		}
@@ -362,102 +338,29 @@ func (s *Store) History(ctx context.Context, runID, after, instanceID string) ([
 			return nil, ErrNotFound
 		}
 	}
-	rows, err := s.Pool.Query(ctx, "SELECT id,document FROM knotra_events WHERE run_id=$1 AND id>$2 AND ($3='' OR document->>'instanceId'=$3) ORDER BY id LIMIT 100", runID, n, instanceID)
+	rows, err := db.New(s.Pool).ListEvents(ctx, db.ListEventsParams{RunID: runID, ID: n, InstanceID: instanceID})
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+
 	out := []protocol.Event{}
 
-	for rows.Next() {
+	for _, record := range rows {
 		var id int64
 		var b []byte
 		var ev protocol.Event
-		if err = rows.Scan(&id, &b); err != nil {
-			return nil, err
-		}
+		id = record.ID
+		b = record.Document
 		if err = json.Unmarshal(b, &ev); err != nil {
 			return nil, err
 		}
 		ev.ID = strconv.FormatInt(id, 10)
 		out = append(out, ev)
 	}
-
-	return out, rows.Err()
+	return out, nil
 }
 
 func now() time.Time { return time.Now().UTC() }
-
-// migrate applies immutable, ordered migrations under Open's transaction lock.
-func migrate(ctx context.Context, tx pgx.Tx) error {
-	if _, err := tx.Exec(
-		ctx,
-		`CREATE TABLE IF NOT EXISTS knotra_migrations (name text PRIMARY KEY, sha256 text NOT NULL, applied_at timestamptz NOT NULL DEFAULT now())`,
-	); err != nil {
-		return err
-	}
-	names, err := fs.Glob(migrations, "migrations/*.sql")
-	if err != nil {
-		return err
-	}
-	sort.Strings(names)
-	known := map[string]bool{}
-
-	for _, name := range names {
-		known[name] = true
-	}
-
-	rows, err := tx.Query(ctx, "SELECT name FROM knotra_migrations")
-	if err != nil {
-		return err
-	}
-
-	for rows.Next() {
-		var name string
-		if err = rows.Scan(&name); err != nil {
-			rows.Close()
-			return err
-		}
-		if !known[name] {
-			rows.Close()
-			return fmt.Errorf("database has newer migration %s; upgrade engine", name)
-		}
-	}
-
-	err = rows.Err()
-	rows.Close()
-	if err != nil {
-		return err
-	}
-
-	for _, name := range names {
-		b, err := migrations.ReadFile(name)
-		if err != nil {
-			return err
-		}
-		sum := sha256.Sum256(b)
-		digest := hex.EncodeToString(sum[:])
-		var existing string
-		err = tx.QueryRow(ctx, "SELECT sha256 FROM knotra_migrations WHERE name=$1", name).Scan(&existing)
-		if err == nil {
-			if digest != existing {
-				return fmt.Errorf("applied migration %s checksum changed", name)
-			}
-			continue
-		}
-		if !errors.Is(err, pgx.ErrNoRows) {
-			return err
-		}
-		if _, err = tx.Exec(ctx, string(b)); err != nil {
-			return fmt.Errorf("%s: %w", name, err)
-		}
-		if _, err = tx.Exec(ctx, "INSERT INTO knotra_migrations(name,sha256) VALUES($1,$2)", name, digest); err != nil {
-			return err
-		}
-	}
-
-	return nil
-}
 
 // hydrateRun joins immutable inputs/package and instance projections on reads.
 // Activities update only the small mutable document, never rewrite a 64MiB package.
@@ -468,9 +371,14 @@ func (s *Store) hydrateRun(ctx context.Context, run *protocol.Run) error {
 	}
 	run.Package = definition.Package
 	var b []byte
-	if err = s.Pool.QueryRow(ctx, "SELECT inputs FROM knotra_runs WHERE id=$1", run.ID).Scan(&b); err != nil {
+	storedRunInputs, queryErr9 := db.New(s.Pool).ReadRunInputs(ctx, run.ID)
+	err = queryErr9
+	if err != nil {
 		return err
 	}
+
+	b = storedRunInputs
+
 	var inputs contract.Values
 	if err = json.Unmarshal(b, &inputs); err != nil {
 		return err
@@ -479,9 +387,10 @@ func (s *Store) hydrateRun(ctx context.Context, run *protocol.Run) error {
 	run.InputArtifacts = map[string]any{}
 
 	for key, v := range inputs {
-		if v.JSON != nil {
+		switch {
+		case v.JSON != nil:
 			run.Inputs[key] = v.JSON
-		} else if v.Collection {
+		case v.Collection:
 			ids := []string{}
 
 			for _, a := range v.Artifacts {
@@ -489,40 +398,42 @@ func (s *Store) hydrateRun(ctx context.Context, run *protocol.Run) error {
 			}
 
 			run.InputArtifacts[key] = ids
-		} else if len(v.Artifacts) == 1 {
+		case len(v.Artifacts) == 1:
 			run.InputArtifacts[key] = v.Artifacts[0].ID
+
 		}
 	}
 
-	run.Instances, err = list[protocol.Instance](ctx, s.Pool, "SELECT document FROM knotra_instances WHERE run_id=$1 ORDER BY id", run.ID)
+	documents, err := db.New(s.Pool).ListInstances(ctx, run.ID)
+	run.Instances, err = decodeRecords[protocol.Instance](documents, err)
 	return err
 }
 
 func ReadRunStatus(ctx context.Context, q Querier, id string) (string, error) {
 	var status string
-	err := q.QueryRow(ctx, "SELECT document->>'status' FROM knotra_runs WHERE id=$1", id).Scan(&status)
+	status, err := db.New(q).ReadRunStatus(ctx, id)
 	return status, classify(err)
+}
+
+func ReadRunBackend(ctx context.Context, q Querier, id string) (string, error) {
+	var backend string
+	backend, err := db.New(q).ReadRunBackend(ctx, id)
+	return backend, classify(err)
 }
 
 // MaxListPageBytes bounds materialized list responses. A single larger item is
 // returned alone; callers receive a cursor instead of silent truncation.
 const MaxListPageBytes = 32 << 20
 
-func listPage[T any](ctx context.Context, p *pgxpool.Pool, query string, args ...any) ([]T, error) {
-	rows, err := p.Query(ctx, query, args...)
+func decodePage[T any](documents [][]byte, err error) ([]T, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
 	out := []T{}
 	size := 0
 
-	for rows.Next() {
-		var b []byte
+	for _, b := range documents {
 		var value T
-		if err = rows.Scan(&b); err != nil {
-			return nil, err
-		}
 		if err = json.Unmarshal(b, &value); err != nil {
 			return nil, err
 		}
@@ -536,16 +447,11 @@ func listPage[T any](ctx context.Context, p *pgxpool.Pool, query string, args ..
 			break
 		}
 	}
-
-	return out, rows.Err()
+	return out, nil
 }
 
 func ReadRunName(ctx context.Context, q Querier, id string) (string, error) {
 	var name string
-	err := q.QueryRow(
-		ctx,
-		`SELECT d.document->>'name' FROM knotra_runs r JOIN knotra_definitions d ON d.id=r.definition_id WHERE r.id=$1`,
-		id,
-	).Scan(&name)
+	name, err := db.New(q).ReadRunName(ctx, id)
 	return name, classify(err)
 }

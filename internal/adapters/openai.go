@@ -142,11 +142,11 @@ func readOpenAIResponse(ctx context.Context, res *http.Response, started time.Ti
 			structuredItems[event.OutputIndex] = event.Item.Type == "function_call" && event.Item.Name == structuredOutputTool
 		case "response.function_call_arguments.delta":
 			if structuredItems[event.OutputIndex] {
-				arguments.WriteString(event.Delta)
+				_, _ = arguments.WriteString(event.Delta)
 				return event.Delta, nil, nil
 			}
 		case "response.output_text.delta":
-			text.WriteString(event.Delta)
+			_, _ = text.WriteString(event.Delta)
 			return event.Delta, nil, nil
 		case "response.completed":
 			result, err := normalizeOpenAI(event.Response)

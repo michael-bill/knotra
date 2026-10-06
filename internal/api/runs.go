@@ -65,7 +65,7 @@ func (s *Server) cancel(w http.ResponseWriter, r *http.Request) {
 	}
 	id := r.PathValue("id")
 	s.command(w, r, b, func(tx pgx.Tx) (int, any, error) {
-		e := store.Cancel(r.Context(), tx, id)
+		e := store.Cancel(r.Context(), tx, id, s.Wake)
 		return 202, map[string]any{"accepted": true, "runId": id}, e
 	})
 }
@@ -77,7 +77,7 @@ func (s *Server) resume(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, 400, "INPUT_INVALID", e.Error(), nil)
 		return
 	}
-	s.command(w, r, b, func(tx pgx.Tx) (int, any, error) {
+	s.command(w, r, b, func(_ pgx.Tx) (int, any, error) {
 		return 409, protocol.Error{
 			Code:        "UNSAFE_ACTION",
 			Message:     "no suspended checkpoint is available; use the advertised resolution action",
@@ -103,7 +103,7 @@ func (s *Server) respond(w http.ResponseWriter, r *http.Request) {
 			values[k] = contract.Value{JSON: v}
 		}
 
-		e := store.Respond(r.Context(), tx, id, r.Header.Get("Idempotency-Key"), values)
+		e := store.Respond(r.Context(), tx, id, r.Header.Get("Idempotency-Key"), values, s.Wake)
 		if e != nil {
 			return 0, nil, e
 		}
@@ -139,7 +139,7 @@ func (s *Server) resolve(w http.ResponseWriter, r *http.Request) {
 			outputs[k] = contract.Value{JSON: v}
 		}
 
-		e = store.Resolve(r.Context(), tx, id, instance, r.Header.Get("Idempotency-Key"), decision, q.Evidence, outputs)
+		e = store.Resolve(r.Context(), tx, id, instance, r.Header.Get("Idempotency-Key"), decision, q.Evidence, outputs, s.Wake)
 		return 202, map[string]any{"accepted": true, "runId": id}, e
 	})
 }

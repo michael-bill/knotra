@@ -1,8 +1,6 @@
 package engine
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"sort"
@@ -12,6 +10,7 @@ import (
 	"go.temporal.io/sdk/workflow"
 
 	"github.com/michael-bill/knotra/internal/contract"
+	"github.com/michael-bill/knotra/internal/execution"
 )
 
 type counters struct{ nodes, active int }
@@ -273,9 +272,10 @@ func (r *runtime) emit(ctx workflow.Context, event Projection) error {
 		}
 	}
 	summary := "Persist run status: " + event.Status
-	if event.Kind == "node" {
+	switch event.Kind {
+	case "node":
 		summary = "Persist node " + event.NodeID + ": " + event.Status
-	} else if event.Kind == "request" {
+	case "request":
 		summary = "Persist response: " + event.Status
 	}
 	return workflow.ExecuteActivity(storageSummary(ctx, summary), ProjectActivity, event).Get(ctxWithoutCancel(ctx), nil)
@@ -292,8 +292,8 @@ func (r *runtime) request(ctx workflow.Context, request Request) error {
 	}
 	defer func() { r.storageActive--; r.considerCheckpoint(ctx) }()
 	request.RunID = r.in.RunID
-	copy := request
-	r.state.Requests[request.ID] = &copy
+	cloned := request
+	r.state.Requests[request.ID] = &cloned
 	return workflow.ExecuteActivity(
 		storageSummary(ctx, "Persist "+request.Kind+" request: "+request.Status),
 		RequestActivity,
@@ -329,34 +329,11 @@ func keys[T any](values map[string]T) []string {
 }
 
 func stableID(kind, address string) string {
-	digest := sha256.Sum256([]byte(address))
-	return kind + "_" + hex.EncodeToString(digest[:])
-}
-
-func minPositive(a, b int) int {
-	if a == 0 {
-		return b
-	}
-	if b == 0 || a < b {
-		return a
-	}
-	return b
+	return execution.StableID(kind, address)
 }
 
 func restrictLimits(parent, own contract.Limits) contract.Limits {
-	result := contract.Limits{Timeout: parent.Timeout,
-		MaxConcurrentNodes: minPositive(parent.MaxConcurrentNodes, own.MaxConcurrentNodes),
-		MaxNodeInstances:   minPositive(parent.MaxNodeInstances, own.MaxNodeInstances),
-		MaxModelCalls:      minPositive(parent.MaxModelCalls, own.MaxModelCalls),
-		MaxToolCalls:       minPositive(parent.MaxToolCalls, own.MaxToolCalls)}
-	if own.Timeout != "" {
-		a, ea := contract.Duration(parent.Timeout)
-		b, eb := contract.Duration(own.Timeout)
-		if eb == nil && (ea != nil || b < a) {
-			result.Timeout = own.Timeout
-		}
-	}
-	return result
+	return execution.RestrictLimits(parent, own)
 }
 
 func (r *runtime) admit(ctx workflow.Context) error {

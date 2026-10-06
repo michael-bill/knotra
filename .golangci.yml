@@ -1,0 +1,71 @@
+version: '2'
+
+run:
+  timeout: 5m
+  modules-download-mode: readonly
+  tests: true
+
+linters:
+  default: standard
+  enable:
+    - asasalint
+    - bidichk
+    - bodyclose
+    - durationcheck
+    - errorlint
+    - fatcontext
+    - forcetypeassert
+    - gocheckcompilerdirectives
+    - gocritic
+    - loggercheck
+    - makezero
+    - nilerr
+    - nilnesserr
+    - noctx
+    - nolintlint
+    - predeclared
+    - revive
+    - rowserrcheck
+    - sqlclosecheck
+    - unconvert
+    - wastedassign
+  settings:
+    errcheck:
+      check-type-assertions: true
+      disable-default-exclusions: true
+    nolintlint:
+      require-explanation: true
+      require-specific: true
+      allow-unused: false
+    revive:
+      rules:
+        - name: blank-imports
+        - name: context-as-argument
+          arguments:
+            - allow-types-before: '*testing.T'
+        - name: context-keys-type
+        - name: early-return
+        - name: error-return
+        - name: error-strings
+        - name: error-naming
+        - name: increment-decrement
+        - name: indent-error-flow
+        - name: receiver-naming
+        - name: redefines-builtin-id
+        - name: superfluous-else
+        - name: unreachable-code
+        - name: unused-parameter
+  exclusions:
+    generated: strict
+    presets: []
+    warn-unused: true
+
+formatters:
+  enable:
+    - gofmt
+  exclusions:
+    generated: strict
+
+issues:
+  max-issues-per-linter: 0
+  max-same-issues: 0

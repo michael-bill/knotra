@@ -21,6 +21,10 @@ jobs:
         with:
           go-version-file: go.mod
           cache: true
+      - name: Verify strict lint configuration
+        run: go run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.14.0 config verify
+      - name: Strict Go lint
+        run: go run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.14.0 run
       - run: go vet -mod=readonly ./...
       - run: go test -mod=readonly ./...
       - run: go build -mod=readonly -trimpath -o bin/knotra.exe ./cmd/knotra

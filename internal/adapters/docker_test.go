@@ -1,9 +1,20 @@
 package adapters
 
 import (
+	"context"
+	"errors"
 	"net/url"
 	"testing"
 )
+
+func TestDockerContextDiscoveryRespectsCancellation(t *testing.T) {
+	t.Setenv("DOCKER_HOST", "")
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	if _, err := (&Runner{}).docker(ctx); !errors.Is(err, context.Canceled) {
+		t.Fatalf("cancelled Docker context discovery: %v", err)
+	}
+}
 
 func TestDockerTransportRejectsRemoteEndpoints(t *testing.T) {
 	for _, host := range []string{

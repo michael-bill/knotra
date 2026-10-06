@@ -52,7 +52,7 @@ func TestContractFixtures(t *testing.T) {
 				t.Fatal(err)
 			}
 			var diags []Diagnostic
-			if value.(map[string]any)["kind"] == "EngineProfile" {
+			if testObject(t, value)["kind"] == "EngineProfile" {
 				_, diags = ParseProfile(data)
 			} else {
 				var profile *Profile
@@ -131,7 +131,7 @@ func TestStrictYAML(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	m := v.(map[string]any)
+	m := testObject(t, v)
 	if m["a"] != "yes" || m["b"] != "on" || m["c"] != "2026-10-03" {
 		t.Fatal(m)
 	}
@@ -389,44 +389,44 @@ func TestSemanticPreparation(t *testing.T) {
 
 	for _, test := range []struct {
 		name string
-		edit func(map[string]any)
+		edit func(*testing.T, map[string]any)
 	}{
-		{"nonboolean condition", func(m map[string]any) {
-			nodes := m["spec"].(map[string]any)["nodes"].(map[string]any)
+		{"nonboolean condition", func(t *testing.T, m map[string]any) {
+			nodes := testObject(t, testObject(t, m["spec"])["nodes"])
 
 			for _, n := range nodes {
-				n.(map[string]any)["when"] = "1"
+				testObject(t, n)["when"] = "1"
 			}
 		}},
-		{"unknown graph source", func(m map[string]any) {
-			nodes := m["spec"].(map[string]any)["nodes"].(map[string]any)
+		{"unknown graph source", func(t *testing.T, m map[string]any) {
+			nodes := testObject(t, testObject(t, m["spec"])["nodes"])
 
 			for _, n := range nodes {
-				n.(map[string]any)["when"] = "false && nodes.absent.outputs.x"
+				testObject(t, n)["when"] = "false && nodes.absent.outputs.x"
 			}
 		}},
-		{"whole namespace", func(m map[string]any) {
-			nodes := m["spec"].(map[string]any)["nodes"].(map[string]any)
+		{"whole namespace", func(t *testing.T, m map[string]any) {
+			nodes := testObject(t, testObject(t, m["spec"])["nodes"])
 
 			for _, n := range nodes {
-				n.(map[string]any)["when"] = "size(inputs) == 0"
+				testObject(t, n)["when"] = "size(inputs) == 0"
 			}
 		}},
-		{"control retry", func(m map[string]any) {
-			m["spec"].(map[string]any)["defaults"] = map[string]any{"execution": map[string]any{"retry": map[string]any{"maxAttempts": int64(2)}}}
+		{"control retry", func(t *testing.T, m map[string]any) {
+			testObject(t, m["spec"])["defaults"] = map[string]any{"execution": map[string]any{"retry": map[string]any{"maxAttempts": int64(2)}}}
 		}},
-		{"unknown default grant", func(m map[string]any) {
-			m["spec"].(map[string]any)["defaults"] = map[string]any{"tools": map[string]any{"mcp": map[string]any{"absent": []any{"tool"}}}}
+		{"unknown default grant", func(t *testing.T, m map[string]any) {
+			testObject(t, m["spec"])["defaults"] = map[string]any{"tools": map[string]any{"mcp": map[string]any{"absent": []any{"tool"}}}}
 		}},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			raw, _ := json.Marshal(base)
-			copy, err := DecodeJSON(raw)
+			cloned, err := DecodeJSON(raw)
 			if err != nil {
 				t.Fatal(err)
 			}
-			test.edit(copy.(map[string]any))
-			raw, _ = json.Marshal(copy)
+			test.edit(t, testObject(t, cloned))
+			raw, _ = json.Marshal(cloned)
 			_, diags := Compile(Package{Entrypoint: "pipeline.yaml", Files: []File{{Path: "pipeline.yaml", Content: raw}}}, nil)
 			if !HasErrors(diags) {
 				t.Fatal("semantic error accepted")
@@ -542,5 +542,28 @@ func TestInvalidUnicodeNativeValue(t *testing.T) {
 	circular = &circular
 	if _, err := JSONValue(circular); err == nil {
 		t.Fatal("circular native value accepted")
+	}
+}
+
+func testObject(t *testing.T, value any) map[string]any {
+	t.Helper()
+	object, ok := value.(map[string]any)
+	if !ok {
+		t.Fatalf("expected JSON object, got %T", value)
+	}
+	return object
+}
+
+func TestPortDependenciesIncludeCoalesceAndCheckedCELReferences(t *testing.T) {
+	deps, err := PortDependencies(map[string]Port{
+		"fallback": {Bind: &Binding{Coalesce: []Binding{{From: "nodes.a.outputs.result"}, {Expr: `false ? nodes.b.outputs.result : nodes.c.outputs.result`}}}},
+		"literal":  {Bind: &Binding{Value: json.RawMessage(`"nodes.fake.outputs.result"`)}},
+		"input":    {Bind: &Binding{From: "inputs.value"}},
+	})
+	if err != nil || !reflect.DeepEqual(deps, []string{"a", "b", "c"}) {
+		t.Fatalf("dependencies=%v error=%v", deps, err)
+	}
+	if _, err := PortDependencies(map[string]Port{"bad": {Bind: &Binding{Expr: "nodes[inputs.dynamic]"}}}); err == nil {
+		t.Fatal("dynamic node access bypassed checked dependencies")
 	}
 }

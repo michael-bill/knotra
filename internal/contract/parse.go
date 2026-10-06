@@ -3,6 +3,7 @@ package contract
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"math"
@@ -118,7 +119,7 @@ func parseYAML(data []byte) (*yaml.Node, error) {
 		return nil, fmt.Errorf("expected one nonempty document")
 	}
 	var extra yaml.Node
-	if err := dec.Decode(&extra); err != io.EOF {
+	if err := dec.Decode(&extra); !errors.Is(err, io.EOF) {
 		return nil, fmt.Errorf("multiple YAML documents are forbidden")
 	}
 	return &doc, nil
@@ -352,36 +353,36 @@ func marshalJSON(v any) ([]byte, error) {
 		return []byte(s), nil
 	case map[string]any:
 		var b bytes.Buffer
-		b.WriteByte('{')
+		_ = b.WriteByte('{')
 		for i, k := range sortedKeys(x) {
 			if i > 0 {
-				b.WriteByte(',')
+				_ = b.WriteByte(',')
 			}
 			key, _ := json.Marshal(k)
-			b.Write(key)
-			b.WriteByte(':')
+			_, _ = b.Write(key)
+			_ = b.WriteByte(':')
 			value, err := marshalJSON(x[k])
 			if err != nil {
 				return nil, err
 			}
-			b.Write(value)
+			_, _ = b.Write(value)
 		}
-		b.WriteByte('}')
+		_ = b.WriteByte('}')
 		return b.Bytes(), nil
 	case []any:
 		var b bytes.Buffer
-		b.WriteByte('[')
+		_ = b.WriteByte('[')
 		for i, v := range x {
 			if i > 0 {
-				b.WriteByte(',')
+				_ = b.WriteByte(',')
 			}
 			value, err := marshalJSON(v)
 			if err != nil {
 				return nil, err
 			}
-			b.Write(value)
+			_, _ = b.Write(value)
 		}
-		b.WriteByte(']')
+		_ = b.WriteByte(']')
 		return b.Bytes(), nil
 	default:
 		return json.Marshal(v)

@@ -69,3 +69,24 @@ bytes and cannot be combined with `--json`.
 Run `knotra serve --help` for infrastructure options. The service requires at least one trusted
 `--profile FILE` and a PostgreSQL URL through `KNOTRA_DATABASE_URL` or `--database-url`; Temporal
 defaults to `127.0.0.1:7233`. Engine logs go to stderr.
+
+The unreleased scheduler migration can be exercised with `knotra serve --backend river`
+(`KNOTRA_BACKEND=river`). This starts the embedded River queues and uses PostgreSQL without dialing
+Temporal. For an isolated test database, start just PostgreSQL with
+`docker compose up -d --wait postgres`. Keep the data directory across restarts: it contains durable
+outcomes and artifacts. `--execution-workers` bounds simultaneous River leaf deliveries (default
+16); existing profile concurrency and budgets still apply. The queue timeout covers current profile
+limits and the original durations of active admitted runs, with a one-minute margin.
+
+`--host-id` (`KNOTRA_HOST_ID`, default `local`) identifies the execution host across restarts. Use a
+stable ASCII name containing letters, digits, dots, underscores or hyphens, up to 128 characters,
+starting with a letter or digit. Explicit host names have separate sandbox staging directories.
+`--shared-data-dir` (`KNOTRA_SHARED_DATA_DIR`) places `artifacts/` and `outcomes/` in a separate
+directory while `--data-dir` retains local staging and legacy Temporal payloads. Without that flag,
+the existing storage layout is unchanged. Back up the shared directory together with PostgreSQL. The
+filesystem must support hard links, atomic same-directory rename, file/directory syncing and
+consistent reads between clients; this flag does not enable concurrent engine processes. See the
+[storage acceptance notes](../../docs/scheduler-river-implementation.md#shared-filesystem-and-execution-host-identity).
+
+The default remains Temporal while the migration's remaining release gates are being verified. The
+combined service retains exclusive database ownership; cluster deployment is not enabled.

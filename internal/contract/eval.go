@@ -36,7 +36,7 @@ func pointer(v any, path string) (any, bool, error) {
 
 		for i := 0; i < len(part); i++ {
 			if part[i] != '~' {
-				segment.WriteByte(part[i])
+				_ = segment.WriteByte(part[i])
 				continue
 			}
 			i++
@@ -44,9 +44,9 @@ func pointer(v any, path string) (any, bool, error) {
 				return nil, false, fmt.Errorf("invalid JSON Pointer escape")
 			}
 			if part[i] == '0' {
-				segment.WriteByte('~')
+				_ = segment.WriteByte('~')
 			} else {
-				segment.WriteByte('/')
+				_ = segment.WriteByte('/')
 			}
 		}
 
@@ -67,7 +67,7 @@ func pointer(v any, path string) (any, bool, error) {
 			}
 			i, e := strconv.ParseUint(key, 10, 64)
 			if e != nil || i >= uint64(len(x)) {
-				return nil, false, nil
+				return nil, false, nil //nolint:nilerr // A valid index beyond uint64 cannot exist in this array; report a missing pointer.
 			}
 			v = x[i]
 		default:
@@ -204,9 +204,64 @@ type checkedExpression struct {
 
 var expressions sync.Map
 
+// BindingReferences returns all static references, including every coalesce
+// candidate, using the same checked CEL analysis as the compiler.
+func BindingReferences(binding Binding) ([]string, error) {
+	refs := map[string]bool{}
+	var visit func(Binding) error
+	visit = func(binding Binding) error {
+		for _, candidate := range binding.Coalesce {
+			if err := visit(candidate); err != nil {
+				return err
+			}
+		}
+		if binding.From != "" {
+			refs[binding.From] = true
+		}
+		if binding.Expr != "" {
+			checked, err := expression(binding.Expr)
+			if err != nil {
+				return err
+			}
+			for _, ref := range checked.refs {
+				refs[ref] = true
+			}
+		}
+		return nil
+	}
+	if err := visit(binding); err != nil {
+		return nil, err
+	}
+	return sortedKeys(refs), nil
+}
+
+// PortDependencies returns every statically referenced sibling.
+func PortDependencies(ports map[string]Port) ([]string, error) {
+	deps := map[string]bool{}
+	for _, port := range ports {
+		if port.Bind == nil {
+			continue
+		}
+		refs, err := BindingReferences(*port.Bind)
+		if err != nil {
+			return nil, err
+		}
+		for _, ref := range refs {
+			if strings.HasPrefix(ref, "nodes.") {
+				deps[strings.Split(ref, ".")[1]] = true
+			}
+		}
+	}
+	return sortedKeys(deps), nil
+}
+
 func expression(source string) (*checkedExpression, error) {
 	if cached, ok := expressions.Load(source); ok {
-		return cached.(*checkedExpression), nil
+		expr, ok := cached.(*checkedExpression)
+		if !ok {
+			return nil, fmt.Errorf("invalid cached CEL expression")
+		}
+		return expr, nil
 	}
 	if len(source) > 8192 {
 		return nil, fmt.Errorf("CEL expression exceeds 8192 bytes")
@@ -277,7 +332,7 @@ func accessChain(e *exprpb.Expr) (string, []string, []*exprpb.Expr, bool) {
 	}
 	if c := e.GetCallExpr(); c != nil && c.Function == "_[_]" && len(c.Args) == 2 {
 		root, parts, dyn, ok := accessChain(c.Args[0])
-		key := ""
+		var key string
 		if v := c.Args[1].GetConstExpr(); v != nil {
 			if s, yes := v.ConstantKind.(*exprpb.Constant_StringValue); yes {
 				key = s.StringValue
@@ -488,8 +543,12 @@ func celJSON(v ref.Val) (any, error) {
 	case types.String:
 		return string(x), nil
 	case traits.Lister:
+		size, ok := x.Size().(types.Int)
+		if !ok || size < 0 {
+			return nil, fmt.Errorf("invalid CEL list size")
+		}
 		out := []any{}
-		for i := types.Int(0); i < x.Size().(types.Int); i++ {
+		for i := types.Int(0); i < size; i++ {
 			el, err := celJSON(x.Get(i))
 			if err != nil {
 				return nil, err

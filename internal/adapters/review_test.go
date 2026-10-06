@@ -52,7 +52,7 @@ func TestMCPRejectsSchemaDriftBeforeExternalCall(t *testing.T) {
 			}
 			req.ToolArguments = json.RawMessage(`{"value":1}`)
 			runner := &Runner{Hooks: newHooks()}
-			defer runner.Close()
+			defer func() { _ = runner.Close() }()
 			if err := runner.Prepare(context.Background(), req.Plan); err != nil {
 				t.Fatal(err)
 			}
@@ -101,7 +101,7 @@ func TestChangedModelDoesNotGenerateOrRetry(t *testing.T) {
 	var chats atomic.Int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 		if req.URL.Path == "/api/tags" {
-			fmt.Fprint(w, `{"models":[{"name":"qwen3.5:9b","digest":"changed"}]}`)
+			_, _ = fmt.Fprint(w, `{"models":[{"name":"qwen3.5:9b","digest":"changed"}]}`)
 			return
 		}
 		chats.Add(1)
@@ -132,11 +132,11 @@ func TestExecuteRejectsIncompatibleAdapterBeforeAnyOperation(t *testing.T) {
 
 func TestDockerAgentStopsAtPermissionViolation(t *testing.T) {
 	runner := integrationRunner(t)
-	defer runner.Close()
+	defer func() { _ = runner.Close() }()
 	var turns atomic.Int32
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		turns.Add(1)
-		fmt.Fprint(
+		_, _ = fmt.Fprint(
 			w,
 			`{"message":{"role":"assistant","tool_calls":[{"function":{"name":"knotra_process_exec","arguments":{"command":["true"]}}}]},"done":true}`,
 		)
@@ -178,7 +178,10 @@ func TestOperationCommitFailurePreservesUnknownAndNeverReissuesWrite(t *testing.
 	calls := 0
 
 	for range 2 {
-		_, err := runner.operation(context.Background(), operation, func() (json.RawMessage, error) {
+		_, err := runner.operation(context.Background(), operation, func(admit func() error) (json.RawMessage, error) {
+			if err := admit(); err != nil {
+				return nil, err
+			}
 			calls++
 			return json.RawMessage(`{"ok":true}`), nil
 		})
@@ -197,11 +200,11 @@ func TestDockerAttemptCommitFailureNeverRestartsCompletedWork(t *testing.T) {
 	for _, kind := range []string{"agent", "code"} {
 		t.Run(kind, func(t *testing.T) {
 			runner := integrationRunner(t)
-			defer runner.Close()
+			defer func() { _ = runner.Close() }()
 			var modelCalls atomic.Int32
-			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 				modelCalls.Add(1)
-				fmt.Fprint(
+				_, _ = fmt.Fprint(
 					w,
 					`{"message":{"role":"assistant","tool_calls":[{"function":{"name":"knotra_finish","arguments":{"answer":42}}}]},"done":true}`,
 				)

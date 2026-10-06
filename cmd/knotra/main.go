@@ -14,10 +14,10 @@ var version = "dev"
 
 func main() {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer cancel()
 	err := cli.Execute(ctx, os.Args[1:], cli.Options{Version: version})
+	cancel()
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "Error:", err)
+		_, _ = fmt.Fprintln(os.Stderr, "Error:", err)
 	}
 	os.Exit(cli.ExitCode(err))
 }

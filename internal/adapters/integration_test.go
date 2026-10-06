@@ -28,7 +28,7 @@ func TestDockerIsolationAndChildCleanup(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer s.close()
+	defer func() { _ = s.close() }()
 	script := `import os,json,subprocess
 for path in ["/knotra/input.json","/workspace/source.txt","/etc/passwd"]:
  try: open(path,"w").write("bad"); raise AssertionError(path)
@@ -67,7 +67,7 @@ func TestDockerNetworkAllowlist(t *testing.T) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 	defer cancel()
-	d, err := r.docker()
+	d, err := r.docker(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -119,7 +119,7 @@ func TestDockerNetworkAllowlist(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer s.close()
+	defer func() { _ = s.close() }()
 	script := fmt.Sprintf(`import socket,urllib.request,json
 response=urllib.request.urlopen("http://%s:8000",timeout=3)
 assert response.status==200

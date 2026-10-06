@@ -114,7 +114,7 @@ func TestObservationWaitsForRunLockBeforeAllocatingCursor(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer tx.Rollback(ctx)
+	defer func() { _ = tx.Rollback(ctx) }()
 	if _, _, err = lockRun(ctx, tx, runID); err != nil {
 		t.Fatal(err)
 	}

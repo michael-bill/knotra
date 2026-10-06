@@ -22,14 +22,14 @@ func TestCommandJournalConcurrentAndIdentity(t *testing.T) {
 	identity := "engine-a"
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/v1/info" {
-			fmt.Fprintf(w, `{"protocol":%q,"engineId":%q,"principalId":"operator"}`, protocol.Version, identity)
+			_, _ = fmt.Fprintf(w, `{"protocol":%q,"engineId":%q,"principalId":"operator"}`, protocol.Version, identity)
 			return
 		}
 		calls.Add(1)
 		if r.Header.Get("Idempotency-Key") != "one" {
 			t.Error("missing stable key")
 		}
-		fmt.Fprint(w, `{"run":{"id":"run","status":"pending"}}`)
+		_, _ = fmt.Fprint(w, `{"run":{"id":"run","status":"pending"}}`)
 	}))
 	defer srv.Close()
 	c := Client{BaseURL: srv.URL, StateDir: t.TempDir()}
@@ -64,15 +64,15 @@ func TestAmbiguousResponseKeepsCommandForExplicitRetry(t *testing.T) {
 	calls := 0
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/v1/info" {
-			fmt.Fprintf(w, `{"protocol":%q,"engineId":"e","principalId":"p"}`, protocol.Version)
+			_, _ = fmt.Fprintf(w, `{"protocol":%q,"engineId":"e","principalId":"p"}`, protocol.Version)
 			return
 		}
 		calls++
 		if calls == 1 {
-			fmt.Fprint(w, `{`)
+			_, _ = fmt.Fprint(w, `{`)
 			return
 		}
-		fmt.Fprint(w, `{"run":{"id":"run","status":"pending"}}`)
+		_, _ = fmt.Fprint(w, `{"run":{"id":"run","status":"pending"}}`)
 	}))
 	defer srv.Close()
 	c := Client{BaseURL: srv.URL, StateDir: t.TempDir()}
@@ -96,12 +96,12 @@ func TestRejectedReceiptIsStable(t *testing.T) {
 	var calls atomic.Int32
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/v1/info" {
-			fmt.Fprintf(w, `{"protocol":%q,"engineId":"e","principalId":"p"}`, protocol.Version)
+			_, _ = fmt.Fprintf(w, `{"protocol":%q,"engineId":"e","principalId":"p"}`, protocol.Version)
 			return
 		}
 		calls.Add(1)
 		w.WriteHeader(409)
-		fmt.Fprint(w, `{"code":"CLOSED","message":"closed","diagnostics":[]}`)
+		_, _ = fmt.Fprint(w, `{"code":"CLOSED","message":"closed","diagnostics":[]}`)
 	}))
 	defer srv.Close()
 	c := Client{BaseURL: srv.URL, StateDir: t.TempDir()}
@@ -135,9 +135,9 @@ func TestSSEChecksIdentityAndFrameBounds(t *testing.T) {
 
 func TestCustomHTTPClientStillRejectsRedirects(t *testing.T) {
 	var followed atomic.Int32
-	destination := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+	destination := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		followed.Add(1)
-		fmt.Fprint(w, `{}`)
+		_, _ = fmt.Fprint(w, `{}`)
 	}))
 	defer destination.Close()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
@@ -201,7 +201,7 @@ func TestInvalidReceiptRemainsPendingUntilExplicitReconciliation(t *testing.T) {
 			var calls atomic.Int32
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 				if req.URL.Path == "/v1/info" {
-					fmt.Fprintf(w, `{"protocol":%q,"engineId":"e","principalId":"p"}`, protocol.Version)
+					_, _ = fmt.Fprintf(w, `{"protocol":%q,"engineId":"e","principalId":"p"}`, protocol.Version)
 					return
 				}
 				if req.Header.Get("Idempotency-Key") != "stable" {
@@ -209,9 +209,9 @@ func TestInvalidReceiptRemainsPendingUntilExplicitReconciliation(t *testing.T) {
 				}
 				if calls.Add(1) == 1 {
 					w.WriteHeader(test.status)
-					fmt.Fprint(w, test.body)
+					_, _ = fmt.Fprint(w, test.body)
 				} else {
-					fmt.Fprint(w, test.valid)
+					_, _ = fmt.Fprint(w, test.valid)
 				}
 			}))
 			defer server.Close()

@@ -9,6 +9,7 @@ import (
 	"go.temporal.io/sdk/workflow"
 
 	"github.com/michael-bill/knotra/internal/contract"
+	"github.com/michael-bill/knotra/internal/execution"
 )
 
 func terminal(status string) bool {
@@ -247,33 +248,7 @@ func (r *runtime) graph(ctx workflow.Context, gc graphContext, graph contract.Gr
 }
 
 func bindPorts(ports map[string]contract.Port, scope contract.Scope, skipMissing bool) (contract.Values, error) {
-	values := contract.Values{}
-
-	for _, name := range keys(ports) {
-		port := ports[name]
-		if port.Bind == nil {
-			return nil, failure("PLAN_INVALID", "port binding missing: "+name)
-		}
-		value, present, err := contract.EvalBinding(*port.Bind, scope)
-		if err != nil {
-			return nil, failure("BINDING_INVALID", name+": "+err.Error())
-		}
-		if !present {
-			if port.IsRequired() {
-				if skipMissing {
-					return nil, nil
-				}
-				return nil, failure("OUTPUT_UNAVAILABLE", "required output is missing: "+name)
-			}
-			continue
-		}
-		if err := contract.ValidateValue(port, value); err != nil {
-			return nil, failure("VALUE_INVALID", name+": "+err.Error())
-		}
-		values[name] = value
-	}
-
-	return values, nil
+	return execution.BindPorts(ports, scope, skipMissing)
 }
 
 func (r *runtime) node(
@@ -392,76 +367,15 @@ func (r *runtime) node(
 
 // A sandbox path is attempt-local context, never a published artifact property.
 func withoutArtifactPaths(values contract.Values) contract.Values {
-	result := make(contract.Values, len(values))
-
-	for _, name := range keys(values) {
-		value := values[name]
-		if value.Artifacts != nil {
-			value.Artifacts = append([]contract.Artifact(nil), value.Artifacts...)
-
-			for index := range value.Artifacts {
-				value.Artifacts[index].Path = ""
-			}
-		}
-		result[name] = value
-	}
-
-	return result
+	return execution.WithoutArtifactPaths(values)
 }
 
 func executionPolicy(defaults, own contract.Execution) contract.Execution {
-	result := defaults
-	if own.Timeout != "" {
-		result.Timeout = own.Timeout
-	}
-	if own.OnUnknownOutcome != "" {
-		result.OnUnknownOutcome = own.OnUnknownOutcome
-	}
-	result.Retry = &contract.Retry{MaxAttempts: 1, Backoff: "1s"}
-	if defaults.Retry != nil {
-		if defaults.Retry.MaxAttempts > 0 {
-			result.Retry.MaxAttempts = defaults.Retry.MaxAttempts
-		}
-		if defaults.Retry.Backoff != "" {
-			result.Retry.Backoff = defaults.Retry.Backoff
-		}
-	}
-	if own.Retry != nil {
-		if own.Retry.MaxAttempts > 0 {
-			result.Retry.MaxAttempts = own.Retry.MaxAttempts
-		}
-		if own.Retry.Backoff != "" {
-			result.Retry.Backoff = own.Retry.Backoff
-		}
-	}
-	if result.OnUnknownOutcome == "" {
-		result.OnUnknownOutcome = "pause"
-	}
-	return result
+	return execution.ExecutionPolicy(defaults, own)
 }
 
 func nodeDeadline(now, parent time.Time, node contract.Node) time.Time {
-	duration := 30 * time.Minute
-
-	switch node.Type {
-	case "human":
-		duration = 24 * time.Hour
-	case "switch":
-		duration = time.Minute
-	case "loop", "foreach", "pipeline":
-		duration = parent.Sub(now)
-	}
-
-	if node.Execution.Timeout != "" {
-		if specified, err := contract.Duration(node.Execution.Timeout); err == nil {
-			duration = specified
-		}
-	}
-	deadline := now.Add(duration)
-	if parent.Before(deadline) {
-		return parent
-	}
-	return deadline
+	return execution.NodeDeadline(now, parent, node)
 }
 
 // Bound extra checkpoint/projection context without changing executable values.

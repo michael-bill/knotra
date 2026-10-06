@@ -167,7 +167,7 @@ func (s *FileBlobStore) Put(data []byte) (string, error) {
 		return "", err
 	}
 	temporary := file.Name()
-	defer os.Remove(temporary)
+	defer func() { _ = os.Remove(temporary) }()
 	if _, err := file.Write(data); err != nil {
 		_ = file.Close()
 		return "", err
@@ -214,7 +214,7 @@ func (s *FileBlobStore) Get(key string) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 	after, err := file.Stat()
 	if err != nil {
 		return nil, err

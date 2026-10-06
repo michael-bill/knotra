@@ -16,7 +16,7 @@ import (
 
 func testSetup(t *testing.T) *Setup {
 	t.Helper()
-	return &Setup{Config: Config{Dir: t.TempDir(), Provider: "openai", Model: "fixture-model", PostgresPort: 25432, TemporalPort: 27233, TemporalUIPort: 28233}, Getenv: func(string) string { return "fixture-key" }}
+	return &Setup{Config: Config{Dir: t.TempDir(), Provider: "openai", Model: "fixture-model", PostgresPort: 25432}, Getenv: func(string) string { return "fixture-key" }}
 }
 
 func TestSetupPreservesEditedFilesAndStableIdentity(t *testing.T) {
@@ -86,7 +86,7 @@ func TestDoctorChecksCredentialsAndHelperArchitectureBeforeStartup(t *testing.T)
 		t.Fatal(err)
 	}
 	calls := 0
-	s.Command = func(_ context.Context, command string, args, env []string) ([]byte, error) {
+	s.Command = func(_ context.Context, command string, args, _ []string) ([]byte, error) {
 		calls++
 		if strings.Join(args, " ") == "info --format {{.OSType}} {{.Architecture}}" {
 			return []byte("linux aarch64\n"), nil
@@ -118,7 +118,7 @@ func TestDoctorChecksCredentialsAndHelperArchitectureBeforeStartup(t *testing.T)
 
 func TestDoctorRejectsWindowsContainersBeforeStartup(t *testing.T) {
 	s := testSetup(t)
-	s.Command = func(_ context.Context, executable string, args, env []string) ([]byte, error) {
+	s.Command = func(_ context.Context, executable string, args, _ []string) ([]byte, error) {
 		if executable != "docker" || strings.Join(args, " ") != "info --format {{.OSType}} {{.Architecture}}" {
 			t.Fatalf("unexpected infrastructure command: %s %v", executable, args)
 		}
@@ -134,7 +134,7 @@ func TestInfrastructureStartupUsesSavedCredentialsAndPersistentVolumes(t *testin
 	s.compose = "docker"
 	var projects []string
 	var passwords []string
-	s.Command = func(_ context.Context, command string, args, env []string) ([]byte, error) {
+	s.Command = func(_ context.Context, _ string, args, env []string) ([]byte, error) {
 		if strings.Join(args[:2], " ") == "compose --project-name" {
 			projects = append(projects, args[2])
 			for _, value := range env {

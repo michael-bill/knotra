@@ -123,7 +123,7 @@ func (s *commandState) requestsCommand() *cobra.Command {
 
 func (s *commandState) operationsCommand() *cobra.Command {
 	root := &cobra.Command{Use: "operations", Short: "Inspect and reconcile locally journaled mutation commands"}
-	list := &cobra.Command{Use: "list", Short: "List durable command receipts for this endpoint", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, _ []string) error {
+	list := &cobra.Command{Use: "list", Short: "List durable command receipts for this endpoint", Args: cobra.NoArgs, RunE: func(_ *cobra.Command, _ []string) error {
 		items, err := s.client().Commands()
 		if err != nil {
 			return err

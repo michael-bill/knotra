@@ -18,7 +18,7 @@ import (
 )
 
 func (s *commandState) bootstrapCommand(checkOnly bool) *cobra.Command {
-	config := bootstrap.Config{Provider: "ollama", PostgresPort: 25432, TemporalPort: 27233, TemporalUIPort: 28233}
+	config := bootstrap.Config{Provider: "ollama", PostgresPort: 25432}
 	dir, err := os.UserConfigDir()
 	if err != nil {
 		dir = "."
@@ -52,8 +52,6 @@ func (s *commandState) bootstrapCommand(checkOnly bool) *cobra.Command {
 	f.StringVar(&config.Model, "model", "", "Model ID; defaults to qwen3.5:9b for Ollama, required for cloud providers")
 	f.StringVar(&config.HelperPath, "sandbox-helper", s.env("KNOTRA_SANDBOX_HELPER", ""), "Linux helper; otherwise select it from the release bundle")
 	f.IntVar(&config.PostgresPort, "postgres-port", config.PostgresPort, "Local PostgreSQL port")
-	f.IntVar(&config.TemporalPort, "temporal-port", config.TemporalPort, "Local Temporal gRPC port")
-	f.IntVar(&config.TemporalUIPort, "temporal-ui-port", config.TemporalUIPort, "Local Temporal UI port")
 	if !checkOnly {
 		f.StringVar(&listen, "listen", "127.0.0.1:8787", "Loopback engine listen address")
 		f.StringVar(&cors, "cors-origin", "", "Exact browser origin when using the development UI")
@@ -71,7 +69,7 @@ func (s *commandState) quickstart(ctx context.Context, setup *bootstrap.Setup, l
 	if host != "localhost" && (ip == nil || !ip.IsLoopback()) {
 		return fmt.Errorf("quickstart requires a loopback listen address")
 	}
-	listener, err := net.Listen("tcp", listen)
+	listener, err := (&net.ListenConfig{}).Listen(ctx, "tcp", listen)
 	if err != nil {
 		return fmt.Errorf("engine address %s is occupied; stop that engine or choose --listen", listen)
 	}
@@ -85,12 +83,12 @@ func (s *commandState) quickstart(ctx context.Context, setup *bootstrap.Setup, l
 	if err != nil {
 		return err
 	}
-	defer logfile.Close()
+	defer func() { _ = logfile.Close() }()
 	serviceCtx, cancel := context.WithCancel(ctx)
 	done := make(chan error, 1)
 	go func() {
 		done <- app.Serve(serviceCtx, app.Options{
-			Listen: listen, DatabaseURL: dsn, TemporalAddress: fmt.Sprintf("127.0.0.1:%d", config.TemporalPort),
+			Listen: listen, DatabaseURL: dsn,
 			Namespace: "default", TaskQueue: "knotra", DataDir: filepath.Join(config.Dir, "engine"),
 			HelperPath: config.HelperPath, Profiles: []string{filepath.Join(config.Dir, "profile.json")},
 			Version: s.options.Version, CORSOrigin: cors,
@@ -106,13 +104,13 @@ func (s *commandState) quickstart(ctx context.Context, setup *bootstrap.Setup, l
 	if err != nil {
 		return fmt.Errorf("engine startup failed (see %s): %w", filepath.Join(config.Dir, "engine.log"), err)
 	}
-	fmt.Fprintf(s.options.Out, "Engine: %s\nData and editable examples: %s\n", s.endpoint, config.Dir)
+	_, _ = fmt.Fprintf(s.options.Out, "Engine: %s\nData and editable examples: %s\n", s.endpoint, config.Dir)
 	if !noRun {
 		if err = s.quickstartExample(ctx, config.Dir, key); err != nil {
 			return err
 		}
 	}
-	fmt.Fprintf(s.options.Out, "Ready for your pipelines. Connect Desktop to %s.\nCtrl-C stops the engine; rerun this command to continue saved runs.\n", s.endpoint)
+	_, _ = fmt.Fprintf(s.options.Out, "Ready for your pipelines. Connect Desktop to %s.\nCtrl-C stops the engine; rerun this command to continue saved runs.\n", s.endpoint)
 	select {
 	case <-ctx.Done():
 		return nil
@@ -162,7 +160,7 @@ func (s *commandState) quickstartExample(ctx context.Context, dir, key string) e
 	if err = s.client().Command(ctx, "/runs", map[string]any{"definitionId": definition.Definition.ID, "profile": "local", "inputs": map[string]any{}, "artifacts": map[string]any{}}, key, &accepted); err != nil {
 		return err
 	}
-	fmt.Fprintf(s.options.Out, "Greeting run: %s\n", accepted.Run.ID)
+	_, _ = fmt.Fprintf(s.options.Out, "Greeting run: %s\n", accepted.Run.ID)
 	run, err := s.waitRun(ctx, accepted.Run.ID)
 	if err != nil {
 		return err
@@ -183,7 +181,7 @@ func (s *commandState) quickstartExample(ctx context.Context, dir, key string) e
 			if !bytes.Equal(existing, data) {
 				return fmt.Errorf("%s was edited; preserve or move it before downloading the saved greeting", output)
 			}
-			fmt.Fprintf(s.options.Out, "Saved greeting already exists: %s\n", output)
+			_, _ = fmt.Fprintf(s.options.Out, "Saved greeting already exists: %s\n", output)
 			return nil
 		} else if !os.IsNotExist(err) {
 			return err

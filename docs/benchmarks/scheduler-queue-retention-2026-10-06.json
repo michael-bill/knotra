@@ -1,0 +1,1440 @@
+{
+  "complete": true,
+  "created_at": "2026-10-06T11:18:29Z",
+  "platform": "macOS-27.0.1-arm64-arm-64bit-Mach-O",
+  "logical_cpus": 10,
+  "docker": {
+    "cpus": 10,
+    "memory_bytes": 8393289728,
+    "server_version": "29.4.0"
+  },
+  "postgres_version": "PostgreSQL 18.0 (Debian 18.0-1.pgdg13+3) on aarch64-unknown-linux-gnu, compiled by gcc (Debian 14.2.0-19) 14.2.0, 64-bit",
+  "binary_sha256": "c4cd2fc79e14203d93456854c730dcd784337b1f7380c58948c4254ba97384e1",
+  "git_head": "cba4082e990940b2b291fa0664e32f8215823ffc",
+  "git_dirty": true,
+  "sample_interval_seconds": 1,
+  "fixture_model_delay_seconds": 0.01,
+  "fixture_nested_column_delay_seconds": 0.003,
+  "fixture_agent_model_delay_seconds": 1,
+  "fixture_agent_tool_delay_seconds": 1,
+  "poll_interval_seconds": 0.25,
+  "repeats": 1,
+  "profile_sql": true,
+  "requested_backends": ["river"],
+  "requested_workloads": ["short_dag", "queue_retention"],
+  "idle_seconds": 1,
+  "human_wait_seconds": 15,
+  "infrastructure_storage_paths": {
+    "knotra-scheduler-benchmark-pg": "/var/lib/postgresql/18/docker",
+    "knotra-scheduler-benchmark-temporal": "/home/temporal"
+  },
+  "work_directory": "/Users/kxrxh/Develop/knotra/.knotra/benchmarks/work-71efc7cf224d4baa9b9af2658a743b1a",
+  "agent_execution": null,
+  "containers": {
+    "knotra-scheduler-benchmark-pg": {
+      "image": "postgres@sha256:41fc5342eefba6cc2ccda736aaf034bbbb7c3df0fdb81516eba1ba33f360162c",
+      "image_id": "sha256:5f6e92239cac9f3549f99dfc0152362e2d0d071a04f7159082c687e09ea989da",
+      "memory_limit_bytes": 536870912,
+      "pids_limit": 128
+    },
+    "knotra-scheduler-benchmark-temporal": {
+      "image": "temporalio/temporal:1.9.1@sha256:ad4c82c97bd12b417d1ea942610dbcd511afb250c4d5ed26c694009533df447e",
+      "image_id": "sha256:0b0fe9806c4426a737c2cce630339919b3fdd27d9a3799da6e0df29daabf2a9e",
+      "memory_limit_bytes": 2147483648,
+      "pids_limit": 512
+    }
+  },
+  "backends": [
+    {
+      "backend": "river",
+      "measurements": [
+        {
+          "workload": "idle",
+          "repeat": 1,
+          "statement_deltas": [
+            {
+              "id": "4854991825702068830",
+              "query": "begin",
+              "calls": 1,
+              "exec_ms": 0.0028330000000000004,
+              "wal_bytes": 0,
+              "wal_records": 0,
+              "wal_fpi": 0
+            },
+            {
+              "id": "-5395401390853898589",
+              "query": "SELECT json_build_object(\n        $1,pg_current_wal_insert_lsn()::text,\n        $2,(SELECT COALESCE(sum(calls),$3) FROM pg_stat_statements WHERE dbid=(SELECT oid FROM pg_database WHERE datname=current_database())),\n        $4,(SELECT COALESCE(sum(total_exec_time),$5) FROM pg_stat_statements WHERE dbid=(SELECT oid FROM pg_database WHERE datname=current_database())),\n        $6,xact_commit+xact_rollback,\n        $7,(SELECT count(*) FROM pg_stat_activity WHERE application_name=$8),\n        $9,(SELECT COALESCE(sum(pg_total_relation_size(c.oid)),$10) FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname=$11 AND c.relkind IN ($12 /*, ... */))\n        ) FROM pg_stat_database WHERE datname=current_database()",
+              "calls": 2,
+              "exec_ms": 4.994248000000001,
+              "wal_bytes": 0,
+              "wal_records": 0,
+              "wal_fpi": 0
+            },
+            {
+              "id": "-9092767107603817338",
+              "query": "SELECT DISTINCT run_id FROM knotra_execution_timers\n\t\tWHERE consumed_at IS NULL AND due_at<=clock_timestamp() ORDER BY run_id LIMIT $1",
+              "calls": 1,
+              "exec_ms": 0.016999,
+              "wal_bytes": 0,
+              "wal_records": 0,
+              "wal_fpi": 0
+            },
+            {
+              "id": "-672202934845897898",
+              "query": "WITH locked_jobs AS (\n    SELECT\n        id, args, attempt, attempted_at, attempted_by, created_at, errors, finalized_at, kind, max_attempts, metadata, priority, queue, state, scheduled_at, tags, unique_key, unique_states\n    FROM\n        \"knotra_perf_f7c8dbd67a0c4140b3e5bcdb9b49582c\".river_job\n    WHERE\n        state = $7\n        AND queue = $4::text\n        AND ($5::text[] IS NULL OR kind = ANY($5::text[]))\n        AND scheduled_at <= coalesce($1::timestamptz, now())\n    ORDER BY\n        priority ASC,\n        scheduled_at ASC,\n        id ASC\n    LIMIT $6::integer\n    FOR UPDATE\n    SKIP LOCKED\n)\nUPDATE\n    \"knotra_perf_f7c8dbd67a0c4140b3e5bcdb9b49582c\".river_job\nSET\n    state = $8,\n    attempt = river_job.attempt + $9,\n    attempted_at = coalesce($1::timestamptz, now()),\n    attempted_by = array_append(\n        CASE WHEN array_length(river_job.attempted_by, $10) >= $2::int\n        -- +2 instead of +1 because Postgres array indexing starts at 1, not 0.\n        THEN river_job.attempted_by[array_length(river_job.attempted_by, $11) + $12 - $2:]\n        ELSE river_job.attempted_by\n        END,\n        $3::text\n    )\nFROM\n    locked_jobs\nWHERE\n    river_job.id = locked_jobs.id\nRETURNING\n    river_job.id, river_job.args, river_job.attempt, river_job.attempted_at, river_job.attempted_by, river_job.created_at, river_job.errors, river_job.finalized_at, river_job.kind, river_job.max_attempts, river_job.metadata, river_job.priority, river_job.queue, river_job.state, river_job.scheduled_at, river_job.tags, river_job.unique_key, river_job.unique_states",
+              "calls": 4,
+              "exec_ms": 0.09241700000000003,
+              "wal_bytes": 0,
+              "wal_records": 0,
+              "wal_fpi": 0
+            },
+            {
+              "id": "8574192752894648781",
+              "query": "SELECT r.id FROM knotra_runs r\nWHERE r.backend=$1 AND r.id>$2::text\n    AND r.document->>$3 NOT IN ($4 /*, ... */)\n    AND (r.wake_generation>r.applied_generation OR EXISTS(\n        SELECT $5 FROM knotra_execution_attempts a WHERE a.run_id=r.id AND a.state=$6))\nORDER BY r.id LIMIT $7",
+              "calls": 1,
+              "exec_ms": 0.029750000000000002,
+              "wal_bytes": 0,
+              "wal_records": 0,
+              "wal_fpi": 0
+            },
+            {
+              "id": "5189024543045670877",
+              "query": "SELECT id,worker_id,ownership_generation\nFROM knotra_resources\nWHERE engine_id=$1 AND host_id=$2 AND state<>$4 AND id>$3\nORDER BY id LIMIT $5",
+              "calls": 1,
+              "exec_ms": 0.008083,
+              "wal_bytes": 0,
+              "wal_records": 0,
+              "wal_fpi": 0
+            },
+            {
+              "id": "-4570360759179112616",
+              "query": "SELECT run_id,instance_id,number,outcome_key,owner,ownership_generation,state FROM knotra_execution_attempts\n\t\tWHERE outcome IS NULL AND owner IS NOT NULL AND lease_expires_at<=clock_timestamp()\n\t\tAND outcome_key>$1 ORDER BY outcome_key LIMIT $2",
+              "calls": 1,
+              "exec_ms": 0.007709000000000001,
+              "wal_bytes": 0,
+              "wal_records": 0,
+              "wal_fpi": 0
+            },
+            {
+              "id": "6097083398544187049",
+              "query": "commit",
+              "calls": 1,
+              "exec_ms": 0.0017080000000000003,
+              "wal_bytes": 0,
+              "wal_records": 0,
+              "wal_fpi": 0
+            },
+            {
+              "id": "-1585743388721674358",
+              "query": "WITH jobs_to_schedule AS (\n    SELECT\n        id,\n        unique_key,\n        unique_states,\n        priority,\n        scheduled_at\n    FROM \"knotra_perf_f7c8dbd67a0c4140b3e5bcdb9b49582c\".river_job\n    WHERE\n        state IN ($1 /*, ... */)\n        AND priority >= $2\n        AND queue IS NOT NULL\n        AND scheduled_at <= coalesce($3::timestamptz, now())\n    ORDER BY\n        priority,\n        scheduled_at,\n        id\n    LIMIT $4::bigint\n    FOR UPDATE\n),\njobs_with_rownum AS (\n    SELECT\n        id, unique_key, unique_states, priority, scheduled_at,\n        CASE\n            WHEN unique_key IS NOT NULL AND unique_states IS NOT NULL THEN\n                ROW_NUMBER() OVER (\n                    PARTITION BY unique_key\n                    ORDER BY priority, scheduled_at, id\n                )\n            ELSE $5\n        END AS row_num\n    FROM jobs_to_schedule\n),\nunique_conflicts AS (\n    SELECT river_job.unique_key\n    FROM \"knotra_perf_f7c8dbd67a0c4140b3e5bcdb9b49582c\".river_job\n    JOIN jobs_with_rownum\n        ON river_job.unique_key = jobs_with_rownum.unique_key\n        AND river_job.id != jobs_with_rownum.id\n    WHERE\n        river_job.unique_key IS NOT NULL\n        AND river_job.unique_states IS NOT NULL\n        AND \"knotra_perf_f7c8dbd67a0c4140b3e5bcdb9b49582c\".river_job_state_in_bitmask(river_job.unique_states, river_job.state)\n),\njob_updates AS (\n    SELECT\n        job.id,\n        job.unique_key,\n        job.unique_states,\n        CASE\n            WHEN job.row_num IS NULL THEN $6::\"knotra_perf_f7c8dbd67a0c4140b3e5bcdb9b49582c\".river_job_state\n            WHEN uc.unique_key IS NOT NULL THEN $7::\"knotra_perf_f7c8dbd67a0c4140b3e5bcdb9b49582c\".river_job_state\n            WHEN job.row_num = $8 THEN $9::\"knotra_perf_f7c8dbd67a0c4140b3e5bcdb9b49582c\".river_job_state\n            ELSE $10::\"knotra_perf_f7c8dbd67a0c4140b3e5bcdb9b49582c\".river_job_state\n        END AS new_state,\n        (job.row_num IS NOT NULL AND (uc.unique_key IS NOT NULL OR job.row_num > $11)) AS fin",
+              "calls": 1,
+              "exec_ms": 0.213542,
+              "wal_bytes": 0,
+              "wal_records": 0,
+              "wal_fpi": 0
+            },
+            {
+              "id": "-4627053875298205762",
+              "query": "DELETE FROM \"knotra_perf_f7c8dbd67a0c4140b3e5bcdb9b49582c\".river_queue\nWHERE name IN (\n    SELECT name\n    FROM \"knotra_perf_f7c8dbd67a0c4140b3e5bcdb9b49582c\".river_queue\n    WHERE river_queue.updated_at < $1\n    ORDER BY name ASC\n    LIMIT $2::bigint\n)\nRETURNING name, created_at, metadata, paused_at, updated_at",
+              "calls": 1,
+              "exec_ms": 0.076208,
+              "wal_bytes": 0,
+              "wal_records": 0,
+              "wal_fpi": 0
+            },
+            {
+              "id": "961238556213485812",
+              "query": "SELECT COALESCE(json_agg(stats),$1) FROM (\n            SELECT queryid::text AS id,calls,total_exec_time AS exec_ms,\n                wal_bytes,wal_records,wal_fpi,left(query,$2) AS query\n            FROM pg_stat_statements\n            WHERE dbid=(SELECT oid FROM pg_database WHERE datname=current_database())\n        ) stats",
+              "calls": 1,
+              "exec_ms": 0.41987399999999997,
+              "wal_bytes": 0,
+              "wal_records": 0,
+              "wal_fpi": 0
+            }
+          ],
+          "elapsed_seconds": 1.0019683749997057,
+          "samples": 3,
+          "maximum_sample_gap_seconds": 1.0867092919943389,
+          "deployment_peak_memory_bytes": 134479872,
+          "deployment_cpu_seconds": 0.12332700000000006,
+          "engine_peak_rss_bytes": 40435712,
+          "sandbox_peak_working_set_bytes": 0,
+          "sandbox_cpu_seconds_lower_bound": 0,
+          "observed_sandboxes": 0,
+          "engine_cpu_seconds": 0.009999999999999995,
+          "database_connection_peak": 6,
+          "storage_bytes": 0,
+          "database_deltas": {
+            "wal_bytes": 136,
+            "query_calls": 16,
+            "query_exec_ms": 15.775820999999993,
+            "transactions": 21,
+            "schema_bytes": 0
+          },
+          "infrastructure": {
+            "knotra-scheduler-benchmark-pg": {
+              "peak_working_set_bytes": 94044160,
+              "cpu_seconds": 0.11332700000000007,
+              "allocated_storage_before_bytes": 50339840,
+              "allocated_storage_after_bytes": 50343936,
+              "allocated_storage_growth_bytes": 4096
+            }
+          }
+        },
+        {
+          "workload": "short_dag",
+          "repeat": 1,
+          "advance_backlog_before_admission": [],
+          "admission_ms": 85.8086250082124,
+          "admission_to_terminal_seconds": 1.9783946250099689,
+          "run_id": "eb9bfaf3-fc46-4521-b58b-262333ba0214",
+          "nodes": 64,
+          "physical_model_calls": 64,
+          "model_debits": 64,
+          "physical_tool_calls": 0,
+          "tool_debits": 0,
+          "first_physical_call_ms": 227.05575000145473,
+          "delivery_timings": {
+            "first_node_start_ms": 125.612,
+            "queues": {
+              "knotra_advance_v1": {
+                "jobs": 19,
+                "maximum_attempt": 1,
+                "first_start_ms": 81.171,
+                "queue_wait_p50_ms": 6.186,
+                "queue_wait_p95_ms": 28.307999999999996,
+                "queue_wait_max_ms": 35.13
+              },
+              "knotra_execute_v1": {
+                "jobs": 64,
+                "maximum_attempt": 1,
+                "first_start_ms": 110.577,
+                "queue_wait_p50_ms": 12.651,
+                "queue_wait_p95_ms": 48.376249999999985,
+                "queue_wait_max_ms": 64.762
+              }
+            }
+          },
+          "statement_deltas": [
+            {
+              "id": "8290750562666012162",
+              "query": "INSERT INTO knotra_execution_nodes(run_id,id,graph_id,node_id,address,state,inputs,outputs,failure,\n\t\texecution_request,deadline,attempt_number,revision,started_at,finished_at,reason,node_kind,dependency_node_ids,remaining_dependencies,current_request_id)\n\t\tVALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,NULLIF($20::text,$21))\n\t\tON CONFLICT(run_id,id) DO UPDATE SET state=EXCLUDED.state,inputs=EXCLUDED.inputs,outputs=EXCLUDED.outputs,\n\t\tfailure=EXCLUDED.failure,execution_request=EXCLUDED.execution_request,deadline=EXCLUDED.deadline,current_request_id=EXCLUDED.current_request_id,\n\t\tattempt_number=EXCLUDED.attempt_number,revision=EXCLUDED.revision,started_at=EXCLUDED.started_at,\n\t\tfinished_at=EXCLUDED.finished_at,reason=EXCLUDED.reason\n\t\tWHERE knotra_execution_nodes.revision=EXCLUDED.revision-$22\n\t\tAND knotra_execution_nodes.state NOT IN ($23 /*, ... */)\n\t\tAND (knotra_execution_nodes.deadline IS NULL OR knotra_execution_nodes.deadline=EXCLUDED.deadline)",
+              "calls": 192,
+              "exec_ms": 8.142209000000001,
+              "wal_bytes": 367178,
+              "wal_records": 1405,
+              "wal_fpi": 1
+            },
+            {
+              "id": "4876399924897985143",
+              "query": "INSERT INTO knotra_events(run_id,sequence,document) VALUES($1,$2,$3)",
+              "calls": 258,
+              "exec_ms": 6.652490000000001,
+              "wal_bytes": 311383,
+              "wal_records": 1312,
+              "wal_fpi": 1
+            },
+            {
+              "id": "-4798518561824445008",
+              "query": "INSERT INTO knotra_events(run_id,sequence,document) VALUES($1,$3,$2)",
+              "calls": 255,
+              "exec_ms": 10.275687999999995,
+              "wal_bytes": 300662,
+              "wal_records": 1308,
+              "wal_fpi": 0
+            },
+            {
+              "id": "565676174769093990",
+              "query": "INSERT INTO knotra_instances(run_id,id,sequence,document) VALUES($1,$2,$3,$4) ON CONFLICT(run_id,id) DO UPDATE SET sequence=EXCLUDED.sequence,document=EXCLUDED.document WHERE knotra_instances.sequence<EXCLUDED.sequence",
+              "calls": 256,
+              "exec_ms": 3.2303020000000022,
+              "wal_bytes": 169997,
+              "wal_records": 745,
+              "wal_fpi": 1
+            },
+            {
+              "id": "-8828088976196672039",
+              "query": "WITH raw_job_data AS (\n    SELECT\n        unnest($1::bigint[]) AS id,\n        unnest($2::jsonb[]) AS args,\n        unnest($3::timestamptz[]) AS created_at,\n        unnest($4::text[]) AS kind,\n        unnest($5::smallint[]) AS max_attempts,\n        unnest($6::jsonb[]) AS metadata,\n        unnest($7::smallint[]) AS priority,\n        unnest($8::text[]) AS queue,\n        unnest($9::timestamptz[]) AS scheduled_at,\n        unnest($10::text[]) AS state,\n        unnest($11::text[]) AS tags,\n        unnest($12::bytea[]) AS unique_key,\n        unnest($13::integer[]) AS unique_states\n)\nINSERT INTO \"knotra_perf_f7c8dbd67a0c4140b3e5bcdb9b49582c\".river_job(\n    id,\n    args,\n    created_at,\n    kind,\n    max_attempts,\n    metadata,\n    priority,\n    queue,\n    scheduled_at,\n    state,\n    tags,\n    unique_key,\n    unique_states\n) SELECT\n    coalesce(nullif(id, $14), nextval($15::regclass)),\n    args,\n    coalesce(nullif(created_at, $16), now()) AS created_at,\n    kind,\n    max_attempts,\n    coalesce(metadata, $17::jsonb) AS metadata,\n    priority,\n    queue,\n    coalesce(nullif(scheduled_at, $18), now()) AS scheduled_at,\n    state::\"knotra_perf_f7c8dbd67a0c4140b3e5bcdb9b49582c\".river_job_state,\n    string_to_array(tags, $19)::varchar(255)[],\n    -- `nullif` is required for `lib/pq`, which doesn't do a good job of reading\n    -- `nil` into `bytea`. We use `text` because otherwise `lib/pq` will encode\n    -- to Postgres binary like `\\xAAAA`.\n    nullif(unique_key, $20)::bytea,\n    nullif(unique_states::integer, $21)::bit(8)\nFROM raw_job_data\nON CONFLICT (unique_key)\n    WHERE unique_key IS NOT NULL\n        AND unique_states IS NOT NULL\n        AND \"knotra_perf_f7c8dbd67a0c4140b3e5bcdb9b49582c\".river_job_state_in_bitmask(unique_states, state)\n    -- Something needs to be updated for a row to be returned on a conflict.\n    DO UPDATE SET kind = EXCLUDED.kind\nRETURNING\n    river_job.id, river_job.args, river_job.attempt, river_job.attempted_at, river_job.attempted_by, river_job.created",
+              "calls": 83,
+              "exec_ms": 4.358537,
+              "wal_bytes": 164726,
+              "wal_records": 681,
+              "wal_fpi": 1
+            },
+            {
+              "id": "4275452874719504198",
+              "query": "WITH job_input AS (\n    SELECT\n        unnest($1::bigint[])                     AS id,\n        unnest($2::boolean[])      AS attempt_do_update,\n        unnest($3::int[])                    AS attempt,\n        unnest($4::boolean[])       AS errors_do_update,\n        unnest($5::jsonb[])                   AS errors,\n        unnest($6::boolean[]) AS finalized_at_do_update,\n        unnest($7::timestamptz[])       AS finalized_at,\n        unnest($8::boolean[])      AS metadata_do_merge,\n        unnest($9::jsonb[])         AS metadata_updates,\n        unnest($10::boolean[]) AS scheduled_at_do_update,\n        unnest($11::timestamptz[])       AS scheduled_at,\n        -- To avoid requiring pgx users to register the OID of the river_job_state[]\n        -- type, we cast the array to text[] and then to river_job_state.\n        unnest($12::text[])::\"knotra_perf_f7c8dbd67a0c4140b3e5bcdb9b49582c\".river_job_state AS state\n),\nupdated AS (\n    UPDATE \"knotra_perf_f7c8dbd67a0c4140b3e5bcdb9b49582c\".river_job\n    SET\n        attempt = CASE\n            WHEN river_job.state = $13\n                 AND NOT (job_input.state IN ($14 /*, ... */) AND river_job.metadata ? $15)\n                 AND job_input.attempt_do_update\n            THEN job_input.attempt\n            ELSE river_job.attempt\n        END,\n        errors = CASE\n            WHEN river_job.state = $16\n                 AND job_input.errors_do_update\n            THEN array_append(river_job.errors, job_input.errors)\n            ELSE river_job.errors\n        END,\n        finalized_at = CASE\n            WHEN river_job.state = $17\n                 AND (job_input.state IN ($18 /*, ... */) AND river_job.metadata ? $19)\n            THEN coalesce($20::timestamptz, now())\n            WHEN river_job.state = $21\n                 AND job_input.finalized_at_do_update\n            THEN job_input.finalized_at\n            ELSE river_job.finalized_at\n        END,\n        metadata = CASE\n            WHEN job_input.metadata_do_merge\n            THEN riv",
+              "calls": 91,
+              "exec_ms": 6.211614000000003,
+              "wal_bytes": 149455,
+              "wal_records": 715,
+              "wal_fpi": 0
+            },
+            {
+              "id": "-672202934845897898",
+              "query": "WITH locked_jobs AS (\n    SELECT\n        id, args, attempt, attempted_at, attempted_by, created_at, errors, finalized_at, kind, max_attempts, metadata, priority, queue, state, scheduled_at, tags, unique_key, unique_states\n    FROM\n        \"knotra_perf_f7c8dbd67a0c4140b3e5bcdb9b49582c\".river_job\n    WHERE\n        state = $7\n        AND queue = $4::text\n        AND ($5::text[] IS NULL OR kind = ANY($5::text[]))\n        AND scheduled_at <= coalesce($1::timestamptz, now())\n    ORDER BY\n        priority ASC,\n        scheduled_at ASC,\n        id ASC\n    LIMIT $6::integer\n    FOR UPDATE\n    SKIP LOCKED\n)\nUPDATE\n    \"knotra_perf_f7c8dbd67a0c4140b3e5bcdb9b49582c\".river_job\nSET\n    state = $8,\n    attempt = river_job.attempt + $9,\n    attempted_at = coalesce($1::timestamptz, now()),\n    attempted_by = array_append(\n        CASE WHEN array_length(river_job.attempted_by, $10) >= $2::int\n        -- +2 instead of +1 because Postgres array indexing starts at 1, not 0.\n        THEN river_job.attempted_by[array_length(river_job.attempted_by, $11) + $12 - $2:]\n        ELSE river_job.attempted_by\n        END,\n        $3::text\n    )\nFROM\n    locked_jobs\nWHERE\n    river_job.id = locked_jobs.id\nRETURNING\n    river_job.id, river_job.args, river_job.attempt, river_job.attempted_at, river_job.attempted_by, river_job.created_at, river_job.errors, river_job.finalized_at, river_job.kind, river_job.max_attempts, river_job.metadata, river_job.priority, river_job.queue, river_job.state, river_job.scheduled_at, river_job.tags, river_job.unique_key, river_job.unique_states",
+              "calls": 65,
+              "exec_ms": 4.255209,
+              "wal_bytes": 149269,
+              "wal_records": 718,
+              "wal_fpi": 0
+            },
+            {
+              "id": "4981417884077395378",
+              "query": "UPDATE knotra_execution_nodes SET state=$4,started_at=$3,revision=revision+$5 WHERE run_id=$1 AND id=$2",
+              "calls": 64,
+              "exec_ms": 3.4405820000000005,
+              "wal_bytes": 122651,
+              "wal_records": 399,
+              "wal_fpi": 0
+            },
+            {
+              "id": "1141965495745378915",
+              "query": "UPDATE knotra_runs SET wake_generation=wake_generation+$2,state_revision=state_revision+$3,\n    dirty_since=COALESCE(dirty_since,clock_timestamp()) WHERE id=$1 RETURNING wake_generation",
+              "calls": 141,
+              "exec_ms": 5.154204999999998,
+              "wal_bytes": 75432,
+              "wal_records": 849,
+              "wal_fpi": 0
+            },
+            {
+              "id": "4662495120492386339",
+              "query": "UPDATE knotra_execution_nodes SET remaining_dependencies=remaining_dependencies-$4\nWHERE run_id=$1 AND graph_id=$2 AND state=$5\n    AND dependency_node_ids @> ARRAY[$3::text]",
+              "calls": 64,
+              "exec_ms": 2.857550000000001,
+              "wal_bytes": 71144,
+              "wal_records": 469,
+              "wal_fpi": 0
+            },
+            {
+              "id": "-2157102335158670407",
+              "query": "UPDATE knotra_runs SET execution_event_sequence=execution_event_sequence+$2,state_revision=state_revision+$3\n\t\tWHERE id=$1 RETURNING execution_event_sequence",
+              "calls": 258,
+              "exec_ms": 8.568496,
+              "wal_bytes": 70708,
+              "wal_records": 640,
+              "wal_fpi": 1
+            },
+            {
+              "id": "-4031872139658457814",
+              "query": "UPDATE knotra_execution_attempts SET outcome=$4,evidence_key=$5\n\t\tWHERE run_id=$1 AND instance_id=$2 AND number=$3",
+              "calls": 64,
+              "exec_ms": 2.898984999999999,
+              "wal_bytes": 63439,
+              "wal_records": 211,
+              "wal_fpi": 0
+            },
+            {
+              "id": "-7237207312121424977",
+              "query": "UPDATE knotra_runs SET document=$2,sequence=$3 WHERE id=$1",
+              "calls": 258,
+              "exec_ms": 7.885336000000002,
+              "wal_bytes": 58031,
+              "wal_records": 608,
+              "wal_fpi": 0
+            },
+            {
+              "id": "753672008231163454",
+              "query": "UPDATE knotra_execution_attempts SET state=$8,dispatch_pending=$9,owner=$4,\n\t\townership_generation=$5,lease_expires_at=$6,outcome_key=$7 WHERE run_id=$1 AND instance_id=$2 AND number=$3",
+              "calls": 64,
+              "exec_ms": 3.942783,
+              "wal_bytes": 56473,
+              "wal_records": 271,
+              "wal_fpi": 0
+            },
+            {
+              "id": "-2759203173453706746",
+              "query": "UPDATE knotra_execution_attempts SET state=$5,result=$4\n\t\tWHERE run_id=$1 AND instance_id=$2 AND number=$3",
+              "calls": 64,
+              "exec_ms": 4.2495009999999995,
+              "wal_bytes": 54771,
+              "wal_records": 163,
+              "wal_fpi": 1
+            },
+            {
+              "id": "6147891444943019869",
+              "query": "INSERT INTO knotra_execution_attempts(run_id,instance_id,number,dispatch_generation,dispatch_pending,state)\n\t\tVALUES($1,$2,$3,$4,$5,$6)",
+              "calls": 64,
+              "exec_ms": 2.9059530000000002,
+              "wal_bytes": 50903,
+              "wal_records": 262,
+              "wal_fpi": 0
+            },
+            {
+              "id": "6982708932534241766",
+              "query": "INSERT INTO knotra_execution_slots(run_id,instance_id,attempt_number,scope_id,ownership_generation)\n\t\t\tVALUES($1,$2,$3,$4,$5)",
+              "calls": 64,
+              "exec_ms": 4.0101239999999985,
+              "wal_bytes": 49919,
+              "wal_records": 197,
+              "wal_fpi": 1
+            },
+            {
+              "id": "2590693893639061322",
+              "query": "INSERT INTO knotra_execution_timers(run_id,id,generation,instance_id,kind,due_at)\n\t\t\t\tVALUES($1,$2,$5,$3,$6,$4) ON CONFLICT DO NOTHING",
+              "calls": 128,
+              "exec_ms": 4.906708000000003,
+              "wal_bytes": 46368,
+              "wal_records": 271,
+              "wal_fpi": 0
+            },
+            {
+              "id": "-2286175961013286660",
+              "query": "UPDATE knotra_operations SET completed=$3,response=$2 WHERE id=$1",
+              "calls": 64,
+              "exec_ms": 1.3920000000000001,
+              "wal_bytes": 43888,
+              "wal_records": 134,
+              "wal_fpi": 1
+            },
+            {
+              "id": "2057054109228855029",
+              "query": "WITH locked AS MATERIALIZED (\nSELECT backend,scheduler_version,state_format_version,admitted_at,execution_deadline,\n\t\tstate_revision,wake_generation,applied_generation,cancel_requested,admission_paused,stop_cause,(document->>$2)::text AS status,graph_cursor,graph_scan_again,delivery_cursor\n\t\tFROM knotra_runs WHERE id=$1 FOR UPDATE\n)\nSELECT locked.backend, locked.scheduler_version, locked.state_format_version, locked.admitted_at, locked.execution_deadline, locked.state_revision, locked.wake_generation, locked.applied_generation, locked.cancel_requested, locked.admission_paused, locked.stop_cause, locked.status, locked.graph_cursor, locked.graph_scan_again, locked.delivery_cursor,clock_timestamp()::timestamptz AS now FROM locked",
+              "calls": 1348,
+              "exec_ms": 9187.392371999993,
+              "wal_bytes": 40356,
+              "wal_records": 741,
+              "wal_fpi": 0
+            },
+            {
+              "id": "-3524512287980437465",
+              "query": "UPDATE knotra_operations SET admitted_at=$2 WHERE id=$1",
+              "calls": 64,
+              "exec_ms": 1.2453340000000002,
+              "wal_bytes": 31316,
+              "wal_records": 200,
+              "wal_fpi": 0
+            },
+            {
+              "id": "4478988203565016901",
+              "query": "INSERT INTO knotra_operations(id,run_id,kind,effect,instance_id,attempt_number,worker_id,ownership_generation,admitted_at)\n\t\t\t\tVALUES($1,$2,$3,$4,$5,$6,$7,$8,$9)",
+              "calls": 64,
+              "exec_ms": 4.846502999999999,
+              "wal_bytes": 28769,
+              "wal_records": 135,
+              "wal_fpi": 0
+            },
+            {
+              "id": "9017455456900810743",
+              "query": "UPDATE knotra_execution_attempts SET dispatch_pending=$4\n\t\t\tWHERE run_id=$1 AND instance_id=$2 AND number=$3",
+              "calls": 64,
+              "exec_ms": 2.7454560000000003,
+              "wal_bytes": 28078,
+              "wal_records": 206,
+              "wal_fpi": 0
+            },
+            {
+              "id": "-4588564545999847466",
+              "query": "UPDATE knotra_execution_slots SET released_at=clock_timestamp()\n\t\tWHERE run_id=$1 AND instance_id=$2 AND attempt_number=$3 AND ownership_generation=$4 AND released_at IS NULL",
+              "calls": 64,
+              "exec_ms": 0.9231640000000001,
+              "wal_bytes": 18990,
+              "wal_records": 133,
+              "wal_fpi": 0
+            },
+            {
+              "id": "-844347448052560179",
+              "query": "SELECT lease_expires_at FROM knotra_execution_attempts\n\t\tWHERE run_id=$1 AND instance_id=$2 AND number=$3 AND state=$6 AND owner=$4 AND ownership_generation=$5 FOR UPDATE",
+              "calls": 320,
+              "exec_ms": 3.3791659999999997,
+              "wal_bytes": 16366,
+              "wal_records": 299,
+              "wal_fpi": 0
+            },
+            {
+              "id": "-8978926187941148075",
+              "query": "SELECT state,attempt_number,deadline FROM knotra_execution_nodes WHERE run_id=$1 AND id=$2 FOR UPDATE",
+              "calls": 320,
+              "exec_ms": 7.106885000000001,
+              "wal_bytes": 16310,
+              "wal_records": 299,
+              "wal_fpi": 0
+            },
+            {
+              "id": "-2302021811742792906",
+              "query": "UPDATE knotra_runs SET state_revision=state_revision+$2 WHERE id=$1",
+              "calls": 64,
+              "exec_ms": 1.8929169999999995,
+              "wal_bytes": 14333,
+              "wal_records": 143,
+              "wal_fpi": 0
+            },
+            {
+              "id": "6075269243464875357",
+              "query": "SELECT document,sequence FROM knotra_runs WHERE id=$1 FOR UPDATE",
+              "calls": 258,
+              "exec_ms": 1.395841999999999,
+              "wal_bytes": 14012,
+              "wal_records": 259,
+              "wal_fpi": 0
+            },
+            {
+              "id": "-8635789824277513888",
+              "query": "SELECT document,cancel_requested FROM knotra_runs WHERE id=$1 FOR UPDATE",
+              "calls": 255,
+              "exec_ms": 5865.020376,
+              "wal_bytes": 13922,
+              "wal_records": 257,
+              "wal_fpi": 0
+            },
+            {
+              "id": "6052770770551518080",
+              "query": "UPDATE knotra_runs SET graph_scan_again=$2 WHERE id=$1",
+              "calls": 75,
+              "exec_ms": 2.120863000000001,
+              "wal_bytes": 13910,
+              "wal_records": 160,
+              "wal_fpi": 0
+            },
+            {
+              "id": "6594474322521738585",
+              "query": "SELECT heartbeat_at FROM knotra_workers WHERE id=$1 AND engine_id=$2\n\t\tAND $3::integer=ANY(scheduler_versions) AND $4::integer=ANY(state_format_versions) FOR SHARE",
+              "calls": 320,
+              "exec_ms": 1.2155759999999998,
+              "wal_bytes": 13824,
+              "wal_records": 256,
+              "wal_fpi": 0
+            },
+            {
+              "id": "-5083755027656568727",
+              "query": "INSERT INTO knotra_budgets(run_id,scope,kind,used) VALUES($1,$2,$3,$4) ON CONFLICT(run_id,scope,kind) DO UPDATE SET used=knotra_budgets.used+$5",
+              "calls": 64,
+              "exec_ms": 0.613918,
+              "wal_bytes": 8292,
+              "wal_records": 130,
+              "wal_fpi": 0
+            },
+            {
+              "id": "-8887963382388148310",
+              "query": "UPDATE knotra_execution_scopes SET active_attempts=active_attempts-$3 WHERE run_id=$1 AND id=$2",
+              "calls": 64,
+              "exec_ms": 0.590455,
+              "wal_bytes": 8000,
+              "wal_records": 128,
+              "wal_fpi": 0
+            },
+            {
+              "id": "-2488997644060181955",
+              "query": "SELECT state FROM knotra_execution_attempts WHERE run_id=$1 AND instance_id=$2 AND number=$3\n\t\tAND owner=$4 AND ownership_generation=$5 FOR UPDATE",
+              "calls": 64,
+              "exec_ms": 0.3754079999999999,
+              "wal_bytes": 6858,
+              "wal_records": 127,
+              "wal_fpi": 0
+            },
+            {
+              "id": "-6255106330948261687",
+              "query": "INSERT INTO knotra_commands(principal,id,route,digest,status,response) VALUES($1,$2,$3,$4,$5,$6)",
+              "calls": 2,
+              "exec_ms": 0.23341599999999998,
+              "wal_bytes": 6201,
+              "wal_records": 14,
+              "wal_fpi": 0
+            },
+            {
+              "id": "922046736368703833",
+              "query": "INSERT INTO knotra_runs(id,definition_id,document,plan,inputs) VALUES($1,$2,$3,$4,$5)",
+              "calls": 1,
+              "exec_ms": 0.313458,
+              "wal_bytes": 5479,
+              "wal_records": 11,
+              "wal_fpi": 0
+            },
+            {
+              "id": "-9061843299831483063",
+              "query": "UPDATE knotra_runs SET applied_generation=wake_generation,state_revision=state_revision+$2,dirty_since=$3 WHERE id=$1",
+              "calls": 19,
+              "exec_ms": 0.8304980000000002,
+              "wal_bytes": 5432,
+              "wal_records": 60,
+              "wal_fpi": 0
+            },
+            {
+              "id": "3693445114272227753",
+              "query": "SELECT n.state AS node_state,n.attempt_number,n.execution_request,n.deadline,g.state AS graph_state,g.scopes,\n\t\tn.node_id,g.pipeline,g.graph_path,g.parent_instance_id,g.iteration_index,n.started_at,(r.plan->>$3)::text AS plan_digest\n\t\tFROM knotra_execution_nodes n JOIN knotra_execution_graphs g ON g.run_id=n.run_id AND g.id=n.graph_id\n\t\tJOIN knotra_runs r ON r.id=n.run_id\n\t\tWHERE n.run_id=$1 AND n.id=$2 FOR UPDATE OF n",
+              "calls": 64,
+              "exec_ms": 7.831824000000001,
+              "wal_bytes": 5432,
+              "wal_records": 94,
+              "wal_fpi": 0
+            },
+            {
+              "id": "2088162636736402110",
+              "query": "UPDATE knotra_runs SET graph_cursor=$2,state_revision=state_revision+$3 WHERE id=$1",
+              "calls": 20,
+              "exec_ms": 0.634584,
+              "wal_bytes": 5416,
+              "wal_records": 51,
+              "wal_fpi": 0
+            },
+            {
+              "id": "-7285581751740826264",
+              "query": "SELECT to_jsonb(s) FROM knotra_execution_scopes s WHERE run_id=$1 AND id=ANY($2::text[]) ORDER BY id FOR UPDATE",
+              "calls": 84,
+              "exec_ms": 0.807542,
+              "wal_bytes": 4840,
+              "wal_records": 87,
+              "wal_fpi": 0
+            },
+            {
+              "id": "-3829440508551470588",
+              "query": "UPDATE knotra_runs SET graph_cursor=$2,graph_scan_again=$3,state_revision=state_revision+$4 WHERE id=$1",
+              "calls": 20,
+              "exec_ms": 0.5477489999999999,
+              "wal_bytes": 4700,
+              "wal_records": 42,
+              "wal_fpi": 0
+            },
+            {
+              "id": "8721913396215862239",
+              "query": "UPDATE knotra_execution_scopes SET active_attempts=active_attempts+$3 WHERE run_id=$1 AND id=$2",
+              "calls": 64,
+              "exec_ms": 0.7346270000000003,
+              "wal_bytes": 4544,
+              "wal_records": 64,
+              "wal_fpi": 0
+            },
+            {
+              "id": "669163295909987231",
+              "query": "SELECT completed,response FROM knotra_operations WHERE id=$1 AND run_id=$2 AND instance_id=$3\n\t\t\tAND attempt_number=$4 AND worker_id=$5 AND ownership_generation=$6 AND admitted_at IS NOT NULL FOR UPDATE",
+              "calls": 64,
+              "exec_ms": 0.3641169999999999,
+              "wal_bytes": 4230,
+              "wal_records": 77,
+              "wal_fpi": 0
+            },
+            {
+              "id": "3508089672170658196",
+              "query": "SELECT admitted_at FROM knotra_operations WHERE id=$1 AND run_id=$2 AND instance_id=$3\n\t\t\tAND attempt_number=$4 AND worker_id=$5 AND ownership_generation=$6 AND kind=$7 AND NOT completed FOR UPDATE",
+              "calls": 64,
+              "exec_ms": 0.31645799999999996,
+              "wal_bytes": 3792,
+              "wal_records": 69,
+              "wal_fpi": 0
+            },
+            {
+              "id": "6042032412706341351",
+              "query": "SELECT s.id,s.limits FROM knotra_execution_scopes s JOIN knotra_execution_slots r\n\t\t\tON r.run_id=s.run_id AND r.scope_id=s.id WHERE r.run_id=$1 AND r.instance_id=$2 AND r.attempt_number=$3\n\t\t\tAND r.ownership_generation=$4 AND r.released_at IS NULL ORDER BY s.id FOR UPDATE OF s",
+              "calls": 64,
+              "exec_ms": 0.8455009999999998,
+              "wal_bytes": 3764,
+              "wal_records": 68,
+              "wal_fpi": 0
+            },
+            {
+              "id": "2141194890619729139",
+              "query": "SELECT state,dispatch_generation,ownership_generation FROM knotra_execution_attempts\n\t\tWHERE run_id=$1 AND instance_id=$2 AND number=$3 FOR UPDATE",
+              "calls": 64,
+              "exec_ms": 0.5099549999999998,
+              "wal_bytes": 3650,
+              "wal_records": 67,
+              "wal_fpi": 0
+            },
+            {
+              "id": "5678844466698907763",
+              "query": "SELECT id,limits,active_attempts FROM knotra_execution_scopes\n\t\tWHERE run_id=$1 AND id=ANY($2::text[]) ORDER BY id FOR UPDATE",
+              "calls": 64,
+              "exec_ms": 0.37433299999999997,
+              "wal_bytes": 3564,
+              "wal_records": 65,
+              "wal_fpi": 0
+            },
+            {
+              "id": "-7832051306850586254",
+              "query": "SELECT heartbeat_at,draining,($1::integer=ANY(scheduler_versions) AND $2::integer=ANY(state_format_versions)) AS compatible\n\t\tFROM knotra_workers WHERE id=$3 AND engine_id=$4 FOR SHARE",
+              "calls": 64,
+              "exec_ms": 0.3130069999999999,
+              "wal_bytes": 3456,
+              "wal_records": 64,
+              "wal_fpi": 0
+            },
+            {
+              "id": "-271328136582880753",
+              "query": "INSERT INTO knotra_definitions(id,digest,document) VALUES($1,$2,$3) ON CONFLICT(digest) DO UPDATE SET digest=EXCLUDED.digest RETURNING document",
+              "calls": 1,
+              "exec_ms": 0.194167,
+              "wal_bytes": 3376,
+              "wal_records": 11,
+              "wal_fpi": 0
+            },
+            {
+              "id": "-3657862719913966708",
+              "query": "INSERT INTO knotra_execution_graphs(run_id,id,parent_instance_id,address,pipeline,graph_path,\n\t\tinputs,permissions,scopes,deadline,state,revision,iteration_index) VALUES($1,$2,NULLIF($3::text,$14),$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)",
+              "calls": 1,
+              "exec_ms": 0.167625,
+              "wal_bytes": 1641,
+              "wal_records": 11,
+              "wal_fpi": 0
+            },
+            {
+              "id": "-2385976000146020080",
+              "query": "UPDATE knotra_execution_graphs SET state=$1,materialization_cursor=$2,\n\t\tinputs=CASE WHEN state=$3 THEN $4::jsonb ELSE inputs END,outputs=$5,failure=$6,revision=$7\n\t\tWHERE run_id=$8 AND id=$9 AND revision=$10-$11 AND state IN ($12 /*, ... */)",
+              "calls": 2,
+              "exec_ms": 0.088126,
+              "wal_bytes": 1357,
+              "wal_records": 10,
+              "wal_fpi": 0
+            },
+            {
+              "id": "3641952495188740362",
+              "query": "SELECT document FROM knotra_runs WHERE id=$1",
+              "calls": 7,
+              "exec_ms": 0.076125,
+              "wal_bytes": 914,
+              "wal_records": 12,
+              "wal_fpi": 0
+            },
+            {
+              "id": "-6388666533240630086",
+              "query": "SELECT plan FROM knotra_runs WHERE id=$1",
+              "calls": 148,
+              "exec_ms": 12.361943999999996,
+              "wal_bytes": 812,
+              "wal_records": 11,
+              "wal_fpi": 0
+            },
+            {
+              "id": "7847443088444857558",
+              "query": "WITH selected AS MATERIALIZED (\n    SELECT n.id,n.node_id,COALESCE(q.status IN ($1 /*, ... */),$2) AS answered\n    FROM knotra_execution_nodes n\n    LEFT JOIN knotra_execution_attempts a ON a.run_id=n.run_id AND a.instance_id=n.id AND a.number=n.attempt_number\n    LEFT JOIN knotra_execution_controls c ON c.run_id=n.run_id AND c.instance_id=n.id\n    LEFT JOIN knotra_execution_graphs child ON child.run_id=c.run_id AND child.id=c.child_graph_id\n    LEFT JOIN knotra_requests q ON q.run_id=n.run_id AND q.id=n.current_request_id\n    WHERE n.run_id=$3 AND n.graph_id=$4\n        AND n.state NOT IN ($5 /*, ... */) AND (\n        $6::boolean OR n.deadline<=$7::timestamptz\n        OR n.id=$8::text\n        OR (n.state=$9 AND n.remaining_dependencies=$10 AND NOT $11::boolean)\n        OR (n.state IN ($12 /*, ... */) AND a.state=$13)\n        OR (n.state=$14 AND a.dispatch_pending AND NOT $15::boolean)\n        OR (n.state=$16 AND NOT $17::boolean AND EXISTS(\n            SELECT $18 FROM knotra_execution_timers t WHERE t.run_id=n.run_id AND t.instance_id=n.id\n                AND t.kind=$19 AND t.generation=n.attempt_number AND t.due_at<=$20::timestamptz))\n        OR (n.state IN ($21 /*, ... */) AND q.status IN ($22 /*, ... */))\n        OR (n.state=$23 AND (\n            n.node_kind=$24\n            OR (n.node_kind IN ($25 /*, ... */) AND c.instance_id IS NULL)\n            OR (c.kind IN ($26 /*, ... */) AND (child.state IN ($27 /*, ... */)\n                OR (c.child_graph_id IS NULL AND NOT $28::boolean)))\n            OR (c.kind=$29 AND (c.failed_children>$30\n                OR (c.active_children=$31 AND c.next_position=c.element_count)\n                OR (NOT $32::boolean AND c.next_position<c.element_count\n                    AND c.active_children<c.concurrency)))\n        ))\n    )\n    ORDER BY n.id=$33::text DESC,answered DESC,n.node_id\n    LIMIT LEAST($34,$35::integer)\n)\nSELECT CASE WHEN n.node_kind=$36 AND c.instance_id IS NOT NULL THEN\n    jsonb_build_object($37,n.run_id,$38,n.id,$3",
+              "calls": 84,
+              "exec_ms": 8.916869999999998,
+              "wal_bytes": 712,
+              "wal_records": 12,
+              "wal_fpi": 0
+            },
+            {
+              "id": "157642540528682766",
+              "query": "SELECT id, args, attempt, attempted_at, attempted_by, created_at, errors, finalized_at, kind, max_attempts, metadata, priority, queue, state, scheduled_at, tags, unique_key, unique_states\nFROM \"knotra_perf_f7c8dbd67a0c4140b3e5bcdb9b49582c\".river_job\nWHERE kind = any($2)\n  AND queue = any($4)\n  AND state = any($5)\n  AND metadata @> $3::jsonb\nORDER BY id DESC\nLIMIT $1::int",
+              "calls": 143,
+              "exec_ms": 1.5215470000000006,
+              "wal_bytes": 706,
+              "wal_records": 12,
+              "wal_fpi": 0
+            },
+            {
+              "id": "8711147079073927653",
+              "query": "SELECT s.id FROM knotra_execution_scopes s JOIN knotra_execution_slots r\n\t\tON r.run_id=s.run_id AND r.scope_id=s.id WHERE r.run_id=$1 AND r.instance_id=$2 AND r.attempt_number=$3\n\t\tAND r.ownership_generation=$4 AND r.released_at IS NULL ORDER BY s.id FOR UPDATE OF s",
+              "calls": 64,
+              "exec_ms": 0.7295840000000002,
+              "wal_bytes": 694,
+              "wal_records": 12,
+              "wal_fpi": 0
+            },
+            {
+              "id": "-2207167180761569277",
+              "query": "SELECT document FROM knotra_instances WHERE run_id=$1 ORDER BY id",
+              "calls": 7,
+              "exec_ms": 1.388166,
+              "wal_bytes": 602,
+              "wal_records": 8,
+              "wal_fpi": 0
+            },
+            {
+              "id": "1556905633115845748",
+              "query": "INSERT INTO knotra_execution_scopes(run_id,id,limits) VALUES($1,$1,$2)",
+              "calls": 1,
+              "exec_ms": 0.07008400000000001,
+              "wal_bytes": 571,
+              "wal_records": 4,
+              "wal_fpi": 0
+            },
+            {
+              "id": "-1008012319928763267",
+              "query": "INSERT INTO knotra_execution_timers(run_id,id,generation,kind,due_at) VALUES($1,$3,$4,$5,$2)",
+              "calls": 1,
+              "exec_ms": 0.134375,
+              "wal_bytes": 563,
+              "wal_records": 5,
+              "wal_fpi": 0
+            },
+            {
+              "id": "6454502223447063729",
+              "query": "UPDATE knotra_runs SET backend=$6,scheduler_version=$2,state_format_version=$3,\n\t\tadmitted_at=$4,execution_deadline=$5,wake_generation=$7,dirty_since=$4 WHERE id=$1",
+              "calls": 1,
+              "exec_ms": 0.08325,
+              "wal_bytes": 484,
+              "wal_records": 5,
+              "wal_fpi": 0
+            },
+            {
+              "id": "3717522580052153289",
+              "query": "SELECT g.id,g.address\nFROM knotra_execution_graphs g\nWHERE g.run_id=$1 AND g.state IN ($2 /*, ... */)\nAND ($3::text=$4 OR EXISTS(\n    SELECT $5 FROM knotra_execution_nodes n WHERE n.run_id=g.run_id\n        AND n.graph_id=g.id AND n.id=$6::text))\nAND (\n    g.address>$7::text\n    OR EXISTS(SELECT $8 FROM knotra_execution_nodes n WHERE n.run_id=g.run_id\n        AND n.graph_id=g.id AND n.id=$9::text)\n    OR EXISTS(SELECT $10 FROM knotra_execution_nodes n JOIN knotra_requests q\n        ON q.run_id=n.run_id AND q.id=n.current_request_id\n        WHERE n.run_id=g.run_id AND n.graph_id=g.id\n            AND n.state IN ($11 /*, ... */)\n            AND q.status IN ($12 /*, ... */))\n)\nORDER BY\n    EXISTS(SELECT $13 FROM knotra_execution_nodes n WHERE n.run_id=g.run_id\n        AND n.graph_id=g.id AND n.id=$14::text) DESC,\n    EXISTS(SELECT $15 FROM knotra_execution_nodes n JOIN knotra_requests q\n        ON q.run_id=n.run_id AND q.id=n.current_request_id\n        WHERE n.run_id=g.run_id AND n.graph_id=g.id\n            AND n.state IN ($16 /*, ... */)\n            AND q.status IN ($17 /*, ... */)) DESC,\n    g.address\nLIMIT $18",
+              "calls": 84,
+              "exec_ms": 3.5009189999999997,
+              "wal_bytes": 368,
+              "wal_records": 6,
+              "wal_fpi": 0
+            },
+            {
+              "id": "-665036583664887729",
+              "query": "SELECT COALESCE(sum(used),$1) FROM knotra_perf_f7c8dbd67a0c4140b3e5bcdb9b49582c.knotra_budgets WHERE run_id=$2 AND scope=$3 AND kind=$4",
+              "calls": 2,
+              "exec_ms": 0.036792,
+              "wal_bytes": 184,
+              "wal_records": 1,
+              "wal_fpi": 0
+            },
+            {
+              "id": "1225688801907852268",
+              "query": "SELECT backend FROM knotra_runs WHERE id=$1",
+              "calls": 64,
+              "exec_ms": 0.34882799999999997,
+              "wal_bytes": 128,
+              "wal_records": 2,
+              "wal_fpi": 0
+            },
+            {
+              "id": "-1191495797457911271",
+              "query": "SELECT id, args, attempt, attempted_at, attempted_by, created_at, errors, finalized_at, kind, max_attempts, metadata, priority, queue, state, scheduled_at, tags, unique_key, unique_states\nFROM \"knotra_perf_f7c8dbd67a0c4140b3e5bcdb9b49582c\".river_job\nWHERE state = $4\n    AND id > $1::bigint\n    AND attempted_at < $2::timestamptz\nORDER BY id\nLIMIT $3",
+              "calls": 1,
+              "exec_ms": 0.105626,
+              "wal_bytes": 120,
+              "wal_records": 2,
+              "wal_fpi": 0
+            },
+            {
+              "id": "-7608710503984214965",
+              "query": "SELECT EXISTS(SELECT $1 FROM knotra_operations WHERE run_id=$2 AND instance_id=$3\n\t\t\tAND attempt_number=$4 AND kind IN ($5 /*, ... */) AND admitted_at IS NOT NULL AND NOT completed)",
+              "calls": 64,
+              "exec_ms": 0.32036999999999993,
+              "wal_bytes": 114,
+              "wal_records": 2,
+              "wal_fpi": 0
+            },
+            {
+              "id": "-3934207161179891036",
+              "query": "SELECT inputs FROM knotra_runs WHERE id=$1",
+              "calls": 7,
+              "exec_ms": 0.041874,
+              "wal_bytes": 80,
+              "wal_records": 1,
+              "wal_fpi": 0
+            },
+            {
+              "id": "4033181710006713255",
+              "query": "DELETE FROM \"knotra_perf_f7c8dbd67a0c4140b3e5bcdb9b49582c\".river_job\nWHERE id IN (\n    SELECT id\n    FROM \"knotra_perf_f7c8dbd67a0c4140b3e5bcdb9b49582c\".river_job\n    WHERE (\n            (state = $10 AND $1 AND finalized_at < $2::timestamptz) OR\n            (state = $11 AND $3 AND finalized_at < $4::timestamptz) OR\n            (state = $12 AND $5 AND finalized_at < $6::timestamptz)\n        )\n        AND (\n            $7::text[] IS NULL\n            OR NOT (queue = any($7))\n        )\n        AND (\n            $8::text[] IS NULL\n            OR queue = any($8)\n        )\n    ORDER BY id\n    LIMIT $9::bigint\n)",
+              "calls": 1,
+              "exec_ms": 0.013625000000000002,
+              "wal_bytes": 74,
+              "wal_records": 1,
+              "wal_fpi": 0
+            },
+            {
+              "id": "-8774242541296485645",
+              "query": "UPDATE knotra_execution_scopes SET materialized_instances=materialized_instances+$3\n\t\t\t\tWHERE run_id=$1 AND id=$2 AND materialized_instances+$3<=(limits->>$4)::integer",
+              "calls": 1,
+              "exec_ms": 0.056292,
+              "wal_bytes": 71,
+              "wal_records": 1,
+              "wal_fpi": 0
+            },
+            {
+              "id": "4854991825702068830",
+              "query": "begin",
+              "calls": 597,
+              "exec_ms": 0.13245599999999963,
+              "wal_bytes": 0,
+              "wal_records": 0,
+              "wal_fpi": 0
+            },
+            {
+              "id": "-5395401390853898589",
+              "query": "SELECT json_build_object(\n        $1,pg_current_wal_insert_lsn()::text,\n        $2,(SELECT COALESCE(sum(calls),$3) FROM pg_stat_statements WHERE dbid=(SELECT oid FROM pg_database WHERE datname=current_database())),\n        $4,(SELECT COALESCE(sum(total_exec_time),$5) FROM pg_stat_statements WHERE dbid=(SELECT oid FROM pg_database WHERE datname=current_database())),\n        $6,xact_commit+xact_rollback,\n        $7,(SELECT count(*) FROM pg_stat_activity WHERE application_name=$8),\n        $9,(SELECT COALESCE(sum(pg_total_relation_size(c.oid)),$10) FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname=$11 AND c.relkind IN ($12 /*, ... */))\n        ) FROM pg_stat_database WHERE datname=current_database()",
+              "calls": 3,
+              "exec_ms": 6.361580000000004,
+              "wal_bytes": 0,
+              "wal_records": 0,
+              "wal_fpi": 0
+            },
+            {
+              "id": "-9014512072042818940",
+              "query": "SELECT CASE WHEN $3::text[] IS NULL THEN g.inputs ELSE\n    (SELECT COALESCE(jsonb_object_agg(k.name,g.inputs->k.name) FILTER (WHERE g.inputs ? k.name),$4::jsonb)\n        FROM unnest($3::text[]) k(name)) END::jsonb\nFROM knotra_execution_graphs g WHERE g.run_id=$1 AND g.id=$2",
+              "calls": 85,
+              "exec_ms": 0.39608699999999986,
+              "wal_bytes": 0,
+              "wal_records": 0,
+              "wal_fpi": 0
+            },
+            {
+              "id": "2296177295314700364",
+              "query": "SELECT COALESCE(json_agg(backlog),$1) FROM (\n                                        SELECT r.document->>'status' AS run_status,j.state,count(*) AS jobs\n                                        FROM knotra_perf_f7c8dbd67a0c4140b3e5bcdb9b49582c.river_job j JOIN knotra_perf_f7c8dbd67a0c4140b3e5bcdb9b49582c.knotra_runs r ON r.id=j.args->>$2\n                                        WHERE j.kind=$3 AND j.state IN ($4 /*, ... */) GROUP BY 1,2\n                                    ) backlog",
+              "calls": 1,
+              "exec_ms": 0.014001,
+              "wal_bytes": 0,
+              "wal_records": 0,
+              "wal_fpi": 0
+            },
+            {
+              "id": "-9092767107603817338",
+              "query": "SELECT DISTINCT run_id FROM knotra_execution_timers\n\t\tWHERE consumed_at IS NULL AND due_at<=clock_timestamp() ORDER BY run_id LIMIT $1",
+              "calls": 2,
+              "exec_ms": 0.049793000000000004,
+              "wal_bytes": 0,
+              "wal_records": 0,
+              "wal_fpi": 0
+            },
+            {
+              "id": "7559544004722521070",
+              "query": "SELECT EXISTS(\n    SELECT $1 FROM knotra_execution_graphs g WHERE g.run_id=$2 AND g.state IN ($3 /*, ... */)\n    UNION ALL\n    SELECT $4 FROM knotra_execution_attempts a WHERE a.run_id=$5 AND a.state=$6\n)",
+              "calls": 1,
+              "exec_ms": 0.011125,
+              "wal_bytes": 0,
+              "wal_records": 0,
+              "wal_fpi": 0
+            },
+            {
+              "id": "-6150706438481780928",
+              "query": "SELECT run_id,kind,effect,instance_id,admitted_at,completed,response\n\t\t\tFROM knotra_operations WHERE id=$1 FOR UPDATE",
+              "calls": 64,
+              "exec_ms": 0.14792,
+              "wal_bytes": 0,
+              "wal_records": 0,
+              "wal_fpi": 0
+            },
+            {
+              "id": "8574192752894648781",
+              "query": "SELECT r.id FROM knotra_runs r\nWHERE r.backend=$1 AND r.id>$2::text\n    AND r.document->>$3 NOT IN ($4 /*, ... */)\n    AND (r.wake_generation>r.applied_generation OR EXISTS(\n        SELECT $5 FROM knotra_execution_attempts a WHERE a.run_id=r.id AND a.state=$6))\nORDER BY r.id LIMIT $7",
+              "calls": 2,
+              "exec_ms": 0.019208,
+              "wal_bytes": 0,
+              "wal_records": 0,
+              "wal_fpi": 0
+            },
+            {
+              "id": "2183976019928255121",
+              "query": "SELECT (to_jsonb(a) || jsonb_build_object(\n    $4,a.run_id,$5,a.instance_id,$6,CASE WHEN a.owner IS NULL THEN $7 ELSE jsonb_build_object(\n    $8,a.run_id,$9,a.instance_id,$10,a.number,$11,a.owner,$12,a.ownership_generation) END))::jsonb\nFROM knotra_execution_attempts a JOIN knotra_execution_nodes n ON n.run_id=a.run_id AND n.id=a.instance_id\nWHERE a.run_id=$1 AND n.graph_id=$2 AND a.number=n.attempt_number\n    AND ($3::text[] IS NULL OR n.id=ANY($3::text[])) ORDER BY a.instance_id",
+              "calls": 84,
+              "exec_ms": 37.298927,
+              "wal_bytes": 0,
+              "wal_records": 0,
+              "wal_fpi": 0
+            },
+            {
+              "id": "6810904127984268595",
+              "query": "SELECT EXISTS(SELECT $1 FROM knotra_execution_nodes WHERE run_id=$2 AND graph_id=$3\n    AND state NOT IN ($4 /*, ... */) AND NOT (id=ANY($5::text[])))",
+              "calls": 84,
+              "exec_ms": 0.6650779999999997,
+              "wal_bytes": 0,
+              "wal_records": 0,
+              "wal_fpi": 0
+            },
+            {
+              "id": "7232709820961859478",
+              "query": "SELECT EXISTS(SELECT $3 FROM knotra_execution_nodes WHERE run_id=$1\n    AND state=$4 AND NOT (id=ANY($2::text[])))",
+              "calls": 84,
+              "exec_ms": 0.12220100000000007,
+              "wal_bytes": 0,
+              "wal_records": 0,
+              "wal_fpi": 0
+            },
+            {
+              "id": "5189024543045670877",
+              "query": "SELECT id,worker_id,ownership_generation\nFROM knotra_resources\nWHERE engine_id=$1 AND host_id=$2 AND state<>$4 AND id>$3\nORDER BY id LIMIT $5",
+              "calls": 2,
+              "exec_ms": 0.002875000000000001,
+              "wal_bytes": 0,
+              "wal_records": 0,
+              "wal_fpi": 0
+            },
+            {
+              "id": "6041177029511643970",
+              "query": "SELECT heartbeat_at FROM knotra_workers WHERE engine_id=$1 AND delivery_client_id=$2",
+              "calls": 101,
+              "exec_ms": 0.2551769999999999,
+              "wal_bytes": 0,
+              "wal_records": 0,
+              "wal_fpi": 0
+            },
+            {
+              "id": "-4570360759179112616",
+              "query": "SELECT run_id,instance_id,number,outcome_key,owner,ownership_generation,state FROM knotra_execution_attempts\n\t\tWHERE outcome IS NULL AND owner IS NOT NULL AND lease_expires_at<=clock_timestamp()\n\t\tAND outcome_key>$1 ORDER BY outcome_key LIMIT $2",
+              "calls": 2,
+              "exec_ms": 0.035665999999999996,
+              "wal_bytes": 0,
+              "wal_records": 0,
+              "wal_fpi": 0
+            },
+            {
+              "id": "6619769024728039455",
+              "query": "SELECT json_build_object(\n                                    $1,(SELECT extract($2 FROM min(n.started_at)-r.admitted_at)*$3 FROM knotra_perf_f7c8dbd67a0c4140b3e5bcdb9b49582c.knotra_execution_nodes n WHERE n.run_id=r.id),\n                                    $4,(SELECT json_object_agg(kind,summary) FROM (\n                                        SELECT kind,json_build_object(\n                                            $5,count(*),\n                                            $6,max(attempt),\n                                            $7,extract($8 FROM min(attempted_at)-r.admitted_at)*$9,\n                                            $10,percentile_cont($11) WITHIN GROUP (ORDER BY extract($12 FROM attempted_at-created_at)*$13),\n                                            $14,percentile_cont($15) WITHIN GROUP (ORDER BY extract($16 FROM attempted_at-created_at)*$17),\n                                            $18,max(extract($19 FROM attempted_at-created_at)*$20)\n                                        ) AS summary FROM knotra_perf_f7c8dbd67a0c4140b3e5bcdb9b49582c.river_job\n                                        WHERE COALESCE(args->>$21,args->$22->>$23)=r.id GROUP BY kind\n                                    ) jobs)\n                                ) FROM knotra_perf_f7c8dbd67a0c4140b3e5bcdb9b49582c.knotra_runs r WHERE r.id=$24",
+              "calls": 1,
+              "exec_ms": 0.190832,
+              "wal_bytes": 0,
+              "wal_records": 0,
+              "wal_fpi": 0
+            },
+            {
+              "id": "-5912198513738109743",
+              "query": "SELECT jsonb_build_object($3,g.run_id,$4,g.id,$5,g.parent_instance_id,\n    $6,g.address,$7,g.pipeline,$8,g.graph_path,$9,g.permissions,\n    $10,g.scopes,$11,g.deadline,$12,g.state,$13,g.materialization_cursor,\n    $14,g.outputs,$15,g.failure,$16,g.revision,$17,g.iteration_index)::jsonb\nFROM knotra_execution_graphs g WHERE g.run_id=$1 AND g.id=$2",
+              "calls": 168,
+              "exec_ms": 1.9292469999999995,
+              "wal_bytes": 0,
+              "wal_records": 0,
+              "wal_fpi": 0
+            },
+            {
+              "id": "3651569671339035438",
+              "query": "rollback to savepoint $1",
+              "calls": 1,
+              "exec_ms": 0.000375,
+              "wal_bytes": 0,
+              "wal_records": 0,
+              "wal_fpi": 0
+            },
+            {
+              "id": "543562702703519457",
+              "query": "SELECT document FROM knotra_definitions WHERE id=$1",
+              "calls": 8,
+              "exec_ms": 0.6111260000000001,
+              "wal_bytes": 0,
+              "wal_records": 0,
+              "wal_fpi": 0
+            },
+            {
+              "id": "6097083398544187049",
+              "query": "commit",
+              "calls": 597,
+              "exec_ms": 0.09316700000000008,
+              "wal_bytes": 0,
+              "wal_records": 0,
+              "wal_fpi": 0
+            },
+            {
+              "id": "6742457020769894887",
+              "query": "savepoint $1",
+              "calls": 273,
+              "exec_ms": 0.08140600000000005,
+              "wal_bytes": 0,
+              "wal_records": 0,
+              "wal_fpi": 0
+            },
+            {
+              "id": "5293927807625851446",
+              "query": "SELECT pg_advisory_xact_lock(hashtextextended($1,$2))",
+              "calls": 2,
+              "exec_ms": 0.009415999999999999,
+              "wal_bytes": 0,
+              "wal_records": 0,
+              "wal_fpi": 0
+            },
+            {
+              "id": "-7734026292032239695",
+              "query": "SELECT n.state AS node_state,n.attempt_number,n.deadline,a.state AS attempt_state,a.owner,a.ownership_generation,a.outcome_key,a.outcome,(r.plan->>$4)::text AS plan_digest\n\t\tFROM knotra_execution_nodes n JOIN knotra_execution_attempts a ON a.run_id=n.run_id AND a.instance_id=n.id\n\t\tJOIN knotra_runs r ON r.id=n.run_id WHERE n.run_id=$1 AND n.id=$2 AND a.number=$3 FOR UPDATE OF n,a",
+              "calls": 64,
+              "exec_ms": 7.081744,
+              "wal_bytes": 0,
+              "wal_records": 0,
+              "wal_fpi": 0
+            },
+            {
+              "id": "8461746091049503437",
+              "query": "SELECT jsonb_build_object($4,c.run_id,$5,c.instance_id,$6,c.kind,\n    $7,c.next_position,$8,c.collection_position,$9,c.active_children,\n    $10,c.succeeded_children,$11,c.failed_children,$12,c.iteration,\n    $13,c.element_count,$14,c.concurrency,$15,c.elements->c.next_position,\n    $16,c.carry,$17,c.child_graph_id,$18,c.revision)::jsonb\nFROM knotra_execution_controls c\nJOIN knotra_execution_nodes n ON n.run_id=c.run_id AND n.id=c.instance_id\nWHERE c.run_id=$1 AND n.graph_id=$2\n    AND ($3::text[] IS NULL OR n.id=ANY($3::text[]))\nORDER BY c.instance_id",
+              "calls": 84,
+              "exec_ms": 1.402048,
+              "wal_bytes": 0,
+              "wal_records": 0,
+              "wal_fpi": 0
+            },
+            {
+              "id": "-1982464695804148708",
+              "query": "SELECT to_jsonb(t) FROM knotra_execution_timers t\nJOIN knotra_execution_nodes n ON n.run_id=t.run_id AND n.id=t.instance_id\nWHERE t.run_id=$1 AND n.graph_id=$2 AND t.kind=$4 AND t.generation=n.attempt_number\n    AND ($3::text[] IS NULL OR n.id=ANY($3::text[]))",
+              "calls": 84,
+              "exec_ms": 2.6111289999999996,
+              "wal_bytes": 0,
+              "wal_records": 0,
+              "wal_fpi": 0
+            },
+            {
+              "id": "2149358718467775914",
+              "query": "SELECT (q.document::jsonb || jsonb_build_object(\n    $1,q.status,$2,q.response_id,$3,q.accepted_at,$4,q.response))::jsonb\nFROM knotra_requests q JOIN knotra_execution_nodes n ON n.run_id=q.run_id AND n.current_request_id=q.id\nWHERE q.run_id=$5 AND n.graph_id=$6 AND n.state IN ($7 /*, ... */)\n    AND ($8::text[] IS NULL OR n.id=ANY($9::text[])) ORDER BY q.id",
+              "calls": 84,
+              "exec_ms": 1.1269920000000002,
+              "wal_bytes": 0,
+              "wal_records": 0,
+              "wal_fpi": 0
+            },
+            {
+              "id": "-6999163117649911340",
+              "query": "SELECT id, args, attempt, attempted_at, attempted_by, created_at, errors, finalized_at, kind, max_attempts, metadata, priority, queue, state, scheduled_at, tags, unique_key, unique_states\nFROM \"knotra_perf_f7c8dbd67a0c4140b3e5bcdb9b49582c\".river_job\nWHERE kind = any($2)\n  AND queue = any($4)\n  AND state = any($5)\n  AND metadata @> $3::jsonb\nORDER BY id ASC\nLIMIT $1::int",
+              "calls": 124,
+              "exec_ms": 1.0464250000000002,
+              "wal_bytes": 0,
+              "wal_records": 0,
+              "wal_fpi": 0
+            },
+            {
+              "id": "-6555916594907500461",
+              "query": "SELECT CASE WHEN $1::text[] IS NULL THEN to_jsonb(children) ELSE\n    jsonb_build_object($2,children.run_id,$3,children.id,$4,children.parent_instance_id,\n        $5,children.state,$6,children.outputs,$7,children.failure,$8,children.iteration_index)\n    END::jsonb\nFROM (\n    SELECT g.run_id, g.id, g.parent_instance_id, g.address, g.pipeline, g.graph_path, g.inputs, g.permissions, g.scopes, g.deadline, g.state, g.materialization_cursor, g.outputs, g.failure, g.revision, g.iteration_index\n    FROM knotra_execution_nodes n\n    JOIN knotra_execution_controls c ON c.run_id=n.run_id AND c.instance_id=n.id\n    JOIN LATERAL (\n        (SELECT g.run_id, g.id, g.parent_instance_id, g.address, g.pipeline, g.graph_path, g.inputs, g.permissions, g.scopes, g.deadline, g.state, g.materialization_cursor, g.outputs, g.failure, g.revision, g.iteration_index FROM knotra_execution_graphs g\n        WHERE g.run_id=c.run_id AND g.parent_instance_id=c.instance_id AND g.state IN ($9 /*, ... */)\n        ORDER BY g.iteration_index,g.id LIMIT $10)\n        UNION ALL\n        (SELECT g.run_id, g.id, g.parent_instance_id, g.address, g.pipeline, g.graph_path, g.inputs, g.permissions, g.scopes, g.deadline, g.state, g.materialization_cursor, g.outputs, g.failure, g.revision, g.iteration_index FROM knotra_execution_graphs g\n        WHERE g.run_id=c.run_id AND g.parent_instance_id=c.instance_id AND g.state=$11\n            AND c.active_children=$12 AND c.failed_children=$13\n            AND c.next_position=c.element_count\n            AND g.iteration_index>=c.collection_position\n        ORDER BY g.iteration_index,g.id LIMIT $14)\n    ) g ON $15\n    WHERE n.run_id=$16 AND n.graph_id=$17 AND c.kind=$18\n        AND ($19::text[] IS NULL OR n.id=ANY($20::text[]))\n    UNION ALL\n    SELECT g.run_id, g.id, g.parent_instance_id, g.address, g.pipeline, g.graph_path, g.inputs, g.permissions, g.scopes, g.deadline, g.state, g.materialization_cursor, g.outputs, g.failure, g.revision, g.iteration_index\n    FROM knotra_exec",
+              "calls": 84,
+              "exec_ms": 2.7242509999999993,
+              "wal_bytes": 0,
+              "wal_records": 0,
+              "wal_fpi": 0
+            },
+            {
+              "id": "2389938821078779106",
+              "query": "SELECT EXISTS(SELECT $3 FROM knotra_events WHERE run_id=$1 AND sequence=$2)",
+              "calls": 258,
+              "exec_ms": 0.6444899999999992,
+              "wal_bytes": 0,
+              "wal_records": 0,
+              "wal_fpi": 0
+            },
+            {
+              "id": "-4838682823314902447",
+              "query": "release savepoint $1",
+              "calls": 272,
+              "exec_ms": 0.055200000000000034,
+              "wal_bytes": 0,
+              "wal_records": 0,
+              "wal_fpi": 0
+            },
+            {
+              "id": "961238556213485812",
+              "query": "SELECT COALESCE(json_agg(stats),$1) FROM (\n            SELECT queryid::text AS id,calls,total_exec_time AS exec_ms,\n                wal_bytes,wal_records,wal_fpi,left(query,$2) AS query\n            FROM pg_stat_statements\n            WHERE dbid=(SELECT oid FROM pg_database WHERE datname=current_database())\n        ) stats",
+              "calls": 1,
+              "exec_ms": 0.3912500000000001,
+              "wal_bytes": 0,
+              "wal_records": 0,
+              "wal_fpi": 0
+            },
+            {
+              "id": "6498489540065748430",
+              "query": "WITH topic_to_notify AS (\n    SELECT\n        concat(coalesce($1::text, current_schema()), $4, $2::text) AS topic,\n        unnest($3::text[]) AS payload\n)\nSELECT pg_notify(\n    topic_to_notify.topic,\n    topic_to_notify.payload\n  )\nFROM topic_to_notify",
+              "calls": 73,
+              "exec_ms": 0.19845999999999997,
+              "wal_bytes": 0,
+              "wal_records": 0,
+              "wal_fpi": 0
+            },
+            {
+              "id": "3851332147048942553",
+              "query": "SELECT route,digest,status,response FROM knotra_commands WHERE principal=$1 AND id=$2",
+              "calls": 2,
+              "exec_ms": 0.011916,
+              "wal_bytes": 0,
+              "wal_records": 0,
+              "wal_fpi": 0
+            },
+            {
+              "id": "-6339237704490227906",
+              "query": "SELECT clock_timestamp()::timestamptz",
+              "calls": 449,
+              "exec_ms": 0.2913399999999992,
+              "wal_bytes": 0,
+              "wal_records": 0,
+              "wal_fpi": 0
+            },
+            {
+              "id": "-4491239493087134608",
+              "query": "SELECT used FROM knotra_budgets WHERE run_id=$1 AND scope=$2 AND kind=$3",
+              "calls": 64,
+              "exec_ms": 0.22695999999999988,
+              "wal_bytes": 0,
+              "wal_records": 0,
+              "wal_fpi": 0
+            },
+            {
+              "id": "-6982790241761739637",
+              "query": "SELECT jsonb_build_object($4,n.run_id,$5,n.id,$6,n.graph_id,\n    $7,n.node_id,$8,n.state,$9,n.outputs)::jsonb\nFROM knotra_execution_nodes n WHERE n.run_id=$1 AND n.graph_id=$2\n    AND n.node_id=ANY($3::text[]) ORDER BY n.node_id",
+              "calls": 85,
+              "exec_ms": 1.3857899999999992,
+              "wal_bytes": 0,
+              "wal_records": 0,
+              "wal_fpi": 0
+            },
+            {
+              "id": "-7969758877868767633",
+              "query": "UPDATE knotra_requests SET status=$1 WHERE run_id=$2 AND status IN ($3 /*, ... */)",
+              "calls": 1,
+              "exec_ms": 0.001501,
+              "wal_bytes": 0,
+              "wal_records": 0,
+              "wal_fpi": 0
+            }
+          ],
+          "elapsed_seconds": 2.0276235420024022,
+          "samples": 4,
+          "maximum_sample_gap_seconds": 1.0552809170039836,
+          "deployment_peak_memory_bytes": 208605184,
+          "deployment_cpu_seconds": 1.5603189999999998,
+          "engine_peak_rss_bytes": 53198848,
+          "sandbox_peak_working_set_bytes": 0,
+          "sandbox_cpu_seconds_lower_bound": 0,
+          "observed_sandboxes": 0,
+          "engine_cpu_seconds": 0.46,
+          "database_connection_peak": 12,
+          "storage_bytes": 30906,
+          "database_deltas": {
+            "wal_bytes": 2784336,
+            "query_calls": 11138,
+            "query_exec_ms": 15288.314089999994,
+            "transactions": 684,
+            "schema_bytes": 2662400
+          },
+          "infrastructure": {
+            "knotra-scheduler-benchmark-pg": {
+              "peak_working_set_bytes": 155406336,
+              "cpu_seconds": 1.1003189999999998,
+              "allocated_storage_before_bytes": 50343936,
+              "allocated_storage_after_bytes": 69812224,
+              "allocated_storage_growth_bytes": 19468288
+            }
+          },
+          "nodes_per_second": 31.564044643512123
+        },
+        {
+          "workload": "queue_retention",
+          "repeat": 1,
+          "seed_seconds": 0.10227866697823629,
+          "seed_to_observed_cleanup_seconds": 27.737063416978344,
+          "expired_jobs": 10000,
+          "protected_jobs": 6,
+          "domain_snapshot_unchanged": true,
+          "includes_seed_and_wait": true,
+          "statement_deltas": [
+            {
+              "id": "1912800726299154234",
+              "query": "INSERT INTO knotra_perf_f7c8dbd67a0c4140b3e5bcdb9b49582c.river_job(kind,args,queue,state,finalized_at,max_attempts,metadata)\n                            SELECT $1,$2::jsonb,$3,\n                                (ARRAY[$4 /*, ... */])[$5+n%$6]::knotra_perf_f7c8dbd67a0c4140b3e5bcdb9b49582c.river_job_state,\n                                clock_timestamp()-interval $7,$8,$9::jsonb\n                            FROM generate_series($10,$11) n",
+              "calls": 1,
+              "exec_ms": 51.253798,
+              "wal_bytes": 9060452,
+              "wal_records": 70760,
+              "wal_fpi": 0
+            },
+            {
+              "id": "4033181710006713255",
+              "query": "DELETE FROM \"knotra_perf_f7c8dbd67a0c4140b3e5bcdb9b49582c\".river_job\nWHERE id IN (\n    SELECT id\n    FROM \"knotra_perf_f7c8dbd67a0c4140b3e5bcdb9b49582c\".river_job\n    WHERE (\n            (state = $10 AND $1 AND finalized_at < $2::timestamptz) OR\n            (state = $11 AND $3 AND finalized_at < $4::timestamptz) OR\n            (state = $12 AND $5 AND finalized_at < $6::timestamptz)\n        )\n        AND (\n            $7::text[] IS NULL\n            OR NOT (queue = any($7))\n        )\n        AND (\n            $8::text[] IS NULL\n            OR queue = any($8)\n        )\n    ORDER BY id\n    LIMIT $9::bigint\n)",
+              "calls": 2,
+              "exec_ms": 20.548780999999998,
+              "wal_bytes": 540000,
+              "wal_records": 10000,
+              "wal_fpi": 0
+            },
+            {
+              "id": "5309708859777039688",
+              "query": "SELECT count(*) FROM knotra_perf_f7c8dbd67a0c4140b3e5bcdb9b49582c.river_job WHERE kind=$1 AND metadata->>$2=$3",
+              "calls": 79,
+              "exec_ms": 151.75969799999993,
+              "wal_bytes": 31144,
+              "wal_records": 209,
+              "wal_fpi": 0
+            },
+            {
+              "id": "-3651966525796377257",
+              "query": "INSERT INTO knotra_perf_f7c8dbd67a0c4140b3e5bcdb9b49582c.river_job(kind,args,queue,state,finalized_at,max_attempts,scheduled_at,metadata)\n                            SELECT $1,$2::jsonb,$3,state::knotra_perf_f7c8dbd67a0c4140b3e5bcdb9b49582c.river_job_state,\n                                CASE WHEN state IN ($4 /*, ... */) THEN clock_timestamp() END,\n                                $5,clock_timestamp()+interval $6,$7::jsonb\n                            FROM unnest(ARRAY[$8 /*, ... */]) state",
+              "calls": 1,
+              "exec_ms": 0.070332,
+              "wal_bytes": 4894,
+              "wal_records": 40,
+              "wal_fpi": 0
+            },
+            {
+              "id": "-5614871503716352855",
+              "query": "UPDATE knotra_workers SET heartbeat_at=$2 WHERE id=$1",
+              "calls": 6,
+              "exec_ms": 0.54754,
+              "wal_bytes": 2552,
+              "wal_records": 24,
+              "wal_fpi": 0
+            },
+            {
+              "id": "4891044893453976682",
+              "query": "SELECT heartbeat_at FROM knotra_workers WHERE id=$1 AND engine_id=$2 FOR UPDATE",
+              "calls": 6,
+              "exec_ms": 0.37816900000000003,
+              "wal_bytes": 324,
+              "wal_records": 6,
+              "wal_fpi": 0
+            },
+            {
+              "id": "-3441648069048279402",
+              "query": "SELECT count(*) FROM knotra_perf_f7c8dbd67a0c4140b3e5bcdb9b49582c.knotra_runs",
+              "calls": 1,
+              "exec_ms": 0.087541,
+              "wal_bytes": 0,
+              "wal_records": 0,
+              "wal_fpi": 0
+            },
+            {
+              "id": "4854991825702068830",
+              "query": "begin",
+              "calls": 12,
+              "exec_ms": 0.02979299999999993,
+              "wal_bytes": 0,
+              "wal_records": 0,
+              "wal_fpi": 0
+            },
+            {
+              "id": "-5395401390853898589",
+              "query": "SELECT json_build_object(\n        $1,pg_current_wal_insert_lsn()::text,\n        $2,(SELECT COALESCE(sum(calls),$3) FROM pg_stat_statements WHERE dbid=(SELECT oid FROM pg_database WHERE datname=current_database())),\n        $4,(SELECT COALESCE(sum(total_exec_time),$5) FROM pg_stat_statements WHERE dbid=(SELECT oid FROM pg_database WHERE datname=current_database())),\n        $6,xact_commit+xact_rollback,\n        $7,(SELECT count(*) FROM pg_stat_activity WHERE application_name=$8),\n        $9,(SELECT COALESCE(sum(pg_total_relation_size(c.oid)),$10) FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname=$11 AND c.relkind IN ($12 /*, ... */))\n        ) FROM pg_stat_database WHERE datname=current_database()",
+              "calls": 28,
+              "exec_ms": 64.927583,
+              "wal_bytes": 0,
+              "wal_records": 0,
+              "wal_fpi": 0
+            },
+            {
+              "id": "-4735175188104022262",
+              "query": "SELECT md5(jsonb_build_object(\n                            $1,(SELECT jsonb_agg(document::jsonb ORDER BY id) FROM knotra_perf_f7c8dbd67a0c4140b3e5bcdb9b49582c.knotra_runs),\n                            $2,(SELECT jsonb_agg(to_jsonb(i) ORDER BY run_id,id) FROM knotra_perf_f7c8dbd67a0c4140b3e5bcdb9b49582c.knotra_instances i),\n                            $3,(SELECT jsonb_agg(to_jsonb(a) ORDER BY run_id,instance_id,number) FROM knotra_perf_f7c8dbd67a0c4140b3e5bcdb9b49582c.knotra_execution_attempts a),\n                            $4,(SELECT jsonb_agg(to_jsonb(b) ORDER BY run_id,scope,kind) FROM knotra_perf_f7c8dbd67a0c4140b3e5bcdb9b49582c.knotra_budgets b),\n                            $5,(SELECT jsonb_agg(to_jsonb(e) ORDER BY id) FROM knotra_perf_f7c8dbd67a0c4140b3e5bcdb9b49582c.knotra_events e))::text)",
+              "calls": 2,
+              "exec_ms": 12.500368,
+              "wal_bytes": 0,
+              "wal_records": 0,
+              "wal_fpi": 0
+            },
+            {
+              "id": "-9092767107603817338",
+              "query": "SELECT DISTINCT run_id FROM knotra_execution_timers\n\t\tWHERE consumed_at IS NULL AND due_at<=clock_timestamp() ORDER BY run_id LIMIT $1",
+              "calls": 29,
+              "exec_ms": 3.3787880000000006,
+              "wal_bytes": 0,
+              "wal_records": 0,
+              "wal_fpi": 0
+            },
+            {
+              "id": "-672202934845897898",
+              "query": "WITH locked_jobs AS (\n    SELECT\n        id, args, attempt, attempted_at, attempted_by, created_at, errors, finalized_at, kind, max_attempts, metadata, priority, queue, state, scheduled_at, tags, unique_key, unique_states\n    FROM\n        \"knotra_perf_f7c8dbd67a0c4140b3e5bcdb9b49582c\".river_job\n    WHERE\n        state = $7\n        AND queue = $4::text\n        AND ($5::text[] IS NULL OR kind = ANY($5::text[]))\n        AND scheduled_at <= coalesce($1::timestamptz, now())\n    ORDER BY\n        priority ASC,\n        scheduled_at ASC,\n        id ASC\n    LIMIT $6::integer\n    FOR UPDATE\n    SKIP LOCKED\n)\nUPDATE\n    \"knotra_perf_f7c8dbd67a0c4140b3e5bcdb9b49582c\".river_job\nSET\n    state = $8,\n    attempt = river_job.attempt + $9,\n    attempted_at = coalesce($1::timestamptz, now()),\n    attempted_by = array_append(\n        CASE WHEN array_length(river_job.attempted_by, $10) >= $2::int\n        -- +2 instead of +1 because Postgres array indexing starts at 1, not 0.\n        THEN river_job.attempted_by[array_length(river_job.attempted_by, $11) + $12 - $2:]\n        ELSE river_job.attempted_by\n        END,\n        $3::text\n    )\nFROM\n    locked_jobs\nWHERE\n    river_job.id = locked_jobs.id\nRETURNING\n    river_job.id, river_job.args, river_job.attempt, river_job.attempted_at, river_job.attempted_by, river_job.created_at, river_job.errors, river_job.finalized_at, river_job.kind, river_job.max_attempts, river_job.metadata, river_job.priority, river_job.queue, river_job.state, river_job.scheduled_at, river_job.tags, river_job.unique_key, river_job.unique_states",
+              "calls": 112,
+              "exec_ms": 5.008749000000001,
+              "wal_bytes": 0,
+              "wal_records": 0,
+              "wal_fpi": 0
+            },
+            {
+              "id": "8574192752894648781",
+              "query": "SELECT r.id FROM knotra_runs r\nWHERE r.backend=$1 AND r.id>$2::text\n    AND r.document->>$3 NOT IN ($4 /*, ... */)\n    AND (r.wake_generation>r.applied_generation OR EXISTS(\n        SELECT $5 FROM knotra_execution_attempts a WHERE a.run_id=r.id AND a.state=$6))\nORDER BY r.id LIMIT $7",
+              "calls": 29,
+              "exec_ms": 2.4727430000000004,
+              "wal_bytes": 0,
+              "wal_records": 0,
+              "wal_fpi": 0
+            },
+            {
+              "id": "5189024543045670877",
+              "query": "SELECT id,worker_id,ownership_generation\nFROM knotra_resources\nWHERE engine_id=$1 AND host_id=$2 AND state<>$4 AND id>$3\nORDER BY id LIMIT $5",
+              "calls": 29,
+              "exec_ms": 0.36433099999999996,
+              "wal_bytes": 0,
+              "wal_records": 0,
+              "wal_fpi": 0
+            },
+            {
+              "id": "-4570360759179112616",
+              "query": "SELECT run_id,instance_id,number,outcome_key,owner,ownership_generation,state FROM knotra_execution_attempts\n\t\tWHERE outcome IS NULL AND owner IS NOT NULL AND lease_expires_at<=clock_timestamp()\n\t\tAND outcome_key>$1 ORDER BY outcome_key LIMIT $2",
+              "calls": 29,
+              "exec_ms": 1.091298,
+              "wal_bytes": 0,
+              "wal_records": 0,
+              "wal_fpi": 0
+            },
+            {
+              "id": "6097083398544187049",
+              "query": "commit",
+              "calls": 12,
+              "exec_ms": 0.020125000000000018,
+              "wal_bytes": 0,
+              "wal_records": 0,
+              "wal_fpi": 0
+            },
+            {
+              "id": "6966035788143810616",
+              "query": "SELECT json_agg(state ORDER BY state) FROM knotra_perf_f7c8dbd67a0c4140b3e5bcdb9b49582c.river_job WHERE kind=$1 AND metadata->>$2=$3",
+              "calls": 1,
+              "exec_ms": 0.288875,
+              "wal_bytes": 0,
+              "wal_records": 0,
+              "wal_fpi": 0
+            },
+            {
+              "id": "-481263021310515103",
+              "query": "UPDATE \"knotra_perf_f7c8dbd67a0c4140b3e5bcdb9b49582c\".river_leader\nSET expires_at = coalesce($1::timestamptz, now()) + make_interval(secs => $2)\nWHERE\n    elected_at = $3::timestamptz\n    AND expires_at >= coalesce($1::timestamptz, now())\n    AND leader_id = $4\nRETURNING elected_at, expires_at, leader_id, name",
+              "calls": 6,
+              "exec_ms": 0.551501,
+              "wal_bytes": 0,
+              "wal_records": 0,
+              "wal_fpi": 0
+            },
+            {
+              "id": "-1585743388721674358",
+              "query": "WITH jobs_to_schedule AS (\n    SELECT\n        id,\n        unique_key,\n        unique_states,\n        priority,\n        scheduled_at\n    FROM \"knotra_perf_f7c8dbd67a0c4140b3e5bcdb9b49582c\".river_job\n    WHERE\n        state IN ($1 /*, ... */)\n        AND priority >= $2\n        AND queue IS NOT NULL\n        AND scheduled_at <= coalesce($3::timestamptz, now())\n    ORDER BY\n        priority,\n        scheduled_at,\n        id\n    LIMIT $4::bigint\n    FOR UPDATE\n),\njobs_with_rownum AS (\n    SELECT\n        id, unique_key, unique_states, priority, scheduled_at,\n        CASE\n            WHEN unique_key IS NOT NULL AND unique_states IS NOT NULL THEN\n                ROW_NUMBER() OVER (\n                    PARTITION BY unique_key\n                    ORDER BY priority, scheduled_at, id\n                )\n            ELSE $5\n        END AS row_num\n    FROM jobs_to_schedule\n),\nunique_conflicts AS (\n    SELECT river_job.unique_key\n    FROM \"knotra_perf_f7c8dbd67a0c4140b3e5bcdb9b49582c\".river_job\n    JOIN jobs_with_rownum\n        ON river_job.unique_key = jobs_with_rownum.unique_key\n        AND river_job.id != jobs_with_rownum.id\n    WHERE\n        river_job.unique_key IS NOT NULL\n        AND river_job.unique_states IS NOT NULL\n        AND \"knotra_perf_f7c8dbd67a0c4140b3e5bcdb9b49582c\".river_job_state_in_bitmask(river_job.unique_states, river_job.state)\n),\njob_updates AS (\n    SELECT\n        job.id,\n        job.unique_key,\n        job.unique_states,\n        CASE\n            WHEN job.row_num IS NULL THEN $6::\"knotra_perf_f7c8dbd67a0c4140b3e5bcdb9b49582c\".river_job_state\n            WHEN uc.unique_key IS NOT NULL THEN $7::\"knotra_perf_f7c8dbd67a0c4140b3e5bcdb9b49582c\".river_job_state\n            WHEN job.row_num = $8 THEN $9::\"knotra_perf_f7c8dbd67a0c4140b3e5bcdb9b49582c\".river_job_state\n            ELSE $10::\"knotra_perf_f7c8dbd67a0c4140b3e5bcdb9b49582c\".river_job_state\n        END AS new_state,\n        (job.row_num IS NOT NULL AND (uc.unique_key IS NOT NULL OR job.row_num > $11)) AS fin",
+              "calls": 6,
+              "exec_ms": 0.41408200000000006,
+              "wal_bytes": 0,
+              "wal_records": 0,
+              "wal_fpi": 0
+            },
+            {
+              "id": "961238556213485812",
+              "query": "SELECT COALESCE(json_agg(stats),$1) FROM (\n            SELECT queryid::text AS id,calls,total_exec_time AS exec_ms,\n                wal_bytes,wal_records,wal_fpi,left(query,$2) AS query\n            FROM pg_stat_statements\n            WHERE dbid=(SELECT oid FROM pg_database WHERE datname=current_database())\n        ) stats",
+              "calls": 1,
+              "exec_ms": 0.6108319999999998,
+              "wal_bytes": 0,
+              "wal_records": 0,
+              "wal_fpi": 0
+            },
+            {
+              "id": "-6339237704490227906",
+              "query": "SELECT clock_timestamp()::timestamptz",
+              "calls": 6,
+              "exec_ms": 0.020876000000000006,
+              "wal_bytes": 0,
+              "wal_records": 0,
+              "wal_fpi": 0
+            },
+            {
+              "id": "-1191495797457911271",
+              "query": "SELECT id, args, attempt, attempted_at, attempted_by, created_at, errors, finalized_at, kind, max_attempts, metadata, priority, queue, state, scheduled_at, tags, unique_key, unique_states\nFROM \"knotra_perf_f7c8dbd67a0c4140b3e5bcdb9b49582c\".river_job\nWHERE state = $4\n    AND id > $1::bigint\n    AND attempted_at < $2::timestamptz\nORDER BY id\nLIMIT $3",
+              "calls": 1,
+              "exec_ms": 0.133416,
+              "wal_bytes": 0,
+              "wal_records": 0,
+              "wal_fpi": 0
+            }
+          ],
+          "cleaner_statement_deltas": [
+            {
+              "id": "4033181710006713255",
+              "query": "DELETE FROM \"knotra_perf_f7c8dbd67a0c4140b3e5bcdb9b49582c\".river_job\nWHERE id IN (\n    SELECT id\n    FROM \"knotra_perf_f7c8dbd67a0c4140b3e5bcdb9b49582c\".river_job\n    WHERE (\n            (state = $10 AND $1 AND finalized_at < $2::timestamptz) OR\n            (state = $11 AND $3 AND finalized_at < $4::timestamptz) OR\n            (state = $12 AND $5 AND finalized_at < $6::timestamptz)\n        )\n        AND (\n            $7::text[] IS NULL\n            OR NOT (queue = any($7))\n        )\n        AND (\n            $8::text[] IS NULL\n            OR queue = any($8)\n        )\n    ORDER BY id\n    LIMIT $9::bigint\n)",
+              "calls": 2,
+              "exec_ms": 20.548780999999998,
+              "wal_bytes": 540000,
+              "wal_records": 10000,
+              "wal_fpi": 0
+            }
+          ],
+          "elapsed_seconds": 27.915679333003936,
+          "samples": 29,
+          "maximum_sample_gap_seconds": 1.1203461250115652,
+          "deployment_peak_memory_bytes": 214958080,
+          "deployment_cpu_seconds": 4.813179999999999,
+          "engine_peak_rss_bytes": 53198848,
+          "sandbox_peak_working_set_bytes": 0,
+          "sandbox_cpu_seconds_lower_bound": 0,
+          "observed_sandboxes": 0,
+          "engine_cpu_seconds": 0.17999999999999994,
+          "database_connection_peak": 12,
+          "storage_bytes": 30906,
+          "database_deltas": {
+            "wal_bytes": 9801104,
+            "query_calls": 399,
+            "query_exec_ms": 316.37846999999965,
+            "transactions": 917,
+            "schema_bytes": 4079616
+          },
+          "infrastructure": {
+            "knotra-scheduler-benchmark-pg": {
+              "peak_working_set_bytes": 164134912,
+              "cpu_seconds": 4.633179999999999,
+              "allocated_storage_before_bytes": 69812224,
+              "allocated_storage_after_bytes": 74059776,
+              "allocated_storage_growth_bytes": 4247552
+            }
+          }
+        }
+      ],
+      "sample_errors": []
+    }
+  ],
+  "completed_at": "2026-10-06T11:19:03Z"
+}

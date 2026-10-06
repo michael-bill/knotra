@@ -68,17 +68,20 @@ func TestLLMStreamsBeforeCompletionAndReplaysDurableResponse(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 		requests.Add(1)
 		w.Header().Set("Content-Type", "application/x-ndjson")
-		fmt.Fprintln(w, `{"message":{"role":"assistant","thinking":"hidden provider reasoning"},"done":false}`)
-		fmt.Fprintln(w, `{"message":{"content":"{\"answer\":"},"done":false}`)
-		fmt.Fprintln(w, `{"message":{"content":"4"},"done":false}`)
-		w.(http.Flusher).Flush()
+		_, _ = fmt.Fprintln(w, `{"message":{"role":"assistant","thinking":"hidden provider reasoning"},"done":false}`)
+		_, _ = fmt.Fprintln(w, `{"message":{"content":"{\"answer\":"},"done":false}`)
+		_, _ = fmt.Fprintln(w, `{"message":{"content":"4"},"done":false}`)
+		if err := http.NewResponseController(w).Flush(); err != nil {
+			t.Error(err)
+			return
+		}
 		select {
 		case <-release:
 		case <-req.Context().Done():
 			return
 		}
-		fmt.Fprintln(w, `{"message":{"content":"2}"},"done":false}`)
-		fmt.Fprintln(w, `{"done":true,"done_reason":"stop","prompt_eval_count":11,"eval_count":4}`)
+		_, _ = fmt.Fprintln(w, `{"message":{"content":"2}"},"done":false}`)
+		_, _ = fmt.Fprintln(w, `{"done":true,"done_reason":"stop","prompt_eval_count":11,"eval_count":4}`)
 	}))
 	defer server.Close()
 	hooks := newObservationHooks()
@@ -144,7 +147,7 @@ func TestLLMRejectsBrokenStreamsWithoutPublishingCompletion(t *testing.T) {
 		"trailing data":          `{"done":true} {"message":{"content":"extra"}}`,
 	} {
 		t.Run(name, func(t *testing.T) {
-			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { fmt.Fprint(w, body) }))
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { _, _ = fmt.Fprint(w, body) }))
 			defer server.Close()
 			hooks := newObservationHooks()
 			runner := &Runner{Hooks: hooks}
@@ -176,8 +179,11 @@ func TestLLMRejectsBrokenStreamsWithoutPublishingCompletion(t *testing.T) {
 
 func TestLLMStreamingCancellationInterruptsReader(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
-		fmt.Fprintln(w, `{"message":{"content":"partial"}}`)
-		w.(http.Flusher).Flush()
+		_, _ = fmt.Fprintln(w, `{"message":{"content":"partial"}}`)
+		if err := http.NewResponseController(w).Flush(); err != nil {
+			t.Error(err)
+			return
+		}
 		<-req.Context().Done()
 	}))
 	defer server.Close()
@@ -201,9 +207,12 @@ func TestLLMStreamingCancellationInterruptsReader(t *testing.T) {
 func TestObservationsRedactSplitCredentialsAndRecoverFromObserverFailure(t *testing.T) {
 	secret := "credential-value"
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		fmt.Fprintln(w, `{"message":{"content":"{\"answer\":\"visible credential-"}}`)
-		w.(http.Flusher).Flush()
-		fmt.Fprintln(w, `{"message":{"content":"value\"}"},"done":true}`)
+		_, _ = fmt.Fprintln(w, `{"message":{"content":"{\"answer\":\"visible credential-"}}`)
+		if err := http.NewResponseController(w).Flush(); err != nil {
+			t.Error(err)
+			return
+		}
+		_, _ = fmt.Fprintln(w, `{"message":{"content":"value\"}"},"done":true}`)
 	}))
 	defer server.Close()
 	req := testRequest(server.URL)
@@ -223,7 +232,11 @@ func TestObservationsRedactSplitCredentialsAndRecoverFromObserverFailure(t *test
 	gap := false
 	for _, event := range hooks.snapshot() {
 		if event.Type == "model.delta" {
-			text += event.Data["text"].(string)
+			delta, ok := event.Data["text"].(string)
+			if !ok {
+				t.Fatalf("invalid text delta: %+v", event)
+			}
+			text += delta
 		}
 		gap = gap || event.Data["observationIncomplete"] == true
 		data, _ := json.Marshal(event)
@@ -259,7 +272,7 @@ func TestStreamingToolCallsPreserveAgentFollowupContext(t *testing.T) {
 		`{"message":{"content":"Using a tool.","tool_calls":[{"function":{"name":"knotra_files_read","arguments":{"path":"source.txt"}}}]}}`,
 		`{"message":{"tool_calls":[{"function":{"name":"knotra_files_write","arguments":{"path":"result.txt","content":"done"}}}]},"done":true}`,
 	}, "\n")
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) { fmt.Fprint(w, body) }))
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { _, _ = fmt.Fprint(w, body) }))
 	defer server.Close()
 	hooks := newObservationHooks()
 	runner := &Runner{Hooks: hooks}
@@ -315,7 +328,10 @@ func TestObservationsPreserveUnsupportedNumbersAsExplicitText(t *testing.T) {
 	if event.Data["truncated"] != true || event.Data["step"] != json.Number("1") {
 		t.Fatalf("missing numeric preview marker: %#v", event)
 	}
-	result := event.Data["result"].(map[string]any)
+	result, ok := event.Data["result"].(map[string]any)
+	if !ok {
+		t.Fatalf("invalid result preview: %+v", event)
+	}
 	for key, spelling := range map[string]string{
 		"positive": "9007199254740993", "negative": "-9007199254740993", "exponent": "1e1000", "small": "1e-1000",
 	} {
@@ -338,7 +354,7 @@ func TestObservationsPreserveUnsupportedNumbersAsExplicitText(t *testing.T) {
 
 func TestProviderTokenCountsCannotPoisonObservationHistory(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		fmt.Fprint(w, `{"message":{"content":"{\"answer\":42}"},"done":true,"prompt_eval_count":9007199254740993,"eval_count":-9007199254740993}`)
+		_, _ = fmt.Fprint(w, `{"message":{"content":"{\"answer\":42}"},"done":true,"prompt_eval_count":9007199254740993,"eval_count":-9007199254740993}`)
 	}))
 	defer server.Close()
 	hooks := newObservationHooks()
@@ -394,7 +410,7 @@ func TestStalledObservationCannotBlockProviderOrDurableCompletion(t *testing.T) 
 		case <-req.Context().Done():
 			return
 		}
-		fmt.Fprint(w, `{"message":{"content":"{\"answer\":42}"},"done":true}`)
+		_, _ = fmt.Fprint(w, `{"message":{"content":"{\"answer\":42}"},"done":true}`)
 	}))
 	defer server.Close()
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)

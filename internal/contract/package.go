@@ -70,7 +70,7 @@ func LoadPackageRoot(root, entrypoint string) (Package, error) {
 	if err != nil {
 		return Package{}, err
 	}
-	defer fs.Close()
+	defer func() { _ = fs.Close() }()
 	files := map[string][]byte{}
 	total := 0
 	read := func(name string) ([]byte, error) {
@@ -96,7 +96,7 @@ func LoadPackageRoot(root, entrypoint string) (Package, error) {
 		if err != nil {
 			return nil, err
 		}
-		defer f.Close()
+		defer func() { _ = f.Close() }()
 		info, err := f.Stat()
 		if err != nil {
 			return nil, err

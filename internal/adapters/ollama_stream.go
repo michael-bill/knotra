@@ -28,7 +28,7 @@ func readChatStream(
 ) (chatResponse, time.Duration, error) {
 	streamCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
-	defer body.Close()
+	defer func() { _ = body.Close() }()
 	chunks := make(chan chatChunk)
 	go func() {
 		limited := &io.LimitedReader{R: body, N: maxResponseBytes + 1}
@@ -67,7 +67,7 @@ func readChatStream(
 		observation.emit(ctx, "model.delta", operationID, map[string]any{"step": step, "text": text[:cut]})
 		rest := strings.Clone(text[cut:])
 		pending.Reset()
-		pending.WriteString(rest)
+		_, _ = pending.WriteString(rest)
 	}
 	for {
 		select {
@@ -103,8 +103,8 @@ func readChatStream(
 			if r.Message.Role != "" {
 				result.Message.Role = r.Message.Role
 			}
-			content.WriteString(r.Message.Content)
-			thinking.WriteString(r.Message.Thinking)
+			_, _ = content.WriteString(r.Message.Content)
+			_, _ = thinking.WriteString(r.Message.Thinking)
 			result.Message.ToolCalls = append(result.Message.ToolCalls, r.Message.ToolCalls...)
 			if r.Message.Content != "" || len(r.Message.ToolCalls) > 0 {
 				first := firstToken == 0
@@ -112,7 +112,7 @@ func readChatStream(
 					firstToken = time.Since(started)
 				}
 				if observation != nil && r.Message.Content != "" {
-					pending.WriteString(r.Message.Content)
+					_, _ = pending.WriteString(r.Message.Content)
 					if first || pending.Len() >= 1024 {
 						flush(false)
 					}

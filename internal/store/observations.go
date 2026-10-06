@@ -8,6 +8,7 @@ import (
 
 	"github.com/michael-bill/knotra/internal/contract"
 	"github.com/michael-bill/knotra/internal/protocol"
+	"github.com/michael-bill/knotra/internal/store/db"
 )
 
 const maxObservationBytes = 64 << 10
@@ -51,11 +52,11 @@ func (s *Store) Observe(ctx context.Context, event protocol.Event) error {
 	if err != nil {
 		return err
 	}
-	defer tx.Rollback(ctx)
+	defer func() { _ = tx.Rollback(ctx) }()
 	if _, _, err = lockRun(ctx, tx, event.RunID); err != nil {
 		return err
 	}
-	if _, err = tx.Exec(ctx, "INSERT INTO knotra_events(run_id,sequence,document) VALUES($1,NULL,$2)", event.RunID, b); err != nil {
+	if _, err = db.New(tx).Observe(ctx, db.ObserveParams{RunID: event.RunID, Document: b}); err != nil {
 		return err
 	}
 	return tx.Commit(ctx)

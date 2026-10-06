@@ -406,7 +406,7 @@ func TestOnlyExplicitSafeFailureRetries(t *testing.T) {
 
 func TestUnknownOutcomePausesAndAcceptsEvidence(t *testing.T) {
 	h := newHarness(t)
-	h.leaf = func(req ExecuteRequest) ExecuteResult {
+	h.leaf = func(_ ExecuteRequest) ExecuteResult {
 		return ExecuteResult{Failure: &Failure{Code: "OUTCOME_UNKNOWN", Unknown: true, OperationID: "operation"}}
 	}
 	h.env.RegisterDelayedCallback(func() {
@@ -475,7 +475,7 @@ func TestResolutionAcceptedBeforeDeadlineSurvivesDelayedDelivery(t *testing.T) {
 
 func TestNotExecutedDoesNotRestartAgentWithUnsafePrefix(t *testing.T) {
 	h := newHarness(t)
-	h.leaf = func(req ExecuteRequest) ExecuteResult {
+	h.leaf = func(_ ExecuteRequest) ExecuteResult {
 		return ExecuteResult{Failure: &Failure{Code: "OUTCOME_UNKNOWN", Unknown: true, OperationID: "operation"}}
 	}
 	node := llm()

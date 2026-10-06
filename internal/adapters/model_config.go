@@ -74,7 +74,7 @@ func modelConfig(req Request, alias string) (contract.ModelConnection, error) {
 		_, temperature := params["temperature"]
 		_, topP := params["top_p"]
 		if temperature && topP {
-			return c, fmt.Errorf("Anthropic accepts either temperature or top_p, not both")
+			return c, fmt.Errorf("anthropic accepts either temperature or top_p, not both")
 		}
 	}
 	if c.BaseURL == "" {
@@ -117,7 +117,7 @@ func validateCloudOption(provider, name string, value any) error {
 	if provider == "anthropic" {
 		maximum = "max_tokens"
 	}
-	if name != "temperature" && name != "top_p" && name != maximum && !(provider == "anthropic" && name == "top_k") {
+	if name != "temperature" && name != "top_p" && name != maximum && (provider != "anthropic" || name != "top_k") {
 		return fmt.Errorf("unsupported %s parameter %q", provider, name)
 	}
 	data, err := json.Marshal(value)

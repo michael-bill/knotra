@@ -11,7 +11,7 @@ import (
 	"github.com/michael-bill/knotra/internal/contract"
 )
 
-func (s *Server) profiles(w http.ResponseWriter, r *http.Request) {
+func (s *Server) profiles(w http.ResponseWriter, _ *http.Request) {
 	items := []map[string]any{}
 
 	for _, id := range keys(s.Profiles) {
@@ -28,7 +28,7 @@ func (s *Server) profiles(w http.ResponseWriter, r *http.Request) {
 	s.write(w, 200, map[string]any{"items": items})
 }
 
-func (s *Server) resources(w http.ResponseWriter, r *http.Request) {
+func (s *Server) resources(w http.ResponseWriter, _ *http.Request) {
 	items := []map[string]any{}
 
 	for _, profileID := range keys(s.Profiles) {

@@ -242,6 +242,18 @@ Path(os.environ['KNOTRA_OUTPUT_JSON']).write_text('{}')
   await page.locator('.table-row').filter({ hasText: title }).click();
   await expect(page.locator('.page-heading .status')).toHaveText('Completed', { timeout: 30_000 });
   const { run } = await (await page.request.get(`${endpoint}/v1/runs/${startedRun.id}`)).json();
+  await page.getByRole('button', { name: 'Live graph', exact: true }).click();
+  const scope = page.locator('.execution-scope-picker select');
+  await expect(scope.locator('option')).toHaveCount(2);
+  await scope.selectOption({ label: 'copy' });
+  await page.locator('.react-flow__node[data-id="write"]').click();
+  const inspector = page.locator('.execution-inspector');
+  await expect(inspector.getByRole('heading', { name: 'write', exact: true })).toBeVisible();
+  await expect(inspector.locator('.status')).toHaveText('Completed');
+  await expect(inspector.locator('.execution-parent-link')).toHaveText('copy');
+  await inspector.getByRole('button', { name: 'Inputs & outputs', exact: true }).click();
+  await expect(inspector).toContainText(artifactId!);
+  await expect(inspector).toContainText(run.artifacts[0].id);
   await navigate(page, 'Artifacts');
   await page.getByRole('textbox', { name: 'Search engine artifacts' }).fill(run.artifacts[0].id);
   await page.locator('.artifact-card').click();

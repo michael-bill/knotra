@@ -157,7 +157,7 @@ func (o *executionObservation) text(value string) string {
 	return value
 }
 
-func (o *executionObservation) emit(ctx context.Context, typ, operationID string, data map[string]any) {
+func (o *executionObservation) emit(_ context.Context, typ, operationID string, data map[string]any) {
 	if o == nil {
 		return
 	}
@@ -176,7 +176,11 @@ func (o *executionObservation) emit(ctx context.Context, typ, operationID string
 	}
 	remaining := maxObservationBytes
 	truncated := false
-	clean := o.clean(normalized, 0, &remaining, &truncated).(map[string]any)
+	clean, ok := o.clean(normalized, 0, &remaining, &truncated).(map[string]any)
+	if !ok {
+		o.incomplete.Store(true)
+		return
+	}
 	// Large prompts/tool results must not consume the correlation metadata.
 	for _, key := range []string{"step", "maxSteps", "model", "name", "providerName", "valid", "isError", "durationMs", "inputTokens", "outputTokens", "firstTokenMs"} {
 		if value, ok := normalized[key]; ok {
