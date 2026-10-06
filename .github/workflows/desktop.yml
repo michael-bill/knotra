@@ -4,6 +4,7 @@ on:
   push:
     branches: [main]
   pull_request:
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -28,10 +29,13 @@ jobs:
       - run: bunx prettier --check .. --ignore-path ../.prettierignore
       - run: bun run test
       - run: bun run build
-      - run: bunx playwright install --with-deps chromium
-      - run: bun run test:e2e
+      - if: github.event_name == 'workflow_dispatch'
+        run: bunx playwright install --with-deps chromium
+      - if: github.event_name == 'workflow_dispatch'
+        run: bun run test:e2e
 
   native:
+    if: github.event_name == 'workflow_dispatch'
     runs-on: macos-latest
     timeout-minutes: 20
     steps:
@@ -43,6 +47,7 @@ jobs:
       - run: cargo test --locked --manifest-path app/src-tauri/Cargo.toml
 
   engine-acceptance:
+    if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:

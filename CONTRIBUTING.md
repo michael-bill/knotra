@@ -25,7 +25,8 @@ and `make format-check` are available separately.
 restore check, also set `KNOTRA_TEST_RECOVERY=1`, `KNOTRA_TEST_HELPER`, and
 `KNOTRA_TEST_POSTGRES_CONTAINER` to the PostgreSQL container serving `KNOTRA_TEST_DATABASE_URL`. It
 uses that container's `pg_dump`/`pg_restore` and removes only its own temporary schema and data
-directories. The Go CI integration job enables it alongside the process recovery checks.
+directories. The manually triggered Go integration job enables it alongside the process recovery
+checks.
 
 `make check` runs strict golangci-lint checks, formatting checks, `go vet`, unit tests and the race
 detector. Unit tests may open loopback listeners. They require no paid model calls, installed
@@ -100,11 +101,17 @@ fixtures and generated content. Use `black --check scripts examples/integration 
 for the Python sources. The structural fixture script has reproducible
 [setup instructions](contracts/v1/fixtures/README.md).
 
-The desktop CI workflow runs frontend and contract-script checks on Linux and native tests on macOS.
-Browser screenshots and failure traces are written to per-test directories in `app/test-results/`;
-tests must use Playwright output paths rather than OS-specific temporary paths. Browser acceptance
-against a real engine is opt-in. Start an engine with `examples/local/profile.yaml` and the exact
-browser origin as described in [app/README](app/README.md), then run from `app/`:
+On push and pull requests, CI runs Go lint, sqlc generation checks, unit tests and builds, plus
+frontend and contract-script checks. Windows runs its unit tests and CLI build.
+
+Full checks run manually from **Actions → Go → Run workflow** and **Actions → Desktop and
+documentation → Run workflow** before a release. These include Docker/PostgreSQL/Temporal
+integration, process recovery, backup/restore, Playwright browser tests, native macOS tests and
+desktop engine acceptance. Browser screenshots and failure traces are written to per-test
+directories in `app/test-results/`; tests must use Playwright output paths rather than OS-specific
+temporary paths. Browser acceptance against a real engine is opt-in. Start an engine with
+`examples/local/profile.yaml` and the exact browser origin as described in
+[app/README](app/README.md), then run from `app/`:
 
 ```sh
 KNOTRA_E2E_ENDPOINT=http://127.0.0.1:8787 bun run test:e2e
@@ -146,8 +153,8 @@ make integration
 ```
 
 Use a development database. Database tests create isolated schemas; Docker tests remove their own
-containers. No blanket database reset or Docker prune is needed. The regular GitHub workflow runs
-these persistence, HTTP, sandbox and MCP checks without downloading a model.
+containers. No blanket database reset or Docker prune is needed. The manually triggered Go workflow
+runs these persistence, HTTP, sandbox and MCP checks without downloading a model.
 
 To include real local model calls, install `qwen3.5:9b` in Ollama and set:
 
