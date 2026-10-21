@@ -1,5 +1,19 @@
 # Knotra
 
+> [!IMPORTANT]
+> **Knotra has moved to [knotra-dev](https://github.com/knotra-dev).**
+>
+> Active development continues in these repositories:
+>
+> - [Engine & CLI](https://github.com/knotra-dev/engine)
+> - [Desktop](https://github.com/knotra-dev/desktop)
+> - [Documentation](https://github.com/knotra-dev/docs)
+> - [Development workspace](https://github.com/knotra-dev/dev)
+>
+> This original monorepo is no longer maintained. Please open new issues and pull requests
+> in the relevant repository above. The documentation below describes the original monorepo;
+> follow the new repositories for current installation and usage instructions.
+
 ### AI workflows you can verify, inspect and resume.
 
 Define a repeatable process: models reason, code checks results, and people approve the steps that
